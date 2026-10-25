@@ -253,17 +253,20 @@ class TestMcpConfigRoutes:
         from unittest.mock import Mock
 
         ensure = Mock()
+        stop = Mock()
         fetch = Mock()
         monkeypatch.setattr("container_service.ensure_container", ensure)
+        monkeypatch.setattr("container_service.stop_container_process", stop)
         monkeypatch.setattr("mcp_service.fetch_tools", fetch)
         resp = client.get("/api/mcp/tools")
         assert resp.status_code == 200
         assert resp.json == []
         ensure.assert_not_called()
+        stop.assert_not_called()
         fetch.assert_not_called()
 
     def test_unconfigured_server_call_returns_404(self, client, tmp_lumen):
-        resp = client.post("/api/mcp/call", json={"server": "agent_tools", "tool": "view"})
+        resp = client.post("/api/mcp/call", json={"server": "agent_tools", "tool": "read"})
         assert resp.status_code == 404
 
 

@@ -161,7 +161,7 @@ The development server binds to `127.0.0.1` with debug mode disabled by default.
 
 ### Configuring tools
 
-The sandbox has no built-in MCP server. Add a server through MCP settings or `~/.lumen/mcp.json`. Python and `uv` are available in the container for a replacement Python server; its code and dependencies must be supplied separately. Node.js and `mcp-remote` remain available for user-configured integrations. Until a server is configured, discovery returns no tools.
+The built-in tool contract is `bash`, `read`, `write`, and `edit`. The UI supplies their display labels; tool schemas and execution must come from the replacement server. The sandbox currently has no bundled MCP server. Add a server through MCP settings or `~/.lumen/mcp.json`. Python and `uv` are available in the container for a replacement Python server; its code and dependencies must be supplied separately. Node.js and `mcp-remote` remain available for user-configured integrations. Until a server is configured, discovery returns no tools.
 
 ## Installation
 
@@ -474,7 +474,7 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 | `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
 | `settings.js` | API and chat settings UI |
 | `markdown.js` | Markdown, code highlighting, KaTeX, safe workspace file links |
-| `tool_adapters/` | Per-tool display adapters (`exa.js`; other tools use the generic renderer) |
+| `tool_adapters/` | Per-tool display adapters (`core_tools.js` for `bash`, `read`, `write`, `edit`; `exa.js` for Exa) |
 
 The frontend maintains two parallel histories: `state.messages` (model/API-facing) and `state.displayLog` (UI-facing). These have different structures and indices — do not conflate them. Branches for edited messages and regenerated responses are stored in `displayLog` so the visible conversation can switch paths while preserving the saved model history.
 

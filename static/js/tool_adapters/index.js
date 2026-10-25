@@ -18,6 +18,7 @@
  */
 
 // ── Adapter registrations (order does not matter) ─────────────────────────────
+import './core_tools.js';
 import './exa.js';
 
 // ── Re-export the registry API ────────────────────────────────────────────────

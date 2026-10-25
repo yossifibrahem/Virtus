@@ -42,7 +42,7 @@ class TestExpandConfigEnv:
 
 
 # ---------------------------------------------------------------------------
-# apply_workspace_process_options (via _apply_container)
+# apply_workspace_process_options
 # ---------------------------------------------------------------------------
 
 def _mock_wrap_result(conv_id: str, command: str, args: list):

@@ -18,7 +18,7 @@ def _body() -> dict:
 
 @blueprint.route("/api/mcp/config", methods=["GET"])
 def get_mcp_config():
-    return jsonify(mcp_service.load_editable_config())
+    return jsonify(mcp_service.load_config())
 
 
 @blueprint.route("/api/mcp/config", methods=["POST"])
@@ -39,7 +39,10 @@ def list_mcp_tools():
     discovery_mode = not requested_conv_id
 
     configs = mcp_service.load_config().get("mcpServers", {})
-    if discovery_mode and configs:
+    if not configs:
+        return jsonify([])
+
+    if discovery_mode:
         all_volumes: list[str] = []
         seen: set[str] = set()
         for cfg in configs.values():

@@ -11,7 +11,6 @@ from docker_path_utils import make_volume_spec, translate_arg_for_container
 
 log = logging.getLogger(__name__)
 
-WORKSPACE_ROOT = container_service.CONTAINERS_ROOT
 CONTAINER_WORKDIR = "/workspace"
 
 
@@ -41,16 +40,7 @@ def apply_workspace_process_options(
     conv_id: str = "",
 ) -> None:
     """Mutate StdioServerParameters kwargs to run the MCP server in the conversation container."""
-    _apply_container(params, env, server_name, server_config or {}, conv_id)
-
-
-def _apply_container(
-    params: dict[str, Any],
-    env: dict[str, Any],
-    server_name: str,
-    server_config: dict,
-    conv_id: str,
-) -> None:
+    server_config = server_config or {}
     if not conv_id:
         raise ContainerConversationRequired(
             f"MCP server '{server_name}' requires a conversation to be open."

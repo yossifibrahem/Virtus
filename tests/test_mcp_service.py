@@ -1,13 +1,11 @@
 """
-Tests for mcp_service.py — config persistence (load, save, find_server).
+Tests for mcp_service.py — configuration and MCP session lifecycle.
 
 MCP_CONFIG_FILE is redirected to a temp file for every test via the
 `isolated_mcp_config` fixture so no mcp.json in the project root is
 ever touched.
 
-async tool fetching and invocation (fetch_tools / invoke_tool) require a
-running MCP stdio server and are out of scope here. They are covered by the
-manual verification checklist in agent.md.
+MCP sessions are faked so these tests do not require Docker or a running server.
 """
 from __future__ import annotations
 
@@ -90,34 +88,34 @@ def isolated_mcp_config(tmp_path, monkeypatch):
 class TestLoadConfig:
 
     def test_returns_empty_servers_when_file_absent(self):
-        result = mcp_service.load_editable_config()
+        result = mcp_service.load_config()
         assert result == {"mcpServers": {}}
 
     def test_returns_config_dict_when_file_exists(self, isolated_mcp_config):
         config = {"mcpServers": {"fs": {"command": "npx", "args": ["-y", "@fs"]}}}
         isolated_mcp_config.write_text(json.dumps(config))
-        assert mcp_service.load_editable_config() == config
+        assert mcp_service.load_config() == config
 
     def test_returns_empty_on_corrupt_json(self, isolated_mcp_config):
         isolated_mcp_config.write_text("not valid json {{{")
-        assert mcp_service.load_editable_config() == {"mcpServers": {}}
+        assert mcp_service.load_config() == {"mcpServers": {}}
 
     def test_returns_empty_when_file_is_a_list(self, isolated_mcp_config):
         isolated_mcp_config.write_text(json.dumps(["not", "a", "dict"]))
-        assert mcp_service.load_editable_config() == {"mcpServers": {}}
+        assert mcp_service.load_config() == {"mcpServers": {}}
 
     def test_returns_empty_when_mcp_servers_is_list(self, isolated_mcp_config):
         isolated_mcp_config.write_text(json.dumps({"mcpServers": ["bad"]}))
-        assert mcp_service.load_editable_config() == {"mcpServers": {}}
+        assert mcp_service.load_config() == {"mcpServers": {}}
 
     def test_returns_empty_when_file_is_empty(self, isolated_mcp_config):
         isolated_mcp_config.write_text("")
-        assert mcp_service.load_editable_config() == {"mcpServers": {}}
+        assert mcp_service.load_config() == {"mcpServers": {}}
 
     def test_preserves_extra_top_level_keys(self, isolated_mcp_config):
         config = {"mcpServers": {}, "globalEnv": {"FOO": "bar"}}
         isolated_mcp_config.write_text(json.dumps(config))
-        result = mcp_service.load_editable_config()
+        result = mcp_service.load_config()
         assert result.get("globalEnv") == {"FOO": "bar"}
 
     def test_effective_config_has_no_automatic_servers(self):
@@ -128,7 +126,7 @@ class TestLoadConfig:
         isolated_mcp_config.write_text(json.dumps(config))
         loaded = mcp_service.load_config()
         loaded["mcpServers"]["python_tools"]["args"].append("--changed")
-        assert mcp_service.load_editable_config() == config
+        assert mcp_service.load_config() == config
 
 
 def test_tool_input_schema_supports_mcp_2_field_name():
@@ -188,7 +186,7 @@ class TestSaveConfig:
     def test_save_then_load_roundtrip(self, isolated_mcp_config):
         config = {"mcpServers": {"bash": {"command": "bash", "args": ["-c"]}}}
         mcp_service.save_config(config)
-        assert mcp_service.load_editable_config() == config
+        assert mcp_service.load_config() == config
 
     def test_overwrites_existing_file(self, isolated_mcp_config):
         mcp_service.save_config({"mcpServers": {"old": {}}})
@@ -236,7 +234,7 @@ class TestFindServer:
         isolated_mcp_config.write_text(json.dumps(disk_config))
 
         assert mcp_service.find_server("agent_tools") == server
-        assert mcp_service.load_editable_config() == disk_config
+        assert mcp_service.load_config() == disk_config
         assert json.loads(isolated_mcp_config.read_text()) == disk_config
 
 
@@ -276,10 +274,10 @@ class TestConfigCache:
         isolated_mcp_config.write_text(json.dumps(first))
         monkeypatch.setattr("mcp_service._CONFIG_TTL_SECONDS", 60)
 
-        assert mcp_service.load_editable_config() == first
+        assert mcp_service.load_config() == first
         isolated_mcp_config.write_text(json.dumps(second))
-        assert mcp_service.load_editable_config() == first
-        assert mcp_service.load_editable_config(refresh=True) == second
+        assert mcp_service.load_config() == first
+        assert mcp_service.load_config(refresh=True) == second
 
 
 # ---------------------------------------------------------------------------

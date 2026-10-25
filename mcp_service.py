@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from mcp_adapters import apply_workspace_process_options, expand_config_env, extract_host_mounts
+from mcp_adapters import apply_workspace_process_options, extract_host_mounts
 from fs_utils import atomic_replace
 from docker_path_utils import parse_volume_source
 from mcp_session_pool import McpSessionPool
@@ -76,8 +76,8 @@ def _write_config_file(config: dict) -> None:
     atomic_replace(tmp_path, MCP_CONFIG_FILE)
 
 
-def load_editable_config(*, refresh: bool = False) -> dict:
-    """Load only user-editable MCP servers from disk."""
+def load_config(*, refresh: bool = False) -> dict:
+    """Load configured MCP servers, returning an independent snapshot."""
     global _config_cache, _config_cache_at, _config_cache_path
     now = time.monotonic()
     with _config_cache_lock:
@@ -87,7 +87,7 @@ def load_editable_config(*, refresh: bool = False) -> dict:
             and _config_cache_path == MCP_CONFIG_FILE
             and now - _config_cache_at < _CONFIG_TTL_SECONDS
         ):
-            return _config_cache
+            return copy.deepcopy(_config_cache)
 
     if not MCP_CONFIG_FILE.exists():
         config = {"mcpServers": {}}
@@ -107,12 +107,7 @@ def load_editable_config(*, refresh: bool = False) -> dict:
         _config_cache = config
         _config_cache_at = time.monotonic()
         _config_cache_path = MCP_CONFIG_FILE
-        return config
-
-
-def load_config(*, refresh: bool = False) -> dict:
-    """Return a snapshot of the configured MCP servers."""
-    return copy.deepcopy(load_editable_config(refresh=refresh))
+        return copy.deepcopy(config)
 
 
 def save_config(config: dict) -> None:
@@ -164,7 +159,7 @@ def _build_server_params(
 ) -> Any:
     from mcp import StdioServerParameters  # optional dependency
 
-    env = {**os.environ, **expand_config_env(server_config.get("env", {}))}
+    env = {}
     params = {
         "command": server_config.get("command", ""),
         "args": server_config.get("args", []),

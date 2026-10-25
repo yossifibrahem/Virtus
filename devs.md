@@ -594,7 +594,7 @@ Do not assume they have the same indices. Use helper mapping logic when editing/
 
 `app_policy.js` injects app-level model instructions. It tells the model:
 
-- That it is running in Lumen AI Chat with per-chat workspace files.
+- That it is running in Lumen AI Chat with per-chat workspace files and a built-in `bash`, `read`, `write`, and `edit` tool contract.
 - How to use uploaded file paths appended to user messages.
 - To use `/workspace/...` links only for real workspace files.
 
@@ -606,6 +606,7 @@ Tool names sent to the model come directly from `tool.name` in `chat_payloads.js
 
 Existing adapters:
 
+- `core_tools.js`: display labels for the built-in `bash`, `read`, `write`, and `edit` contract; argument schemas and execution come from the server
 - `exa.js`: Exa search/fetch/deep-research tools with custom card rendering
 
 ### Renderer: `renderer.js` and sub-modules
@@ -651,7 +652,7 @@ Only use `/workspace/...` links for files that already exist in the active conve
 
 ## MCP config shape
 
-All MCP servers run in the per-conversation container. `mcp_service.load_editable_config()` returns configured servers for the settings textarea, while `load_config()` returns an independent snapshot of that configuration. No server is bundled or automatically added. Python and `uv` are available in the sandbox for separately configured Python servers; server source and dependencies are supplied separately.
+All MCP servers run in the per-conversation container. `mcp_service.load_config()` returns an independent snapshot of configured servers for both settings and runtime use. No server is bundled or automatically added. Python and `uv` are available in the sandbox for separately configured Python servers; server source and dependencies are supplied separately.
 
 A typical custom server configuration:
 
