@@ -294,8 +294,8 @@ function bindEvents() {
   await loadContainerSettings();
   await loadConversationList();
   await loadMcpConfig();
-  // Render a cache immediately, but always refresh it so newly bundled tools
-  // and MCP config changes cannot remain hidden after an app upgrade.
+  // Render a cache immediately, but always refresh it so MCP tool
+  // and config changes cannot remain hidden after an app upgrade.
   const toolRefresh = reloadTools();
   if (!hasCachedTools) await toolRefresh;
 

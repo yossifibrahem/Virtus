@@ -129,7 +129,7 @@ class TestApplyWorkspaceProcessOptions:
                 conv_id="c1",
             )
         # PWD must be in the env passed to wrap so the shell starts in /workspace.
-        # WORKING_DIR is no longer injected — the agent_tools server does not use it.
+        # Server-specific working-directory variables must be configured explicitly.
         wrap_kwargs = mock_wrap.call_args.kwargs
         passed_env = wrap_kwargs.get("env", {})
         assert passed_env.get("PWD") == "/workspace"

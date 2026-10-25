@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -30,10 +31,6 @@ def _write_sandbox_context(root: Path, newline: str = "\n") -> None:
     files = {
         ".dockerignore": "**\n!Dockerfile.sandbox\n",
         "Dockerfile.sandbox": "FROM ubuntu:24.04\n",
-        "vendor/computer-use-mcp-server/package.json": '{"name":"fixture"}\n',
-        "vendor/computer-use-mcp-server/package-lock.json": '{"lockfileVersion":3}\n',
-        "vendor/computer-use-mcp-server/tsconfig.json": '{"compilerOptions":{}}\n',
-        "vendor/computer-use-mcp-server/src/index.ts": "export const value = 1;\n",
     }
     for relative, content in files.items():
         path = root / relative
@@ -58,8 +55,7 @@ def test_sandbox_identity_changes_only_for_build_inputs(tmp_path):
     (root / "desktop_launcher.py").write_text("desktop-only change", encoding="utf-8")
     assert build_info.sandbox_identity(root) == original
 
-    source = root / "vendor/computer-use-mcp-server/src/index.ts"
-    source.write_text("export const value = 2;\n", encoding="utf-8")
+    (root / "Dockerfile.sandbox").write_text("FROM ubuntu:26.04\n", encoding="utf-8")
     assert build_info.sandbox_identity(root) != original
 
 
@@ -68,10 +64,6 @@ def test_sandbox_identity_changes_only_for_build_inputs(tmp_path):
     [
         ".dockerignore",
         "Dockerfile.sandbox",
-        "vendor/computer-use-mcp-server/package.json",
-        "vendor/computer-use-mcp-server/package-lock.json",
-        "vendor/computer-use-mcp-server/tsconfig.json",
-        "vendor/computer-use-mcp-server/src/index.ts",
     ],
 )
 def test_every_sandbox_build_input_changes_identity(tmp_path, relative):
@@ -89,7 +81,6 @@ def test_source_resource_root_contains_web_assets():
     assert (build_info.resource_root() / "templates" / "index.html").is_file()
     assert (build_info.resource_root() / "static" / "js" / "app.js").is_file()
     assert (build_info.resource_root() / "Dockerfile.sandbox").is_file()
-    assert (build_info.resource_root() / "vendor" / "computer-use-mcp-server" / "src" / "index.ts").is_file()
 
 
 def test_frozen_macos_resource_root_uses_real_resources_directory(monkeypatch, tmp_path):
@@ -101,3 +92,12 @@ def test_frozen_macos_resource_root_uses_real_resources_directory(monkeypatch, t
     monkeypatch.setattr(sys, "_MEIPASS", str(frameworks), raising=False)
 
     assert build_info.resource_root() == resources
+
+
+@pytest.mark.parametrize("relative", [".dockerignore", "Dockerfile.sandbox"])
+def test_missing_sandbox_input_reports_required_file(tmp_path, relative):
+    _write_sandbox_context(tmp_path)
+    (tmp_path / relative).unlink()
+
+    with pytest.raises(FileNotFoundError, match=re.escape(relative)):
+        build_info.sandbox_identity(tmp_path)

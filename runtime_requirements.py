@@ -223,7 +223,7 @@ def check_sandbox_image() -> RequirementStatus:
             ok=False,
             code="sandbox_image_outdated",
             title="Lumen tools need to be updated",
-            message="Click Install Lumen Tools to rebuild them from the bundled Docker and MCP files.",
+            message="Click Install Lumen Tools to rebuild them from the bundled Dockerfile.",
             action="build",
             image=image,
             details=(

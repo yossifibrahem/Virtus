@@ -27,7 +27,7 @@
  *
  * Lookup (used by mcp_tool_ui.js):
  *   import { adapterFor } from './registry.js';
- *   const adapter = adapterFor('bash_tool');
+ *   const adapter = adapterFor('web_search');
  */
 
 /** @type {Map<string, Object>} */

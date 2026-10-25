@@ -9,8 +9,8 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Install Node.js inside Ubuntu for both MCP compilation and runtime. It also
-# remains available for additional user-configured Node MCP servers.
+# Support user-configured Node MCP servers and the optional mcp-remote bridge.
+# Lumen does not bundle or automatically launch an MCP server.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -67,27 +67,6 @@ RUN pip3 install --no-cache-dir uv \
         requests
 
 RUN npm install -g mcp-remote@0.1.38 \
-    && npm cache clean --force
-
-# Compile the bundled, pinned MCP source directly inside Ubuntu. npm's
-# development dependencies and cache are created and removed in this same
-# layer, so only the compiled server and production dependencies remain.
-COPY vendor/computer-use-mcp-server/package.json \
-     vendor/computer-use-mcp-server/package-lock.json \
-     vendor/computer-use-mcp-server/tsconfig.json \
-     /tmp/computer-use-mcp/
-COPY vendor/computer-use-mcp-server/src /tmp/computer-use-mcp/src
-RUN cd /tmp/computer-use-mcp \
-    && npm ci \
-    && npm run build \
-    && npm prune --omit=dev \
-    && npm install --no-save --package-lock=false --omit=dev \
-        @modelcontextprotocol/sdk@1.30.0 \
-        express@4.22.2 \
-    && mkdir -p /opt/lumen/mcp/computer-use \
-    && cp -R dist node_modules package.json /opt/lumen/mcp/computer-use/ \
-    && cd / \
-    && rm -rf /tmp/computer-use-mcp \
     && npm cache clean --force
 
 ARG LUMEN_SANDBOX_IDENTITY=unidentified

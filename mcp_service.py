@@ -32,13 +32,6 @@ _CONFIG_TTL_SECONDS = float(os.getenv("LUMEN_MCP_CONFIG_CACHE_TTL", "5"))
 _mcp_stderr_handle = None
 _mcp_stderr_lock = threading.Lock()
 
-BUILTIN_SERVER_NAME = "agent_tools"
-BUILTIN_SERVER_CONFIG = {
-    "command": "node",
-    "args": ["/opt/lumen/mcp/computer-use/dist/index.js"],
-    "_lumen_builtin": True,
-}
-
 
 def _mcp_stderr_sink():
     """Return a valid long-lived stderr handle for frozen GUI processes."""
@@ -109,9 +102,6 @@ def load_editable_config(*, refresh: bool = False) -> dict:
         config = {"mcpServers": {}}
     else:
         config.setdefault("mcpServers", {})
-        # The reserved built-in is never editable and disk content cannot
-        # override it. Filtering does not rewrite the user's file.
-        config["mcpServers"].pop(BUILTIN_SERVER_NAME, None)
 
     with _config_cache_lock:
         _config_cache = config
@@ -121,11 +111,8 @@ def load_editable_config(*, refresh: bool = False) -> dict:
 
 
 def load_config(*, refresh: bool = False) -> dict:
-    """Return the effective config: editable servers plus Lumen built-ins."""
-    config = copy.deepcopy(load_editable_config(refresh=refresh))
-    servers = config.setdefault("mcpServers", {})
-    servers[BUILTIN_SERVER_NAME] = copy.deepcopy(BUILTIN_SERVER_CONFIG)
-    return config
+    """Return a snapshot of the configured MCP servers."""
+    return copy.deepcopy(load_editable_config(refresh=refresh))
 
 
 def save_config(config: dict) -> None:
@@ -135,10 +122,6 @@ def save_config(config: dict) -> None:
     config.setdefault("mcpServers", {})
     if not isinstance(config["mcpServers"], dict):
         raise ValueError("mcpServers must be a JSON object")
-    if BUILTIN_SERVER_NAME in config["mcpServers"]:
-        raise ValueError(
-            f"MCP server '{BUILTIN_SERVER_NAME}' is built into Lumen and cannot be overridden"
-        )
 
     saved = copy.deepcopy(config)
     with _config_cache_lock:

@@ -17,22 +17,6 @@ a = Analysis(
         (str(METADATA), "."),
         (str(ROOT / "Dockerfile.sandbox"), "."),
         (str(ROOT / ".dockerignore"), "."),
-        (
-            str(ROOT / "vendor" / "computer-use-mcp-server" / "package.json"),
-            "vendor/computer-use-mcp-server",
-        ),
-        (
-            str(ROOT / "vendor" / "computer-use-mcp-server" / "package-lock.json"),
-            "vendor/computer-use-mcp-server",
-        ),
-        (
-            str(ROOT / "vendor" / "computer-use-mcp-server" / "tsconfig.json"),
-            "vendor/computer-use-mcp-server",
-        ),
-        (
-            str(ROOT / "vendor" / "computer-use-mcp-server" / "src"),
-            "vendor/computer-use-mcp-server/src",
-        ),
     ],
     hiddenimports=[
         "mcp.client.stdio",

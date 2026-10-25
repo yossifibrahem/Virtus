@@ -81,9 +81,6 @@ def _apply_container(
 
 def extract_host_mounts(server_config: dict) -> list[str]:
     """Mount absolute script/project paths used by a container-runtime server."""
-    if server_config.get("_lumen_builtin") is True:
-        return []
-
     volumes: list[str] = []
     seen: set[str] = set()
 

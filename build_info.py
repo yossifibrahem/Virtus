@@ -13,11 +13,7 @@ LOCAL_SANDBOX_IMAGE = "lumen-sandbox:latest"
 _SANDBOX_FIXED_INPUTS = (
     ".dockerignore",
     "Dockerfile.sandbox",
-    "vendor/computer-use-mcp-server/package.json",
-    "vendor/computer-use-mcp-server/package-lock.json",
-    "vendor/computer-use-mcp-server/tsconfig.json",
 )
-_SANDBOX_SOURCE_DIR = "vendor/computer-use-mcp-server/src"
 
 
 def is_frozen() -> bool:
@@ -52,20 +48,15 @@ def sandbox_input_files(root: Path | None = None) -> list[Path]:
     """Return every bundled input that can affect the sandbox image."""
     context_root = Path(root) if root is not None else resource_root()
     paths = [context_root / relative for relative in _SANDBOX_FIXED_INPUTS]
-    source_root = context_root / _SANDBOX_SOURCE_DIR
-    if source_root.is_dir():
-        paths.extend(sorted(path for path in source_root.rglob("*") if path.is_file()))
-    missing = [path for path in paths[:len(_SANDBOX_FIXED_INPUTS)] if not path.is_file()]
-    if missing or not source_root.is_dir():
+    missing = [path for path in paths if not path.is_file()]
+    if missing:
         names = [str(path) for path in missing]
-        if not source_root.is_dir():
-            names.append(str(source_root))
         raise FileNotFoundError(f"Sandbox build inputs are missing: {', '.join(names)}")
     return paths
 
 
 def sandbox_identity(root: Path | None = None) -> str:
-    """Hash Docker/MCP inputs with platform-independent paths and newlines."""
+    """Hash Docker build inputs with platform-independent paths and newlines."""
     context_root = Path(root) if root is not None else resource_root()
     digest = hashlib.sha256()
     for path in sandbox_input_files(context_root):

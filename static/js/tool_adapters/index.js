@@ -18,7 +18,6 @@
  */
 
 // ── Adapter registrations (order does not matter) ─────────────────────────────
-import './agent_tools.js';
 import './exa.js';
 
 // ── Re-export the registry API ────────────────────────────────────────────────

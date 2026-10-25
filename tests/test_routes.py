@@ -243,14 +243,28 @@ class TestMcpConfigRoutes:
         assert resp.status_code == 400
         assert "error" in resp.json
 
-    def test_post_rejects_built_in_server_override(self, client, tmp_lumen):
-        resp = client.post(
-            "/api/mcp/config",
-            json={"mcpServers": {"agent_tools": {"command": "host-node"}}},
-            content_type="application/json",
-        )
-        assert resp.status_code == 400
-        assert "built into Lumen" in resp.json["error"]
+    def test_post_accepts_python_server_with_any_name(self, client, tmp_lumen):
+        config = {"mcpServers": {"agent_tools": {"command": "python", "args": ["server.py"]}}}
+        resp = client.post("/api/mcp/config", json=config)
+        assert resp.status_code == 200
+        assert client.get("/api/mcp/config").json == config
+
+    def test_no_config_discovers_no_tools_or_container(self, client, tmp_lumen, monkeypatch):
+        from unittest.mock import Mock
+
+        ensure = Mock()
+        fetch = Mock()
+        monkeypatch.setattr("container_service.ensure_container", ensure)
+        monkeypatch.setattr("mcp_service.fetch_tools", fetch)
+        resp = client.get("/api/mcp/tools")
+        assert resp.status_code == 200
+        assert resp.json == []
+        ensure.assert_not_called()
+        fetch.assert_not_called()
+
+    def test_unconfigured_server_call_returns_404(self, client, tmp_lumen):
+        resp = client.post("/api/mcp/call", json={"server": "agent_tools", "tool": "view"})
+        assert resp.status_code == 404
 
 
 # ===========================================================================

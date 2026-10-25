@@ -2,7 +2,7 @@
 
 Owns the memory.md file at ~/.lumen/memory.md. The file is mounted
 read-write into every conversation container at /memory.md so the model
-can read and update it using its file tools (view, str_replace, create_file).
+can read and update it using configured file tools when available.
 
 Other modules should import from here rather than touching the file directly:
   - container_service.py  calls ensure_file() to get the host path for mounting

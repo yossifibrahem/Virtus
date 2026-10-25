@@ -82,7 +82,7 @@ def _port_available() -> bool:
 
 
 def _validate_frozen_runtime() -> None:
-    """Import lazy dependencies and verify the complete Docker/MCP context."""
+    """Import lazy dependencies and verify the complete Docker build context."""
     from mcp import ClientSession, StdioServerParameters  # noqa: F401
     from mcp.client.stdio import stdio_client  # noqa: F401
     from openai import OpenAI  # noqa: F401
@@ -93,10 +93,6 @@ def _validate_frozen_runtime() -> None:
         root / "static" / "js" / "app.js",
         root / "Dockerfile.sandbox",
         root / ".dockerignore",
-        root / "vendor" / "computer-use-mcp-server" / "package.json",
-        root / "vendor" / "computer-use-mcp-server" / "package-lock.json",
-        root / "vendor" / "computer-use-mcp-server" / "tsconfig.json",
-        root / "vendor" / "computer-use-mcp-server" / "src" / "index.ts",
     ]
     if build_info.is_frozen():
         required.append(WINDOWS_ICON)

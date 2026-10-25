@@ -1,5 +1,9 @@
 # Windows Packaging Lessons
 
+## Current scope
+
+The bundled Node MCP server has been removed. References below to bundled tools, MCP source, TypeScript, and server lockfiles describe the historical packaging attempts only. Current packages include the Dockerfile, all MCP servers are user-configured, and sandbox identity covers `.dockerignore` and `Dockerfile.sandbox`. The former server packaging and validation requirements no longer apply.
+
 ## Purpose
 
 This document records what was learned during the first Windows desktop packaging attempt. The implementation was reverted so a new approach can begin from the stable macOS/development baseline without carrying experimental changes into the main application.
@@ -8,7 +12,7 @@ The intended product remains:
 
 - a consistent Lumen desktop experience on macOS and Windows;
 - no prerequisite for normal users other than Docker Desktop and an internet connection;
-- the computer-use MCP server source bundled with the application and compiled as part of the local sandbox image build;
+- the sandbox Dockerfile bundled with the application and built locally;
 - no separately installed Python, Node.js, MCP server, terminal, or development toolchain;
 - platform-specific code only where native operating-system behavior requires it.
 
@@ -79,7 +83,7 @@ These concerns belong in a small Windows process adapter rather than being sprea
 ### 4. Packaging and repository hygiene
 
 - The application does not use Electron. A root `package-lock.json` created by unrelated Electron tooling was not an application dependency and was safely removed during the attempt.
-- The MCP server's own lockfile under `vendor/computer-use-mcp-server` is required and must remain bundled.
+- At the time of this attempt, the bundled Node MCP server required its own lockfile; that server and packaging requirement have since been removed.
 - Windows builds should use a dedicated virtual environment and generated `build/` and `dist/` outputs must remain ignored.
 - The Windows package must be tested from the extracted distribution, not only from source or the PyInstaller work directory.
 - A `onedir` package must be distributed as the complete directory/ZIP; copying only the executable is not sufficient.

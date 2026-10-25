@@ -88,10 +88,6 @@ def _validate_frozen_runtime() -> None:
         MENU_BAR_ICON,
         root / "Dockerfile.sandbox",
         root / ".dockerignore",
-        root / "vendor" / "computer-use-mcp-server" / "package.json",
-        root / "vendor" / "computer-use-mcp-server" / "package-lock.json",
-        root / "vendor" / "computer-use-mcp-server" / "tsconfig.json",
-        root / "vendor" / "computer-use-mcp-server" / "src" / "index.ts",
     ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:

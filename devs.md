@@ -26,9 +26,9 @@ The app is intentionally lightweight: no database, no frontend framework, no bun
 Treat these as release invariants unless the product direction is explicitly changed:
 
 - The end-user UI stays in the default browser. The macOS menu-bar and Windows tray applications are launchers and bundled backend runtimes, not Electron or native chat clients.
-- Docker Desktop is the only end-user prerequisite. Each desktop package contains Python, backend dependencies, web assets, `Dockerfile.sandbox`, and the minimal pinned computer-use MCP build source.
+- Docker Desktop is the only end-user prerequisite. Each desktop package contains Python, backend dependencies, web assets, and `Dockerfile.sandbox`.
 - First-run setup builds `lumen-sandbox:latest` locally after user confirmation. Do not add a prebuilt registry-image pull requirement.
-- `agent_tools` is image-managed and reserved. Keep it out of editable `mcp.json`, never infer host mounts from its container path, and retain its normal icon, enable, and approval settings.
+- MCP servers are entirely user-configured. Do not inject a default server or reserve a server ID. A replacement Python server must be supplied and configured separately.
 - User state remains in `~/.lumen/`. App replacement and image/container recreation must preserve conversations, settings, memory, and mounted workspaces.
 - Distribution targets are Apple Silicon macOS 14+ DMG and portable Windows x64 PyInstaller `onedir` ZIP. Intel macOS, ARM64 Windows, installers, signing, and automatic updates are deferred.
 
@@ -64,7 +64,6 @@ Treat these as release invariants unless the product direction is explicitly cha
 ├── Dockerfile.sandbox             # Required per-chat sandbox image
 ├── requirements-desktop.txt       # Waitress, rumps, and PyInstaller desktop dependencies
 ├── packaging/                     # Platform PyInstaller specs and release build scripts
-├── vendor/computer-use-mcp-server # Pinned built-in MCP git submodule
 ├── .github/workflows/release.yml  # Cross-platform tests, sandbox smoke, and desktop artifacts
 ├── gunicorn.conf.py               # Single-worker/threaded production default
 ├── requirements.txt               # Flask, CORS, OpenAI SDK, MCP SDK
@@ -154,7 +153,6 @@ http://localhost:8080
 Build the required source-development sandbox image before using MCP tools:
 
 ```bash
-git submodule update --init --recursive
 identity="$(python -c 'import build_info; print(build_info.sandbox_identity())')"
 docker build --build-arg "LUMEN_SANDBOX_IDENTITY=$identity" -f Dockerfile.sandbox -t lumen-sandbox:latest .
 ```
@@ -600,7 +598,7 @@ Do not assume they have the same indices. Use helper mapping logic when editing/
 - How to use uploaded file paths appended to user messages.
 - To use `/workspace/...` links only for real workspace files.
 
-Tool-specific behavior belongs in the MCP tool schemas/Zod definitions, not in `app_policy.js`. Keep this file focused on app-level behavior only.
+Tool-specific behavior belongs in the MCP tool schemas, not in `app_policy.js`. Keep this file focused on app-level behavior only.
 
 `mcp_tool_ui.js` and `tool_adapters/` control how tool calls/results are displayed. To add rich rendering for a new MCP tool, prefer adding a tool adapter rather than special-casing in `renderer.js`.
 
@@ -608,7 +606,6 @@ Tool names sent to the model come directly from `tool.name` in `chat_payloads.js
 
 Existing adapters:
 
-- `agent_tools.js`: `view`, `create_file`, `str_replace`, `bash_tool`
 - `exa.js`: Exa search/fetch/deep-research tools with custom card rendering
 
 ### Renderer: `renderer.js` and sub-modules
@@ -654,7 +651,7 @@ Only use `/workspace/...` links for files that already exist in the active conve
 
 ## MCP config shape
 
-All MCP servers run in the per-conversation container. `mcp_service.load_editable_config()` returns custom servers for the settings textarea, while `load_config()` returns the effective configuration with the image-managed `agent_tools` server added. The reserved built-in executes `/opt/lumen/mcp/computer-use/dist/index.js` and must never be converted into a host mount.
+All MCP servers run in the per-conversation container. `mcp_service.load_editable_config()` returns configured servers for the settings textarea, while `load_config()` returns an independent snapshot of that configuration. No server is bundled or automatically added. Python and `uv` are available in the sandbox for separately configured Python servers; server source and dependencies are supplied separately.
 
 A typical custom server configuration:
 
@@ -687,21 +684,21 @@ With explicit environment variables:
 
 Server-level UI settings such as enabled, auto-approve, and icon are not stored in `mcp.json`; they are stored in browser localStorage under `lumen_mcp_server_settings`.
 
-The reserved `agent_tools` key is filtered from editable configuration in memory and always replaced by `BUILTIN_SERVER_CONFIG` in effective configuration. Loading configuration does not rewrite or back up the user's file. Saves that attempt to override `agent_tools` return a validation error.
+All server IDs are editable. Loading configuration does not rewrite or back up the user's file. Existing server definitions are preserved; obsolete definitions can be removed through settings.
 
 ## Desktop applications and releases
 
 - `desktop_launcher.py` is a menu-bar process with no native chat window. It serves one Waitress process on `127.0.0.1:38492`, opens the default browser, holds an advisory single-instance lock, and exposes Open, Docker Status, Logs, and Quit actions.
 - `windows_desktop_launcher.py` provides the equivalent Windows tray host. It uses a per-session named mutex, a windowed PyInstaller process, and one absolute 15-second Quit deadline. The listener closes before worker cleanup; MCP pools and running containers close concurrently; the mutex is released before the tray loop stops. A Windows-only watchdog records and forces an abnormal exit only if the coordinated path misses the deadline.
 - `build_info.resource_root()` is the only supported way to locate bundled templates/static assets and the first-run Docker build context in a frozen app. Both source and packaged runs default to `lumen-sandbox:latest`.
-- `build_info.sandbox_identity()` hashes only `.dockerignore`, `Dockerfile.sandbox`, MCP manifests/lockfile/TypeScript config, and MCP source. Relative paths and line endings are normalized, so identity is invariant across desktop versions and platforms.
+- `build_info.sandbox_identity()` hashes only `.dockerignore` and `Dockerfile.sandbox`. Relative paths and line endings are normalized, so identity is invariant across desktop versions and platforms.
 - `docker_cli.py` resolves Docker through explicit override, `PATH`, and standard platform locations because GUI applications inherit a restricted `PATH`. All Lumen-owned Windows Docker processes use no-window creation flags. Container and requirement modules must use this helper rather than invoking a literal `docker` executable.
 - `packaging/build_macos.sh` creates an Apple Silicon, macOS 14+ `.app` and DMG. With no `MACOS_SIGN_IDENTITY` it ad-hoc signs; the release workflow can import signing credentials and notarize later.
 - `packaging/build_windows.ps1` requires Python 3.12 x64, creates a complete PyInstaller `onedir` ZIP and checksum, extracts that ZIP, and runs frozen-resource/server smoke mode from the extracted copy. Never distribute only `Lumen AI Chat.exe`.
 - The menu-bar item uses the bundled Lumen SVG artwork. Docker shutdown calls are bounded so an unresponsive daemon cannot prevent the app from quitting.
-- The packaged setup page asks before starting Docker Desktop and before locally building the tools image. It streams Docker's base-layer, dependency, and MCP compilation progress. A container sandbox-identity or underlying image-ID mismatch triggers recreation of the container only; mounted workspace data remains on the host.
+- The packaged setup page asks before starting Docker Desktop and before locally building the tools image. It streams Docker's base-layer, and dependency installation progress. A container sandbox-identity or underlying image-ID mismatch triggers recreation of the container only; mounted workspace data remains on the host.
 - Build metadata supplies both the user-facing application version and Apple-compatible `CFBundleShortVersionString`/`CFBundleVersion` values. GitHub Actions uses its monotonic run number for release builds.
-- `Dockerfile.sandbox` starts from `ubuntu:24.04`, installs Node.js inside Ubuntu, builds the MCP source from the pinned submodule commit in the same image, removes development dependencies, and overlays explicitly pinned compatible runtime dependency fixes. Keep the four-tool container smoke test and runtime audit clean when changing those pins.
+- `Dockerfile.sandbox` starts from `ubuntu:24.04` and installs Python, `uv`, Node.js, sandbox packages, and the optional `mcp-remote` bridge. It does not compile or bundle an MCP server. `packaging/smoke_sandbox.py` verifies the Python runtime and workspace mount in release CI.
 
 ## Development conventions
 

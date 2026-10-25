@@ -120,9 +120,15 @@ class TestLoadConfig:
         result = mcp_service.load_editable_config()
         assert result.get("globalEnv") == {"FOO": "bar"}
 
-    def test_effective_config_always_includes_built_in(self):
-        result = mcp_service.load_config()
-        assert result["mcpServers"][mcp_service.BUILTIN_SERVER_NAME] == mcp_service.BUILTIN_SERVER_CONFIG
+    def test_effective_config_has_no_automatic_servers(self):
+        assert mcp_service.load_config() == {"mcpServers": {}}
+
+    def test_effective_config_is_independent_snapshot(self, isolated_mcp_config):
+        config = {"mcpServers": {"python_tools": {"command": "python", "args": ["server.py"]}}}
+        isolated_mcp_config.write_text(json.dumps(config))
+        loaded = mcp_service.load_config()
+        loaded["mcpServers"]["python_tools"]["args"].append("--changed")
+        assert mcp_service.load_editable_config() == config
 
 
 def test_tool_input_schema_supports_mcp_2_field_name():
@@ -168,11 +174,11 @@ class TestSaveConfig:
         with pytest.raises(ValueError, match="mcpServers"):
             mcp_service.save_config({"mcpServers": [1, 2, 3]})
 
-    def test_rejects_built_in_server_override(self):
-        with pytest.raises(ValueError, match="built into Lumen"):
-            mcp_service.save_config({
-                "mcpServers": {mcp_service.BUILTIN_SERVER_NAME: {"command": "host-node"}}
-            })
+    def test_server_names_are_user_configurable(self, isolated_mcp_config):
+        config = {"mcpServers": {"agent_tools": {"command": "python", "args": ["server.py"]}}}
+        mcp_service.save_config(config)
+        assert mcp_service.load_config() == config
+        assert json.loads(isolated_mcp_config.read_text()) == config
 
     def test_write_is_atomic_no_tmp_files_left(self, isolated_mcp_config):
         mcp_service.save_config({"mcpServers": {}})
@@ -217,21 +223,20 @@ class TestFindServer:
     def test_returns_full_server_config(self, isolated_mcp_config):
         server_cfg = {
             "command": "node",
-            "args": ["/path/to/file-tools-mcp-server/dist/index.js"],
+            "args": ["/path/to/custom-server/index.js"],
             "env": {"SOME_VAR": "some_val"},
         }
         isolated_mcp_config.write_text(json.dumps({"mcpServers": {"custom_tools": server_cfg}}))
         result = mcp_service.find_server("custom_tools")
         assert result == server_cfg
 
-    def test_built_in_server_cannot_be_replaced_by_disk_config(self, isolated_mcp_config):
-        disk_config = {
-            "mcpServers": {"agent_tools": {"command": "host-node", "args": ["/tmp/server.js"]}}
-        }
+    def test_loads_user_server_without_rewriting_disk(self, isolated_mcp_config):
+        server = {"command": "python", "args": ["/workspace/server.py"]}
+        disk_config = {"mcpServers": {"agent_tools": server}}
         isolated_mcp_config.write_text(json.dumps(disk_config))
 
-        assert mcp_service.find_server("agent_tools") == mcp_service.BUILTIN_SERVER_CONFIG
-        assert "agent_tools" not in mcp_service.load_editable_config()["mcpServers"]
+        assert mcp_service.find_server("agent_tools") == server
+        assert mcp_service.load_editable_config() == disk_config
         assert json.loads(isolated_mcp_config.read_text()) == disk_config
 
 
