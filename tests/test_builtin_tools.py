@@ -53,6 +53,29 @@ def test_concurrent_edit_rejected(tmp_path, monkeypatch):
     assert path.read_text() == 'concurrent change'
 
 
+@pytest.mark.parametrize('content', ['hello', 'hello\n', 'first\nlast', 'first\nlast\n'])
+def test_complete_lines_are_not_marked_truncated(tmp_path, content):
+    path = tmp_path / 'text'
+    path.write_text(content)
+    assert worker.read(path)['text'] == '\n'.join(
+        f'{number}: {line}' for number, line in enumerate(content.splitlines(), 1)
+    )
+
+
+@pytest.mark.parametrize('ending', ['', '\n'])
+@pytest.mark.parametrize('length', [7, 8, 9, 20])
+def test_line_truncation_requires_omitted_text(tmp_path, monkeypatch, ending, length):
+    # A small line cap makes the per-line marker visible within the output cap.
+    monkeypatch.setattr(worker, 'TEXT_LIMIT', 8)
+    path = tmp_path / 'text'
+    path.write_text('x' * length + ending)
+    result = worker.read(path)['text']
+    expected = '1: ' + 'x' * min(length, 8)
+    if length > 8:
+        expected += ' [line truncated]'
+    assert result == expected
+
+
 def test_ranges_and_long_lines(tmp_path):
     path = tmp_path / 'text'
     path.write_text(''.join(f'line {n}\n' for n in range(1, 501)))

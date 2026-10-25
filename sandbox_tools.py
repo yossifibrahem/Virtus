@@ -138,10 +138,11 @@ def read(path, range_value=None):
                 break
             number += 1
             prefix = chunk[:TEXT_LIMIT]
-            long_line = len(chunk) > TEXT_LIMIT
+            long_line = len(chunk.rstrip(b'\n')) > TEXT_LIMIT
             while chunk and not chunk.endswith(b'\n'):
                 chunk = f.readline(TEXT_LIMIT + 1)
-                long_line = True
+                # EOF (or just the line terminator) discards no text.
+                long_line = long_line or bool(chunk.rstrip(b'\n'))
             if number < start:
                 continue
             if b'\x00' in prefix:
