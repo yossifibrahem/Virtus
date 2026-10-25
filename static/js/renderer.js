@@ -310,7 +310,7 @@ export function renderAllMessages(displayLog) {
       if (entry.role === 'assistant' && !String(entry.content ?? '').trim()) return;
       appendMessage(entry.role, entry.content, idx, entry);
     }
-    if (entry.type === 'tool_result') appendToolResultInline(entry.name, entry.args, entry.result, entry.displayName, idx);
+    if (entry.type === 'tool_result') appendToolResultInline(entry.name, entry.args, entry.media?.length ? { text: entry.result, media: entry.media } : entry.result, entry.displayName, idx);
     if (entry.type === 'thinking') appendThinkingBlock(entry.content, idx);
     if (entry.type === 'status') appendAssistantStatus(entry.content, idx, entry);
   });

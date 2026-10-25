@@ -543,7 +543,7 @@ async function processSSEEvent(raw, ctx) {
     const strip = stripForToolEvent(ctx, evt, 'toolResultIndex');
     // Pass no displayName — renderer.js derives the label via getToolDisplayLabel()
     // which consults the tool_adapters/ system (each adapter declares its own labelArg).
-    if (strip) toolStripFinalize(strip, evt.name, evt.args || {}, evt.result || '');
+    if (strip) toolStripFinalize(strip, evt.name, evt.args || {}, evt.media?.length ? { text: evt.result || '', media: evt.media } : evt.result || '');
     // Note: stripForToolEvent already increments ctx.toolResultIndex internally.
 
     const committedPartial = commitRuntimeAssistantPartial(ctx);
@@ -554,7 +554,7 @@ async function processSSEEvent(raw, ctx) {
       type: 'tool_result',
       name: evt.name,
       args: evt.args || {},
-      result: evt.result || '',
+      result: evt.media?.length ? { text: evt.result || '', media: evt.media } : evt.result || '',
       ...(evt.displayName ? { displayName: evt.displayName } : {}),
     });
 

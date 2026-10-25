@@ -139,9 +139,9 @@ function toolsStatusMessage(tools, skipped) {
     return `${tools.length} tool(s) loaded ✓${skippedText}`;
   }
   if (skipped.length) {
-    return `No tools loaded — ${skipped.map(item => `${item.server}: ${item.reason}`).join('; ')}`;
+    return `No additional MCP tools loaded — ${skipped.map(item => `${item.server}: ${item.reason}`).join('; ')}`;
   }
-  return 'No tools loaded';
+  return 'No additional MCP tools loaded';
 }
 
 function toolsEndpoint() {
@@ -183,7 +183,7 @@ export async function reloadTools() {
     state.mcpTools = result.tools;
     storage.set(STORAGE_KEYS.mcpTools, state.mcpTools);
     renderToolList();
-    _setMcpStatus(toolsStatusMessage(state.mcpTools, result.skipped), state.mcpTools.length ? 'ok' : 'err');
+    _setMcpStatus(toolsStatusMessage(state.mcpTools, result.skipped), result.skipped.length ? 'err' : 'ok');
     showToast(`${state.mcpTools.length} tool(s) loaded`);
   } catch (err) {
     state.mcpTools = [];
@@ -411,7 +411,7 @@ function renderToolList() {
   const container = document.getElementById('tool-list');
 
   if (!state.mcpTools.length) {
-    container.innerHTML = '<div class="no-tools-label">No tools loaded</div>';
+    container.innerHTML = '<div class="no-tools-label">No additional MCP tools loaded</div>';
     return;
   }
 

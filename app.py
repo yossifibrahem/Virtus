@@ -63,6 +63,8 @@ def create_app() -> Flask:
         if origin.strip()
     ]
     CORS(app, origins=allowed_origins)
+    import request_security
+    request_security.install(app)
     app.register_blueprint(routes_startup.blueprint)
     app.register_blueprint(routes_conversations.blueprint)
     app.register_blueprint(routes_chat.blueprint)

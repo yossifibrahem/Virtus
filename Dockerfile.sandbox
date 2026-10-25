@@ -63,6 +63,8 @@ RUN pip3 install --no-cache-dir uv \
         lxml \
         openpyxl \
         pandas \
+        Pillow \
+        PyMuPDF \
         python-dotenv \
         requests
 
@@ -74,5 +76,7 @@ LABEL org.opencontainers.image.title="Lumen MCP Sandbox" \
       org.opencontainers.image.source="https://github.com/yossifibrahem/lumen-ai-chat" \
       com.lumen.sandbox.identity="${LUMEN_SANDBOX_IDENTITY}"
 
+COPY sandbox_tools.py /opt/lumen/sandbox_tools.py
+COPY sandbox_files.py /opt/lumen/sandbox_files.py
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

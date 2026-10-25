@@ -16,6 +16,8 @@ a = Analysis(
         (str(ROOT / "static"), "static"),
         (str(METADATA), "."),
         (str(ROOT / "Dockerfile.sandbox"), "."),
+        (str(ROOT / "sandbox_tools.py"), "."),
+        (str(ROOT / "sandbox_files.py"), "."),
         (str(ROOT / ".dockerignore"), "."),
     ],
     hiddenimports=[

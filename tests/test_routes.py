@@ -330,6 +330,34 @@ class TestImageRoutes:
 
 class TestWorkspaceFileRoutes:
 
+    @pytest.fixture(autouse=True)
+    def worker_transport(self, monkeypatch, tmp_lumen):
+        # Exercise the actual worker and route contract with only Docker replaced.
+        import sandbox_files
+        import builtin_tools
+        import json
+        def transport(runtime_id, argv, payload, **kwargs):
+            root = tmp_lumen["containers_dir"] / runtime_id
+            root.mkdir(parents=True, exist_ok=True)
+            monkeypatch.setattr(sandbox_files, 'ROOT', root)
+            def resolve(value):
+                raw = str(value or '')
+                if raw.startswith('/workspace'):
+                    raw = str(root) + raw[len('/workspace'):]
+                target = (root / raw).resolve()
+                if target != root and root not in target.parents:
+                    raise ValueError('Path escapes workspace')
+                return target
+            monkeypatch.setattr(sandbox_files, 'resolve', resolve)
+            try:
+                result = sandbox_files.execute(json.loads(payload))
+            except FileNotFoundError:
+                result = {'error': 'File not found', 'status': 404}
+            except ValueError as exc:
+                result = {'error': str(exc), 'status': 400}
+            return 0, json.dumps(result).encode(), b''
+        monkeypatch.setattr(builtin_tools, 'docker_operation', transport)
+
     def _make_workspace(self, tmp_lumen) -> tuple[str, Path]:
         conv = store.create("file-test")
         conv_id = conv["id"]
@@ -439,7 +467,7 @@ class TestChatStreamRoutes:
                            json={"stream_id": "ghost-stream"},
                            content_type="application/json")
         assert resp.status_code == 404
-        assert resp.json["ok"] is False
+        assert "error" in resp.json
 
     def test_attach_to_nonexistent_stream_returns_404(self, client, tmp_lumen):
         resp = client.post("/api/chat/stream",
@@ -447,13 +475,12 @@ class TestChatStreamRoutes:
                            content_type="application/json")
         assert resp.status_code == 404
 
-    def test_approve_returns_ok_regardless_of_stream_existence(self, client, tmp_lumen):
-        # resolve_tool_approval is a no-op for unknown streams; route still returns 200
+    def test_approve_rejects_unknown_stream(self, client, tmp_lumen):
+        # Unknown streams cannot be approved.
         resp = client.post("/api/chat/approve",
                            json={"stream_id": "ghost", "call_id": "c1", "approved": True},
                            content_type="application/json")
-        assert resp.status_code == 200
-        assert resp.json["ok"] is True
+        assert resp.status_code == 404
 
 
 # ===========================================================================
@@ -777,7 +804,8 @@ class TestMcpToolsDiscoveryRoutes:
             patch("mcp_service.fetch_tools", new=MagicMock(side_effect=fake_fetch)) as fetch_tools,
             patch("mcp_service.run_async", side_effect=fake_run_async),
         ):
-            resp = client.get("/api/mcp/tools", query_string={"conv_id": "chat-123"})
+            conv = store.create()
+            resp = client.get("/api/mcp/tools", query_string={"conv_id": conv["id"]})
 
         assert resp.status_code == 200
         ensure_container.assert_not_called()
@@ -785,7 +813,7 @@ class TestMcpToolsDiscoveryRoutes:
         fetch_tools.assert_called_once_with(
             "bash",
             config["mcpServers"]["bash"],
-            conv_id="chat-123",
+            conv_id=conv["id"],
         )
 
     def test_skipped_server_reason_is_preserved(self, client, tmp_lumen):

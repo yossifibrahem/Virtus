@@ -7,6 +7,8 @@ from flask import Blueprint, jsonify, request, send_file
 
 import store
 import workspace_service
+import container_files
+import tool_media
 
 blueprint = Blueprint("files", __name__)
 
@@ -32,63 +34,47 @@ def conversation_files(conv_id: str):
     if err := _bad_conv_id(conv_id):
         return err
     if request.method == "GET":
-        return _json_result(workspace_service.list_dir(conv_id, request.args.get("path", "")))
+        return _json_result(container_files.conversation(conv_id, "list", request.args.get("path", "")))
 
     files = request.files.getlist("files")
     if not files:
         return jsonify({"error": "No files uploaded"}), 400
-    return _json_result(workspace_service.save_uploads(conv_id, files))
+    return _json_result(container_files.uploads(conv_id, files))
 
 
 @blueprint.route("/api/conversations/<conv_id>/files/content", methods=["GET"])
 def get_conversation_file_content(conv_id: str):
     if err := _bad_conv_id(conv_id):
         return err
-    return _json_result(workspace_service.read_file(conv_id, request.args.get("path", "")))
+    return _json_result(container_files.conversation(conv_id, "preview", request.args.get("path", "")))
 
 
 @blueprint.route("/api/conversations/<conv_id>/files/download", methods=["GET"])
 def download_conversation_file(conv_id: str):
     if err := _bad_conv_id(conv_id):
         return err
-    if not store.load(conv_id):
-        return jsonify({"error": "Conversation not found"}), 404
-    try:
-        target, _ = workspace_service.resolve_workspace_path(conv_id, request.args.get("path", ""))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    if not target.exists() or not target.is_file():
-        return jsonify({"error": "File not found"}), 404
-    return send_file(target, as_attachment=True, download_name=target.name)
+    return container_files.download_response(*container_files.conversation(conv_id, "download", request.args.get("path", "")))
 
 
 @blueprint.route("/api/folders/<folder_id>/files", methods=["GET"])
 def folder_files(folder_id: str):
     if err := _bad_conv_id(folder_id):
         return err
-    return _json_result(workspace_service.list_folder_dir(folder_id, request.args.get("path", "")))
+    return _json_result(container_files.folder(folder_id, "list", request.args.get("path", "")))
 
 
 @blueprint.route("/api/folders/<folder_id>/files/content", methods=["GET"])
 def get_folder_file_content(folder_id: str):
     if err := _bad_conv_id(folder_id):
         return err
-    return _json_result(workspace_service.read_folder_file(folder_id, request.args.get("path", "")))
+    return _json_result(container_files.folder(folder_id, "preview", request.args.get("path", "")))
 
 
 @blueprint.route("/api/folders/<folder_id>/files/download", methods=["GET"])
 def download_folder_file(folder_id: str):
     if err := _bad_conv_id(folder_id):
         return err
-    if not store.get_folder(folder_id):
-        return jsonify({"error": "Folder not found"}), 404
-    try:
-        target, _ = workspace_service.resolve_folder_workspace_path(folder_id, request.args.get("path", ""))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    if not target.exists() or not target.is_file():
-        return jsonify({"error": "File not found"}), 404
-    return send_file(target, as_attachment=True, download_name=target.name)
+    return container_files.download_response(*container_files.folder(folder_id, "download", request.args.get("path", "")))
 
 
 @blueprint.route("/api/images", methods=["POST"])
@@ -108,3 +94,13 @@ def serve_image(name: str):
         return jsonify({"error": "Not found"}), 404
     ext = name.rsplit(".", 1)[-1]
     return send_file(path, mimetype=f"image/{'jpeg' if ext == 'jpeg' else ext}")
+
+
+@blueprint.route("/api/conversations/<conv_id>/tool-media/<ref>")
+def tool_image(conv_id, ref):
+    if err := _bad_conv_id(conv_id):
+        return err
+    try:
+        return send_file(tool_media.path(conv_id, ref), mimetype="image/jpeg")
+    except ValueError:
+        return jsonify({"error": "Image not found"}), 404

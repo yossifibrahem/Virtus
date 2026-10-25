@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import threading
 import uuid
+import re
+import store
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session, abort
 
 import app_config
 import advanced_config
@@ -18,10 +20,14 @@ _cancel_events: dict[str, threading.Event] = {}
 
 # stream_id -> replayable state for reconnect/reload while a backend turn is active
 _active_streams: dict[str, dict] = {}
+_registry_lock = threading.RLock()
 
 
 def _body() -> dict:
-    return request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        abort(400, description="Expected a JSON object")
+    return body
 
 
 def _stream_state(stream_id: str, conv_id: str = "") -> dict:
@@ -50,7 +56,8 @@ def _finish_stream_state(state: dict) -> None:
     with state["condition"]:
         state["done"] = True
         state["condition"].notify_all()
-    _active_streams.pop(state.get("stream_id"), None)
+    with _registry_lock:
+        _active_streams.pop(state.get("stream_id"), None)
 
 
 def _run_chat_turn(state: dict, body: dict, cancel_event: threading.Event) -> None:
@@ -69,12 +76,24 @@ def chat_stream():
     stream_id = body.get("stream_id") or str(uuid.uuid4())
     conv_id = body.get("conv_id", "")
     attach_only = bool(body.get("attach"))
+    owner = session.get("client_id", "test")
+    if not isinstance(stream_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', stream_id):
+        return jsonify({"error": "Invalid stream id"}), 400
+    if not isinstance(conv_id, str) or not re.fullmatch(r'[a-fA-F0-9-]{36}', conv_id) or not store.load(conv_id):
+        return jsonify({"error": "Conversation not found"}), 404
+    with _registry_lock:
+        existing = _active_streams.get(stream_id)
+        if existing and (existing.get("owner") != owner or existing.get("conv_id") != conv_id):
+            return jsonify({"error": "Stream not found"}), 404
+        if not attach_only and any(s.get("conv_id") == conv_id and not s.get("done") and s.get("stream_id") != stream_id for s in _active_streams.values()):
+            return jsonify({"error": "Conversation already has an active turn"}), 409
 
-    if attach_only and stream_id not in _active_streams:
-        return jsonify({"error": "Stream not found"}), 404
+        if attach_only and stream_id not in _active_streams:
+            return jsonify({"error": "Stream not found"}), 404
 
-    cancel_event = _cancel_events.setdefault(stream_id, threading.Event())
-    state = _stream_state(stream_id, conv_id)
+        cancel_event = _cancel_events.setdefault(stream_id, threading.Event())
+        state = _stream_state(stream_id, conv_id)
+        state["owner"] = owner
 
     if not attach_only:
         with state["lock"]:
@@ -108,6 +127,11 @@ def chat_stream():
 @blueprint.route("/api/chat/cancel", methods=["POST"])
 def chat_cancel():
     stream_id = _body().get("stream_id", "")
+    if not isinstance(stream_id, str):
+        return jsonify({"error": "Invalid stream id"}), 400
+    state = _active_streams.get(stream_id)
+    if not state or state.get("owner") != session.get("client_id", "test"):
+        return jsonify({"error": "Stream not found"}), 404
     event = _cancel_events.get(stream_id)
     if not event:
         return jsonify({"ok": False, "reason": "stream not found"}), 404
@@ -119,6 +143,11 @@ def chat_cancel():
 def chat_approve():
     body = _body()
     stream_id = body.get("stream_id", "")
+    if not isinstance(stream_id, str):
+        return jsonify({"error": "Invalid stream id"}), 400
+    state = _active_streams.get(stream_id)
+    if not state or state.get("owner") != session.get("client_id", "test"):
+        return jsonify({"error": "Stream not found"}), 404
     call_id = body.get("call_id", "")
     approved = bool(body.get("approved", False))
     chat_turn_service.resolve_tool_approval(stream_id, call_id, approved)

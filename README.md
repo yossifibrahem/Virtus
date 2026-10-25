@@ -161,7 +161,7 @@ The development server binds to `127.0.0.1` with debug mode disabled by default.
 
 ### Configuring tools
 
-The built-in tool contract is `bash`, `read`, `write`, and `edit`. The UI supplies their display labels; tool schemas and execution must come from the replacement server. The sandbox currently has no bundled MCP server. Add a server through MCP settings or `~/.lumen/mcp.json`. Python and `uv` are available in the container for a replacement Python server; its code and dependencies must be supplied separately. Node.js and `mcp-remote` remain available for user-configured integrations. Until a server is configured, discovery returns no tools.
+The built-in tools `bash`, `read`, `write`, and `edit` are provided by Lumen itself, with server-owned schemas and container-only execution. They work without an MCP server. Optional MCP servers provide additional tools; their code and dependencies must be available inside the container. Node.js, Python, `uv`, and `mcp-remote` are bundled for these integrations. MCP discovery returns only additional tools, while native tools are injected directly into each chat request.
 
 ## Installation
 
@@ -429,7 +429,7 @@ Click the stop button while a response is streaming. The server marks the stream
 | `streaming.py` | Typed OpenAI streaming event generator; SSE serialization helpers |
 | `mcp_service.py` | MCP config, tool discovery, tool invocation; re-exports `_build_server_params` for use by the pool |
 | `mcp_session_pool.py` | `McpSessionPool` class: worker coroutine, session lifecycle, retry logic for persistent cross-turn reuse |
-| `mcp_adapters.py` | Wraps MCP commands for Docker `exec`; extracts and mounts host volume paths |
+| `mcp_adapters.py` | Wraps MCP commands for Docker `exec`; never infers host mounts from arguments |
 | `container_service.py` | Docker container lifecycle: create, start, stop, idle reaping, workspace management |
 | `workspace_service.py` | Safe file operations inside the conversation workspace; path traversal protection |
 | `store.py` | Filesystem persistence for conversations, folders, and images; cached conversation index |
@@ -504,7 +504,7 @@ Tests are fully isolated: `conftest.py` redirects filesystem paths to `tmp_path`
 | `test_chat_turn_service.py` | Tool approval, title extraction, `TurnRecorder` throttle/finalize |
 | `test_streaming.py` | Event ordering, tool delta accumulation, parallel tools, cancellation |
 | `test_mcp_service.py` | Config cache, malformed config, `McpSessionPool` same-task cleanup |
-| `test_mcp_adapters.py` | Docker exec params, project-root detection, volume deduplication |
+| `test_mcp_adapters.py` | Docker exec params and rejection of implicit host mounts |
 | `test_container_service.py` | Container naming, exec argv/env, name conflicts, idle reaper |
 | `test_routes.py` | HTTP routes, folder/shared-workspace behavior, error paths, conversation update whitelist |
 | `test_tool_approval.py` | Approval gate: request/resolve lifecycle, concurrent approvals, cancel-event unblocking |
@@ -568,3 +568,40 @@ When filing a bug, please include the OS, browser and version, whether this is a
 ## License
 
 MIT — built for people who like local control, readable code, and AI tools that do not require a 14-step deployment ritual.
+
+## Built-in sandbox tools
+
+Every chat has four server-provided tools, even with no MCP servers configured:
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `bash` | `command`, optional `timeout` (1–600 seconds; default 120) | Combined command output and exit status, bounded to 32 KiB. |
+| `read` | `path`, optional `range` (`start:end`, inclusive and one-based) | Text lines, directory listing, image, PDF pages, or notebook cells. |
+| `write` | `path`, `content` | Creates parents and writes UTF-8 text, including empty files. |
+| `edit` | `path`, `old_text`, `new_text`, optional `replace_all` | Exact replacement; ambiguous matches fail unless explicitly replacing all. |
+
+Relative paths start at `/workspace`; absolute paths are **container paths**. Text reads return at most 200 lines/32 KiB; directory reads list two levels and skip dotfiles and `node_modules`. PDF reads default to one page and allow up to five; notebooks default to 20 cells and never execute code. Images and PDF page renders require a vision-capable model. Write/Edit accept at most 1 MiB; use Bash for larger transformations.
+
+Tools run automatically. Bash uses a fresh shell each time: files and installed packages persist in the container, while shell variables and directory changes do not. There are no managed background jobs. Stop/timeout may stop the shared container to terminate every descendant, interrupting other activity in that Folder. Workspace files survive container recreation; installed packages in the container layer do not.
+
+### Isolation and sharing
+
+Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace and shared `/memory.md` only. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. A Folder/Project host-directory picker is not part of this change.
+
+Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
+
+The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Downloads are bounded to 50 MiB. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
+
+After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `read`, `write`, and `edit` are reserved; rename conflicting MCP tools.
+
+### Verification
+
+Run `.venv312/bin/pytest` (or `python -m pytest` in your development environment). Real Docker tests are opt-in:
+
+```sh
+docker build --build-arg LUMEN_SANDBOX_IDENTITY="$(python -c 'import build_info; print(build_info.sandbox_identity())')" -f Dockerfile.sandbox -t lumen-sandbox:builtins-test .
+LUMEN_RUN_DOCKER_TESTS=1 python -m pytest tests/test_builtin_docker.py
+python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
+```
+
+These tests use disposable containers and temporary workspaces; the package-install test accesses public apt/pip/npm registries.

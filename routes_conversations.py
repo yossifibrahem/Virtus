@@ -73,6 +73,8 @@ def delete_folder(folder_id: str):
         return err
     if not store.get_folder(folder_id):
         return jsonify({"error": "Not found"}), 404
+    if any((store.load(c["id"]) or {}).get("active_stream_id") for c in store.folder_conversations(folder_id)):
+        return jsonify({"error": "Stop active chats before deleting this Folder"}), 409
     runtime_id = f"folder_{folder_id}"
     conversation_ids = [
         summary["id"] for summary in store.folder_conversations(folder_id)
@@ -126,6 +128,8 @@ def update_conversation(conv_id: str):
     data = store.load(conv_id)
     if data is None:
         return jsonify({"error": "Not found"}), 404
+    if data.get("active_stream_id") and "folder_id" in body and body["folder_id"] != data.get("folder_id"):
+        return jsonify({"error": "Stop the active turn before moving this chat"}), 409
     old_runtime_id = store.runtime_id(conv_id, data)
     if "folder_id" in body and body["folder_id"] and not store.get_folder(body["folder_id"]):
         return jsonify({"error": "Folder not found"}), 404
@@ -156,6 +160,8 @@ def delete_conversation(conv_id: str):
     data = store.load(conv_id)
     if not data:
         return jsonify({"error": "Not found"}), 404
+    if data.get("active_stream_id"):
+        return jsonify({"error": "Stop the active turn before deleting this chat"}), 409
     runtime_id = store.runtime_id(conv_id, data)
     store.delete(conv_id)
     if not any(store.runtime_id(item["id"]) == runtime_id for item in store.list_all()):
@@ -168,6 +174,8 @@ def delete_conversation(conv_id: str):
 def danger_delete_all():
     """Delete every conversation, its container, and its workspace directory."""
     conversations = store.list_all()
+    if any((store.load(c["id"]) or {}).get("active_stream_id") for c in conversations):
+        return jsonify({"error": "Stop active chats before deleting conversations"}), 409
     errors = []
     for conv in conversations:
         conv_id = conv.get("id")

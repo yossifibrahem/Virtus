@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta name="lumen-csrf" content="{{ session.get('csrf', '') }}">
+  <script src="{{ url_for('static', filename='js/request_security.js') }}"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Lumen · AI Chat</title>
@@ -525,6 +527,7 @@
         <div class="section-sep"></div>
         <div class="settings-section">
           <div class="section-title">Available Tools</div>
+          <p class="field-note">Built-in Bash, Read, Write, and Edit are always available in the sandbox and run automatically. MCP servers add extra tools below.</p>
           <div class="model-box mcp-tools-box">
             <div class="model-box-header mcp-tools-header">
               <span>Connected tools</span>
@@ -534,7 +537,7 @@
               </button>
             </div>
             <div id="tool-list">
-              <div class="no-tools-label">No tools loaded</div>
+              <div class="no-tools-label">No additional MCP tools loaded</div>
             </div>
           </div>
         </div>

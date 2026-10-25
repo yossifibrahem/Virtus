@@ -31,6 +31,8 @@ def _write_sandbox_context(root: Path, newline: str = "\n") -> None:
     files = {
         ".dockerignore": "**\n!Dockerfile.sandbox\n",
         "Dockerfile.sandbox": "FROM ubuntu:24.04\n",
+        "sandbox_tools.py": "# tool worker\n",
+        "sandbox_files.py": "# file worker\n",
     }
     for relative, content in files.items():
         path = root / relative

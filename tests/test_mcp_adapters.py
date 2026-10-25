@@ -153,15 +153,12 @@ class TestExtractHostMounts:
         config = {"args": ["/absolutely/does/not/exist/server.js"]}
         assert mcp_adapters.extract_host_mounts(config) == []
 
-    def test_existing_absolute_path_produces_volume_spec(self, tmp_path):
+    def test_existing_absolute_path_never_mounts_host(self, tmp_path):
         script = tmp_path / "server.js"
         script.write_text("// server")
         config = {"args": [str(script)]}
         result = mcp_adapters.extract_host_mounts(config)
-        # At least one volume spec with src:dst format
-        assert len(result) >= 1
-        for spec in result:
-            assert ":" in spec
+        assert result == []
 
     def test_duplicate_paths_deduplicated(self, tmp_path):
         script = tmp_path / "a.js"

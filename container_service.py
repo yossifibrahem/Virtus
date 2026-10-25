@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 import shutil
@@ -71,7 +72,7 @@ def _run(
     timeout: float | None = None,
 ) -> subprocess.CompletedProcess:
     docker_args = args[1:] if args and args[0] == "docker" else args
-    return docker_cli.run(docker_args, timeout=timeout)
+    return docker_cli.run(docker_args, timeout=timeout if timeout is not None else 30)
 
 # mcp_service is imported lazily to avoid the circular import:
 # mcp_service → mcp_adapters → container_service → mcp_service.
@@ -101,6 +102,20 @@ def _get_mounted_sources(name: str) -> set[str]:
     if result.returncode != 0:
         return set()
     return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
+def _mounts_match(name: str, workspace: Path) -> bool:
+    result = _run(["docker", "inspect", "--format", "{{json .Mounts}}", name])
+    try:
+        mounts = json.loads(result.stdout)
+        expected = {"/workspace": host_path_to_docker_src(str(workspace))}
+        memory_spec = _memory_volume_spec()
+        if memory_spec:
+            expected[memory_service.CONTAINER_PATH] = _volume_source(memory_spec)
+        actual = {m["Destination"]: m["Source"] for m in mounts if m.get("Type") == "bind" and m.get("RW")}
+        return result.returncode == 0 and len(mounts) == len(expected) and actual == expected
+    except (ValueError, KeyError, TypeError):
+        return False
 
 
 def _get_container_image_marker(name: str) -> str:
@@ -169,6 +184,8 @@ def get_status(conv_id: str) -> ContainerStatus:
 
 def ensure_container(conv_id: str, extra_volumes: list[str] | None = None) -> ContainerInfo:
     """Create/start the chat container, safely serialized per conversation."""
+    if extra_volumes:
+        raise ValueError("Implicit host mounts are disabled; use container paths in MCP configuration")
     _touch(conv_id)
     with _container_lock(conv_id):
         return _ensure_container_locked(conv_id, extra_volumes or [])
@@ -186,7 +203,7 @@ def _ensure_container_locked(conv_id: str, extra_volumes: list[str]) -> Containe
             str(_adv_cfg.load_advanced_config()["sandbox_image"])
         )
         image_changed = _container_image_changed(name, expected_image)
-        if missing or image_changed:
+        if missing or image_changed or not _mounts_match(name, workspace):
             if missing:
                 log.info("[container] %s missing volume(s) %s; recreating", name, sorted(missing))
             if image_changed:
@@ -215,6 +232,9 @@ def _ensure_container_locked(conv_id: str, extra_volumes: list[str]) -> Containe
 def _docker_run_command(name: str, workspace: Path, extra_volumes: list[str]) -> list[str]:
     cfg = _adv_cfg.load_advanced_config()
     image = build_info.canonical_image_reference(str(cfg["sandbox_image"]))
+    network = str(cfg["container_network"])
+    if network == "host" or network.startswith("container:"):
+        raise ValueError("Host/shared container network namespaces are not allowed")
     return [
         "docker", "run",
         "--detach",
@@ -223,6 +243,7 @@ def _docker_run_command(name: str, workspace: Path, extra_volumes: list[str]) ->
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
         *_volume_args(workspace, extra_volumes),
         "--workdir", "/workspace",
+        "--pids-limit", "256",
         "--memory", str(cfg["container_memory"]),
         "--cpus",   str(cfg["container_cpus"]),
         "--network", str(cfg["container_network"]),
@@ -255,7 +276,7 @@ def _reuse_conflicting_container(conv_id: str, required_sources: set[str]) -> Co
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
     missing = required_sources - _get_mounted_sources(name)
-    if missing:
+    if missing or not _mounts_match(name, _workspace(conv_id)):
         raise RuntimeError(
             f"Container {name} already exists but is missing required volume(s): {sorted(missing)}"
         )
@@ -441,6 +462,9 @@ def _reap_once() -> None:
         ]
 
     for conv_id, candidate_ts in candidates:
+        import builtin_tools
+        if builtin_tools.is_active(conv_id):
+            continue
         with _last_used_lock:
             current_ts = _last_used.get(conv_id)
             current_now = time.monotonic()

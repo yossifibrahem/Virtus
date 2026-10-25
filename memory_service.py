@@ -44,10 +44,13 @@ def ensure_file() -> Path:
 
 
 def read() -> str:
-    """Return the contents of memory.md, or an empty string if it doesn't exist."""
+    """Read bounded UTF-8 memory; the writable container mount is untrusted."""
     try:
         if MEMORY_FILE.exists():
-            return MEMORY_FILE.read_text().strip()
+            with MEMORY_FILE.open('rb') as source:
+                raw = source.read(32769)
+            text = raw[:32768].decode('utf-8', errors='replace').strip()
+            return text + ('\n[Memory truncated at 32 KiB]' if len(raw) > 32768 else '')
     except OSError:
         pass
     return ""

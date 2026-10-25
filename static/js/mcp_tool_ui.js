@@ -86,6 +86,10 @@ function renderJsonResult(data) {
 }
 
 export function renderToolResultHtml(result, toolName = null, args = {}) {
+  if (result && typeof result === 'object' && Array.isArray(result.media)) {
+    const images = result.media.filter(url => typeof url === 'string' && /^\/api\/conversations\/[a-f0-9-]{36}\/tool-media\/[a-f0-9]{64}\.jpeg$/.test(url));
+    return `<pre class="tr-result">${escapeHtml(result.text || '')}</pre>` + images.slice(0, 5).map(url => `<img src="${escapeHtml(url)}" alt="Read tool visual result" loading="lazy" style="max-width:100%;max-height:600px">`).join('');
+  }
   // Let the registered adapter take first shot at rendering.
   if (toolName) {
     const adapter = adapterFor(toolName);

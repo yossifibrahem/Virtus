@@ -17,6 +17,8 @@ import streaming as stream_module
 import title_service
 import memory_service
 import tool_approval
+import builtin_tools
+import tool_media
 
 
 def _positive_float_env(name: str, default: float) -> float:
@@ -124,7 +126,10 @@ def _tool_call_message(calls: list, content: str | None) -> dict:
 
 def _safe_tool_args(raw_args: str) -> dict:
     try:
-        return json.loads(raw_args or "{}")
+        if not isinstance(raw_args, str) or len(raw_args) > 3 * builtin_tools.FILE_LIMIT:
+            return {}
+        parsed = json.loads(raw_args or "{}")
+        return parsed if isinstance(parsed, dict) else {}
     except Exception:
         return {}
 
@@ -178,12 +183,21 @@ class TurnRecorder:
 
 def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_id: str, publish: Publish) -> None:
     conv_id = body.get("conv_id", "")
-    runtime_id = store.runtime_id(conv_id) if conv_id else ""
+    import re
+    if not isinstance(conv_id, str) or not re.fullmatch(r"[a-fA-F0-9-]{36}", conv_id) or not store.load(conv_id):
+        publish({"type": "error", "message": "A valid conversation is required"})
+        return
+    runtime_id = store.runtime_id(conv_id)
     title = body.get("title") or "Untitled"
     turn_messages = list(body.get("conversation_messages") or [])
     display_log = list(body.get("display_log") or [])
     api_messages = list(body.get("messages") or [])
     tool_meta = _tool_meta_by_name(body)
+    if builtin_tools.NAMES.intersection(tool_meta):
+        publish({"type": "error", "message": "MCP tool names conflict with reserved built-in tools: bash, read, write, edit"})
+        return
+    tools = [t for t in body.get("tools", []) if t.get("function", {}).get("name") not in builtin_tools.NAMES]
+    tools.extend(builtin_tools.SCHEMAS)
     is_first_message = len([m for m in turn_messages if m.get("role") == "user"]) == 1
     api_messages = _inject_memory(api_messages)
     recorder = TurnRecorder(conv_id, title, turn_messages, stream_id)
@@ -224,8 +238,8 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
             for raw in stream_module.stream_chat_completion(
                 openai_client(body),
                 model=body.get("model", "gpt-4o"),
-                messages=api_messages,
-                tools=body.get("tools", []),
+                messages=tool_media.expand(api_messages, conv_id),
+                tools=tools,
                 cancel_event=cancel_event,
                 temperature=float(body.get("temperature", 0.7)),
                 timeout=OPENAI_TIMEOUT_SECONDS,
@@ -269,7 +283,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     call_id = call.get("id", "")
                     args_preview = _safe_tool_args(call.get("function", {}).get("arguments", "{}"))
 
-                    if not meta.get("autoApprove", False):
+                    if name not in builtin_tools.NAMES and meta and not meta.get("autoApprove", False):
                         approved = tool_approval.request_tool_approval(
                             stream_id, call_id, name, args_preview, publish, cancel_event
                         )
@@ -291,16 +305,37 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
 
                     publish({"type": "tool_running", "name": name, "args": args_preview})
 
-                    args, result = _run_mcp_call(meta, call, session_pool)
+                    refs = []
+                    if name in builtin_tools.NAMES:
+                        args = args_preview
+                        try:
+                            raw_args = call.get("function", {}).get("arguments", "{}")
+                            if len(raw_args.encode()) > 3 * builtin_tools.FILE_LIMIT:
+                                raise ValueError("Tool arguments exceed limit")
+                            args = json.loads(raw_args)
+                            native_result = builtin_tools.invoke(runtime_id, name, args, cancel_event)
+                            result = native_result["text"]
+                            refs = tool_media.save(conv_id, native_result.get("images", []))
+                        except Exception as exc:
+                            result = f"Error: {str(exc)[:1000]}"
+                    elif meta and session_pool:
+                        with builtin_tools.runtime_operation(runtime_id, cancel_event):
+                            args, result = _run_mcp_call(meta, call, session_pool)
+                    else:
+                        args, result = args_preview, f"Error: unknown tool {name}"
                     event = {
                         "type": "tool_result",
                         "name": name,
                         "args": args,
                         "result": result,
+                        "media": [f"/api/conversations/{conv_id}/tool-media/{ref}" for ref in refs],
                     }
                     display_log.append({"type": "tool_result", **{k: v for k, v in event.items() if k != "type"}})
-                    turn_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-                    api_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                    response = {"role": "tool", "tool_call_id": call_id, "content": result}
+                    if refs:
+                        response["_tool_media"] = refs
+                    turn_messages.append(response)
+                    api_messages.append(response)
                     recorder.save(display_log, force=True)
                     publish(event)
                 continue

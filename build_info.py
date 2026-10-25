@@ -13,6 +13,8 @@ LOCAL_SANDBOX_IMAGE = "lumen-sandbox:latest"
 _SANDBOX_FIXED_INPUTS = (
     ".dockerignore",
     "Dockerfile.sandbox",
+    "sandbox_tools.py",
+    "sandbox_files.py",
 )
 
 

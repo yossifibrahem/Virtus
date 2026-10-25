@@ -7,6 +7,8 @@ import container_service
 import mcp_adapters
 import mcp_service
 import store
+import builtin_tools
+import re
 from mcp_adapters import ContainerConversationRequired
 
 blueprint = Blueprint("mcp", __name__)
@@ -33,6 +35,8 @@ def save_mcp_config():
 @blueprint.route("/api/mcp/tools", methods=["GET"])
 def list_mcp_tools():
     requested_conv_id = request.args.get("conv_id", "")
+    if requested_conv_id and (not re.fullmatch(r"[a-fA-F0-9-]{36}", requested_conv_id) or not store.load(requested_conv_id)):
+        return jsonify({"error": "Conversation not found"}), 404
     conv_id = store.runtime_id(requested_conv_id) if requested_conv_id else container_service.DISCOVERY_CONTAINER_ID
     tools: list[dict] = []
     skipped: list[dict] = []
@@ -62,6 +66,8 @@ def list_mcp_tools():
         if discovery_mode:
             container_service.stop_container_process(conv_id)
 
+    if any(t.get("name") in builtin_tools.NAMES for t in tools):
+        return jsonify({"error": "MCP tool name conflicts with built-in bash/read/write/edit"}), 409
     return jsonify({"tools": tools, "skipped": skipped} if skipped else tools)
 
 
@@ -74,7 +80,11 @@ def call_mcp_tool():
         return jsonify({"error": f"MCP server '{server_name}' not found"}), 404
 
     requested_conv_id = body.get("conv_id", "")
-    conv_id = store.runtime_id(requested_conv_id) if requested_conv_id else ""
+    if not isinstance(requested_conv_id, str) or not re.fullmatch(r"[a-fA-F0-9-]{36}", requested_conv_id) or not store.load(requested_conv_id):
+        return jsonify({"error": "Conversation not found"}), 404
+    if body.get("tool") in builtin_tools.NAMES:
+        return jsonify({"error": "Reserved built-in tool name"}), 409
+    conv_id = store.runtime_id(requested_conv_id)
     try:
         result = mcp_service.run_async(mcp_service.invoke_tool(
             server_name,

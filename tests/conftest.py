@@ -102,6 +102,7 @@ def app(tmp_lumen, monkeypatch):
         flask_app = app_module.create_app()
 
     flask_app.config["TESTING"] = True
+    flask_app.config["DISABLE_REQUEST_SECURITY"] = True
     return flask_app
 
 

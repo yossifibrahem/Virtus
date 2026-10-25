@@ -58,7 +58,7 @@ def apply_workspace_process_options(
     command, args = container_service.wrap_command_for_exec(
         conv_id,
         params["command"],
-        [translate_arg_for_container(a) for a in params.get("args", [])],
+        [str(a) for a in params.get("args", [])],
         env=container_env,
     )
     params["command"] = command
@@ -70,30 +70,11 @@ def apply_workspace_process_options(
 
 
 def extract_host_mounts(server_config: dict) -> list[str]:
-    """Mount absolute script/project paths used by a container-runtime server."""
-    volumes: list[str] = []
-    seen: set[str] = set()
+    """Host directories must be shared explicitly through Folder settings.
 
-    for arg in server_config.get("args", []):
-        if not isinstance(arg, str):
-            continue
-        path = Path(os.path.expanduser(arg))
-        if not path.is_absolute():
-            continue
-
-        mount_src = find_project_root(path) or (path.parent if path.suffix else path)
-        if not mount_src.exists():
-            log.warning(
-                "[mcp] cannot mount missing path for container server: %s", mount_src
-            )
-            continue
-
-        src = str(mount_src)
-        if src not in seen:
-            seen.add(src)
-            volumes.append(make_volume_spec(src))
-
-    return volumes
+    MCP arguments are container paths, never implicit host mount requests.
+    """
+    return []
 
 
 def find_project_root(path: Path) -> Path | None:

@@ -893,3 +893,17 @@ find . -maxdepth 1 -name 'test_*.py' -print
 - No server-side encryption for stored conversations, images, config, or workspaces
 
 Keep these assumptions in mind before adding features that depend on users, accounts, distributed processes, or durable job queues.
+
+## Native tools architecture
+
+`builtin_tools.py` owns the four function schemas, strict argument validation, per-runtime serialization, bounded Docker transport, and cancellation. `sandbox_tools.py` executes file operations exclusively inside the image; Bash uses a container-side supervisor that adopts and removes orphaned child processes. Transport deadlines stop the entire shared runtime rather than merely terminating the host `docker exec` process. Idle reaping skips active native operations.
+
+`chat_turn_service.py` injects native schemas server-side and dispatches reserved names before MCP routing. Tool results retain the existing one-message-per-call history shape. `_tool_media` contains conversation-scoped image references on tool messages; `tool_media.expand` inserts temporary multimodal context only after a batch of tool responses. The extra context is never persisted as a user turn, so branch/display indices remain stable. Image URLs on display-log results are separately rendered as escaped, same-origin image previews. Providers that reject vision input return their normal API error; no text-only fallback pretends to inspect the image.
+
+`container_files.py` transports file-panel operations to `sandbox_files.py`; no user-controlled workspace paths are opened on the host by the HTTP file routes. Size ceilings apply on both transport and parsing. `request_security.py` enforces allowed Host, same-origin requests, session bootstrap at `/`, and CSRF tokens. The early `request_security.js` wrapper includes the token on fetch requests, including uploads and SSE POSTs. Stream IDs are tied to the browser session and conversation.
+
+Build inputs now include both worker scripts, in `.dockerignore`, `build_info.sandbox_input_files`, and both desktop packaging manifests. MCP configuration no longer authorizes implicit host mounts. Existing containers are reused only when their expected bind mounts and image identity match.
+
+Security assumptions: trusted local user/application configuration and Docker daemon; untrusted model commands, file contents, and container outputs. Root inside the container can damage its own environment and change shared memory. Default network access can reach host services; CPU, memory and process limits are not disk/network quotas. The application is not intended as an authenticated multi-user remote service. Arbitrary external processes editing shared files can still race filesystem operations; native operations serialize and check fingerprints before commits, but this is not a filesystem-wide transaction protocol.
+
+Shared memory injection is also bounded to 32 KiB and decodes invalid UTF-8 safely: commands can modify the memory mount, so the host must never read it without a size ceiling.

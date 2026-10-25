@@ -1,2 +1,5 @@
 **
 !Dockerfile.sandbox
+
+!sandbox_tools.py
+!sandbox_files.py
