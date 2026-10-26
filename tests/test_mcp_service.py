@@ -14,6 +14,7 @@ import json
 import sys
 import threading
 import types
+from datetime import timedelta
 import pytest
 
 import mcp_service
@@ -331,7 +332,14 @@ class TestMcpSessionPool:
                 self.exited += 1
 
             async def initialize(self):
+                # The SDK calls total_seconds() when sending initialize.
+                self.read_timeout_seconds.total_seconds()
                 self.initialized += 1
+
+            async def list_tools(self):
+                return SimpleNamespace(tools=[SimpleNamespace(
+                    name="tool", description="A test tool", inputSchema={"type": "object"},
+                )])
 
             async def call_tool(self, tool_name, arguments):
                 self.calls.append((tool_name, arguments))
@@ -459,7 +467,37 @@ class TestMcpSessionPool:
         finally:
             pool.close()
 
-        assert created_sessions[0].read_timeout_seconds == 2.5
+        assert created_sessions[0].read_timeout_seconds == timedelta(seconds=2.5)
+
+    @pytest.mark.parametrize("operation", ["fetch_tools", "invoke_tool"])
+    @pytest.mark.parametrize("configured_timeout, expected_seconds", [
+        (None, 120), ("2.5", 2.5), ("invalid", 120), ("0", 120), ("-1", 120),
+    ])
+    def test_one_shot_sessions_use_sdk_timeout_type(
+        self, monkeypatch, operation, configured_timeout, expected_seconds,
+    ):
+        created_stdio, created_sessions = self._install_fake_mcp(monkeypatch)
+        if configured_timeout is None:
+            monkeypatch.delenv("LUMEN_MCP_TOOL_TIMEOUT", raising=False)
+        else:
+            monkeypatch.setenv("LUMEN_MCP_TOOL_TIMEOUT", configured_timeout)
+
+        if operation == "fetch_tools":
+            result = mcp_service.run_async(mcp_service.fetch_tools("srv", {}))
+            assert result == [{
+                "server": "srv", "name": "tool", "description": "A test tool",
+                "inputSchema": {"type": "object"},
+            }]
+        else:
+            result = mcp_service.run_async(
+                mcp_service.invoke_tool("srv", {}, "tool", {"n": 1})
+            )
+            assert result == "tool:1"
+
+        assert created_sessions[0].read_timeout_seconds == timedelta(seconds=expected_seconds)
+        assert created_sessions[0].initialized == 1
+        assert created_sessions[0].exited == 1
+        assert created_stdio[0].exited == 1
 
     def test_sdk_timeout_is_reported_without_stale_session_retry(self, monkeypatch):
         attempts = {"count": 0}
