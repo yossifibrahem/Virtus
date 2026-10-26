@@ -9,7 +9,7 @@
  */
 
 import { registerAdapter, injectStyles } from './registry.js';
-import { escapeHtml } from '../mcp_tool_ui.js';
+import { escapeHtml } from '../format.js';
 
 // ── Self-contained styles ─────────────────────────────────────────────────────
 

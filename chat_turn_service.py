@@ -18,6 +18,7 @@ import title_service
 import memory_service
 import tool_approval
 import builtin_tools
+import sandbox_runtime
 import tool_media
 
 
@@ -29,6 +30,8 @@ def _positive_float_env(name: str, default: float) -> float:
         return default
     return value if value > 0 else default
 
+
+MAX_TOOL_ARGUMENT_BYTES = 3 * 1024 * 1024
 
 OPENAI_TIMEOUT_SECONDS = _positive_float_env("LUMEN_OPENAI_TIMEOUT", 120.0)
 
@@ -126,7 +129,7 @@ def _tool_call_message(calls: list, content: str | None) -> dict:
 
 def _safe_tool_args(raw_args: str) -> dict:
     try:
-        if not isinstance(raw_args, str) or len(raw_args) > 3 * builtin_tools.FILE_LIMIT:
+        if not isinstance(raw_args, str) or len(raw_args) > MAX_TOOL_ARGUMENT_BYTES:
             return {}
         parsed = json.loads(raw_args or "{}")
         return parsed if isinstance(parsed, dict) else {}
@@ -310,7 +313,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                         args = args_preview
                         try:
                             raw_args = call.get("function", {}).get("arguments", "{}")
-                            if len(raw_args.encode()) > 3 * builtin_tools.FILE_LIMIT:
+                            if len(raw_args.encode()) > MAX_TOOL_ARGUMENT_BYTES:
                                 raise ValueError("Tool arguments exceed limit")
                             args = json.loads(raw_args)
                             native_result = builtin_tools.invoke(runtime_id, name, args, cancel_event)
@@ -319,7 +322,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                         except Exception as exc:
                             result = f"Error: {str(exc)[:1000]}"
                     elif meta and session_pool:
-                        with builtin_tools.runtime_operation(runtime_id, cancel_event):
+                        with sandbox_runtime.runtime_operation(runtime_id, cancel_event):
                             args, result = _run_mcp_call(meta, call, session_pool)
                     else:
                         args, result = args_preview, f"Error: unknown tool {name}"

@@ -462,8 +462,8 @@ def _reap_once() -> None:
         ]
 
     for conv_id, candidate_ts in candidates:
-        import builtin_tools
-        if builtin_tools.is_active(conv_id):
+        import sandbox_runtime
+        if sandbox_runtime.is_active(conv_id):
             continue
         with _last_used_lock:
             current_ts = _last_used.get(conv_id)

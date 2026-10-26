@@ -1,21 +1,15 @@
 """Server-owned native tool contracts and bounded Docker execution."""
 from __future__ import annotations
 import base64
-from contextlib import contextmanager
 import json
-import subprocess
-import threading
-import time
 
 import container_service
 import docker_cli
+import sandbox_runtime
 
 TEXT_LIMIT = 32768
 FILE_LIMIT = 1024 * 1024
 NAMES = frozenset({'bash', 'read', 'write', 'edit'})
-_LOCKS = {}
-_GUARD = threading.Lock()
-_ACTIVE = set()
 
 
 def schema(name, description, properties, required):
@@ -57,110 +51,6 @@ def validate(name, args):
         raise ValueError('Invalid path')
 
 
-@contextmanager
-def runtime_operation(runtime_id, cancel=None):
-    with _GUARD:
-        lock = _LOCKS.setdefault(runtime_id, threading.RLock())
-    while not lock.acquire(timeout=.1):
-        if cancel and cancel.is_set():
-            raise ValueError('Operation cancelled')
-    try:
-        if cancel and cancel.is_set():
-            raise ValueError('Operation cancelled')
-        with _GUARD:
-            _ACTIVE.add(runtime_id)
-        yield
-    finally:
-        with _GUARD:
-            _ACTIVE.discard(runtime_id)
-        container_service._touch(runtime_id)
-        lock.release()
-
-
-def is_active(runtime_id):
-    with _GUARD:
-        return runtime_id in _ACTIVE
-
-
-class Capture:
-    def __init__(self, limit, tail=False):
-        self.limit, self.tail = limit, tail
-        self.first = bytearray()
-        self.last = bytearray()
-        self.total = 0
-    def add(self, chunk):
-        self.total += len(chunk)
-        first_limit = self.limit // 2 if self.tail else self.limit
-        needed = max(0, first_limit - len(self.first))
-        self.first.extend(chunk[:needed])
-        if self.tail:
-            self.last.extend(chunk[needed:])
-            del self.last[:max(0, len(self.last) - self.limit // 2)]
-    def value(self):
-        if self.total > self.limit and self.tail:
-            return bytes(self.first[:-80]) + b'\n[output truncated; redirect to a file for full logs]\n' + bytes(self.last)
-        return bytes(self.first + self.last)
-
-
-def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, limit=8*FILE_LIMIT, tail=False):
-    """Bound both transport output and wall time; never invoke a host shell."""
-    container_service.ensure_container(runtime_id)
-    command = ['exec', '-i', '--workdir', '/workspace', container_service.container_name(runtime_id), *argv]
-    proc = subprocess.Popen(docker_cli.argv(command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, **docker_cli._windowless_process_kwargs())
-    output, errors = Capture(limit, tail), Capture(4096)
-    def drain(pipe, capture):
-        try:
-            while chunk := pipe.read(8192):
-                capture.add(chunk)
-        finally:
-            pipe.close()
-    def feed():
-        try:
-            proc.stdin.write(payload)
-            proc.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass
-    threads = [threading.Thread(target=drain, args=(proc.stdout, output), daemon=True),
-               threading.Thread(target=drain, args=(proc.stderr, errors), daemon=True),
-               threading.Thread(target=feed, daemon=True)]
-    for thread in threads:
-        thread.start()
-    deadline = time.monotonic() + timeout
-    interrupted = None
-    while proc.poll() is None:
-        if cancel and cancel.is_set():
-            interrupted = 'Operation cancelled'
-        elif time.monotonic() >= deadline:
-            interrupted = 'Operation timed out'
-        elif not tail and output.total > limit:
-            interrupted = 'Worker output exceeded limit'
-        if interrupted:
-            # Killing docker-exec alone leaves container children running. Kill the
-            # entire runtime, including detached descendants, before returning.
-            try:
-                result = docker_cli.run(['kill', container_service.container_name(runtime_id)], timeout=10)
-                if result.returncode:
-                    interrupted += '; could not confirm container shutdown'
-            except Exception:
-                interrupted += '; could not confirm container shutdown'
-            proc.kill()
-            break
-        time.sleep(.05)
-    proc.wait(timeout=5)
-    for thread in threads:
-        thread.join(timeout=2)
-    if any(thread.is_alive() for thread in threads):
-        docker_cli.run(['kill', container_service.container_name(runtime_id)], timeout=10)
-        interrupted = interrupted or 'Worker descendants retained transport pipes'
-    if interrupted:
-        container_service._invalidate_mcp_pool(runtime_id)
-        raise ValueError(interrupted + '; shared runtime interrupted')
-    if output.total > limit and not tail:
-        raise ValueError('Worker output exceeded limit')
-    return proc.returncode, output.value(), errors.value()
-
-
 # A separate process group lets the supervisor remove ordinary background
 # descendants after Bash exits. Timeout/cancel additionally kills the container.
 BASH_RUNNER = '''import ctypes,os,signal,subprocess,sys,time
@@ -192,9 +82,9 @@ sys.exit(code)
 
 def invoke(runtime_id, name, args, cancel=None):
     validate(name, args)
-    with runtime_operation(runtime_id, cancel):
+    with sandbox_runtime.runtime_operation(runtime_id, cancel):
         if name == 'bash':
-            code, raw, error = docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '-c', BASH_RUNNER],
+            code, raw, error = sandbox_runtime.docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '-c', BASH_RUNNER],
                 args['command'].encode(), args.get('timeout', 120), cancel, TEXT_LIMIT - 512, True)
             if code == 125 or code >= 128:
                 docker_cli.run(['kill', container_service.container_name(runtime_id)], timeout=10)
@@ -206,7 +96,7 @@ def invoke(runtime_id, name, args, cancel=None):
             if len(encoded) > TEXT_LIMIT - 80:
                 text = encoded[:16000].decode('utf-8', 'ignore') + '\n[output truncated]\n' + encoded[-16000:].decode('utf-8', 'ignore')
             return {'text': text + f'\n[exit status {code}]'}
-        code, raw, error = docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py'],
+        code, raw, error = sandbox_runtime.docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py'],
             json.dumps({'name': name, 'args': args}).encode(), 30, cancel)
         if code:
             raise ValueError('Container worker failed: ' + error.decode('utf-8', 'replace'))

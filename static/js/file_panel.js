@@ -599,10 +599,27 @@ export function initFilePanel() {
     link.click();
   });
 
-  document.addEventListener('lumen:open-workspace-file', e => {
+  document.addEventListener('lumen:open-workspace-file', async e => {
     const path = e.detail?.path;
     if (!path) return;
     setPanelOpen(true);
+    if (e.detail?.reveal) {
+      // Native Read can target a directory. Expand its path in the workspace tree.
+      const apiBase = workspaceApiBase();
+      if (!apiBase) return;
+      const payload = await api.get(`${apiBase}/files?path=${encodeURIComponent(path)}`).catch(() => ({ error: "Could not inspect path" }));
+      if (apiBase !== workspaceApiBase()) return;
+      if (!payload.error) {
+        let current = WORKSPACE_ROOT;
+        for (const part of path.slice(WORKSPACE_ROOT.length).split('/').filter(Boolean)) {
+          current += '/' + part;
+          expandedPaths.add(current);
+        }
+        closePreview();
+        await loadFileList();
+        return;
+      }
+    }
     loadFilePreview(path).catch(() => {});
   });
 }

@@ -334,7 +334,7 @@ class TestWorkspaceFileRoutes:
     def worker_transport(self, monkeypatch, tmp_lumen):
         # Exercise the actual worker and route contract with only Docker replaced.
         import sandbox_files
-        import builtin_tools
+        import sandbox_runtime
         import json
         def transport(runtime_id, argv, payload, **kwargs):
             root = tmp_lumen["containers_dir"] / runtime_id
@@ -356,7 +356,7 @@ class TestWorkspaceFileRoutes:
             except ValueError as exc:
                 result = {'error': str(exc), 'status': 400}
             return 0, json.dumps(result).encode(), b''
-        monkeypatch.setattr(builtin_tools, 'docker_operation', transport)
+        monkeypatch.setattr(sandbox_runtime, 'docker_operation', transport)
 
     def _make_workspace(self, tmp_lumen) -> tuple[str, Path]:
         conv = store.create("file-test")
@@ -840,3 +840,19 @@ class TestMcpToolsDiscoveryRoutes:
             "skipped": [{"server": "remote", "reason": "needs a conversation"}],
         }
         stop_container_process.assert_called_once_with("mcp-discovery")
+
+
+def test_direct_mcp_call_tracks_shared_runtime_activity(client, tmp_lumen, monkeypatch):
+    import sandbox_runtime
+    conv = store.create('MCP activity')
+    monkeypatch.setattr('mcp_service.find_server', lambda name: {'command': 'example'})
+    monkeypatch.setattr('mcp_service.invoke_tool', lambda *a, **k: 'invocation')
+    def run(invocation):
+        assert invocation == 'invocation'
+        assert sandbox_runtime.is_active(conv['id'])
+        return 'done'
+    monkeypatch.setattr('mcp_service.run_async', run)
+    response = client.post('/api/mcp/call', json={'conv_id': conv['id'], 'server': 'example', 'tool': 'external_tool', 'arguments': {}})
+    assert response.status_code == 200
+    assert response.json == {'result': 'done'}
+    assert not sandbox_runtime.is_active(conv['id'])

@@ -606,7 +606,7 @@ Tool names sent to the model come directly from `tool.name` in `chat_payloads.js
 
 Existing adapters:
 
-- `core_tools.js`: display labels for the built-in `bash`, `read`, `write`, and `edit` contract; argument schemas and execution come from the server
+- Native adapters live separately in `native_tools/`; they never register with the external MCP adapter registry.
 - `exa.js`: Exa search/fetch/deep-research tools with custom card rendering
 
 ### Renderer: `renderer.js` and sub-modules
@@ -896,7 +896,7 @@ Keep these assumptions in mind before adding features that depend on users, acco
 
 ## Native tools architecture
 
-`builtin_tools.py` owns the four function schemas, strict argument validation, per-runtime serialization, bounded Docker transport, and cancellation. `sandbox_tools.py` executes file operations exclusively inside the image; Bash uses a container-side supervisor that adopts and removes orphaned child processes. Transport deadlines stop the entire shared runtime rather than merely terminating the host `docker exec` process. Idle reaping skips active native operations.
+`builtin_tools.py` owns the four function schemas, strict argument validation, and native dispatch. `sandbox_runtime.py` owns shared per-runtime serialization, activity tracking, bounded Docker transport, and cancellation; MCP calls and file-panel operations use it without depending on native tool implementations. `sandbox_tools.py` executes file operations exclusively inside the image; Bash uses a container-side supervisor that adopts and removes orphaned child processes. Transport deadlines stop the entire shared runtime rather than merely terminating the host `docker exec` process. Idle reaping skips active sandbox operations.
 
 `chat_turn_service.py` injects native schemas server-side and dispatches reserved names before MCP routing. Tool results retain the existing one-message-per-call history shape. `_tool_media` contains conversation-scoped image references on tool messages; `tool_media.expand` inserts temporary multimodal context only after a batch of tool responses. The extra context is never persisted as a user turn, so branch/display indices remain stable. Image URLs on display-log results are separately rendered as escaped, same-origin image previews. Providers that reject vision input return their normal API error; no text-only fallback pretends to inspect the image.
 
@@ -907,3 +907,14 @@ Build inputs now include both worker scripts, in `.dockerignore`, `build_info.sa
 Security assumptions: trusted local user/application configuration and Docker daemon; untrusted model commands, file contents, and container outputs. Root inside the container can damage its own environment and change shared memory. Default network access can reach host services; CPU, memory and process limits are not disk/network quotas. The application is not intended as an authenticated multi-user remote service. Arbitrary external processes editing shared files can still race filesystem operations; native operations serialize and check fingerprints before commits, but this is not a filesystem-wide transaction protocol.
 
 Shared memory injection is also bounded to 32 KiB and decodes invalid UTF-8 safely: commands can modify the memory mount, so the host must never read it without a size ceiling.
+
+
+### Native tool presentation
+
+`tool_ui.js` is the presentation router used by `renderer_tools.js`. Reserved native names dispatch to the fixed map in `native_tools/index.js`; all other names dispatch to `mcp_tool_ui.js` and the external `tool_adapters/` registry. External registrations and MCP icon settings cannot override native tools. Native modules do not import MCP modules. Backend schemas and execution remain in `builtin_tools.py` and the container workers.
+
+Each native adapter owns its label, progress label, icon, outcome badge, and expanded body. Bash presents the command/output and parsed exit status; Read renders numbered text and allowlisted conversation-scoped media; Write folds its supplied content; Edit shows the requested exact replacement, not an invented whole-file diff. Shared helpers escape all values, limit UI previews, and validate workspace paths. Native file actions use the existing file-panel event, with directory reveal support. Styles live in `15-native-tools.css` and use existing theme variables.
+
+To customize a built-in, edit its module under `native_tools/`. To customize an external server tool, add an adapter to `tool_adapters/` and import it in that directory's manifest. Keep native names out of the MCP registry. Node-based tests cover dispatch isolation, rendering safety, native states, and generic MCP fallback.
+
+Shared escaped argument/result formatting lives in `tool_format.js`. `renderer_tools.js` uses only the presentation router for tool-family decisions; MCP-specific icon settings and argument/result sections remain in `mcp_tool_ui.js`. Runtime activity tracking is reference-counted so nested operations cannot incorrectly expose an active runtime to idle reaping.

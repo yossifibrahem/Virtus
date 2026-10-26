@@ -6,6 +6,7 @@ import threading
 from unittest.mock import Mock
 import pytest
 import builtin_tools as native
+import sandbox_runtime
 import sandbox_tools as worker
 import container_service
 import store
@@ -127,7 +128,7 @@ def test_notebook_is_not_executed(tmp_path):
 
 
 def test_capture_keeps_head_tail_bounded():
-    capture = native.Capture(32768, True)
+    capture = sandbox_runtime.Capture(32768, True)
     capture.add(b'HEAD' + b'x' * 1000000 + b'TAIL')
     assert capture.value().startswith(b'HEAD') and capture.value().endswith(b'TAIL')
     assert len(capture.value()) <= 32768
@@ -135,7 +136,7 @@ def test_capture_keeps_head_tail_bounded():
 
 def test_tool_uses_structured_stdin_never_host_shell(monkeypatch):
     call = Mock(return_value=(0, b'{"text":"ok"}', b''))
-    monkeypatch.setattr(native, 'docker_operation', call)
+    monkeypatch.setattr(sandbox_runtime, 'docker_operation', call)
     native.invoke('runtime', 'read', {'path': '$(touch /host);file'})
     args = call.call_args.args
     assert args[1] == ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py']
@@ -143,7 +144,7 @@ def test_tool_uses_structured_stdin_never_host_shell(monkeypatch):
 
 
 def test_cancel_before_lock_does_not_execute(monkeypatch):
-    call = Mock(); monkeypatch.setattr(native, 'docker_operation', call)
+    call = Mock(); monkeypatch.setattr(sandbox_runtime, 'docker_operation', call)
     cancel = threading.Event(); cancel.set()
     with pytest.raises(ValueError, match='cancelled'):
         native.invoke('runtime', 'bash', {'command': 'echo x'}, cancel)
@@ -204,26 +205,26 @@ def test_runtime_serialization_and_idle_exemption(monkeypatch):
     release = threading.Event()
     order = []
     def first():
-        with native.runtime_operation('shared'):
+        with sandbox_runtime.runtime_operation('shared'):
             order.append('first')
             entered.set()
             release.wait(2)
     def second():
         entered.wait(2)
-        with native.runtime_operation('shared'):
+        with sandbox_runtime.runtime_operation('shared'):
             order.append('second')
     a = threading.Thread(target=first); b = threading.Thread(target=second)
     a.start(); b.start(); entered.wait(2)
-    assert native.is_active('shared')
+    assert sandbox_runtime.is_active('shared')
     assert order == ['first']
     release.set(); a.join(2); b.join(2)
     assert order == ['first', 'second']
-    assert not native.is_active('shared')
+    assert not sandbox_runtime.is_active('shared')
 
 
 def test_forged_worker_media_is_rejected(monkeypatch):
     result = json.dumps({'text': 'ok', 'images': [{'mime': 'text/html', 'data': 'PHNjcmlwdD4='}]}).encode()
-    monkeypatch.setattr(native, 'docker_operation', lambda *a, **k: (0, result, b''))
+    monkeypatch.setattr(sandbox_runtime, 'docker_operation', lambda *a, **k: (0, result, b''))
     with pytest.raises(ValueError, match='image'):
         native.invoke('runtime', 'read', {'path': 'x.png'})
 
@@ -237,3 +238,16 @@ def test_shared_memory_read_is_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(memory_service, 'MEMORY_FILE', path)
     assert len(memory_service.read()) < 33000
     assert 'truncated' in memory_service.read()
+
+
+def test_nested_runtime_operations_stay_active():
+    with sandbox_runtime.runtime_operation('nested'):
+        with sandbox_runtime.runtime_operation('nested'):
+            assert sandbox_runtime.is_active('nested')
+        assert sandbox_runtime.is_active('nested')
+        cancel = threading.Event(); cancel.set()
+        with pytest.raises(ValueError):
+            with sandbox_runtime.runtime_operation('nested', cancel):
+                pass
+        assert sandbox_runtime.is_active('nested')
+    assert not sandbox_runtime.is_active('nested')

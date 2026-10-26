@@ -5,8 +5,9 @@ import { ICONS } from './icons.js';
 import { state } from './state.js';
 import { escapeHtml } from './format.js';
 import {
-  getToolDisplayLabel, getToolUsingLabel, formatArgsHtml, renderToolResultHtml, visibleToolArgs,
-} from './mcp_tool_ui.js';
+  getToolDisplayLabel, getToolUsingLabel, formatArgsHtml, renderToolBody, getToolIcon,
+  getToolKind, getToolOutcome, getToolRunningArgs, bindToolActions,
+} from './tool_ui.js';
 import { scrollToBottom } from './renderer_core.js';
 import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel } from './renderer_groups.js';
 
@@ -14,47 +15,27 @@ import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel
 const activeApprovalCancellers = new Set();
 
 function getToolIconSvg(toolName) {
-  const tool = state.mcpTools.find(t => t.name === toolName);
-  if (!tool) return ICONS.toolDefault;
-  const serverSettings = state.mcpServerSettings[tool.server] || {};
-  const toolSettings   = serverSettings.tools?.[toolName] || {};
-  const iconKey = toolSettings.icon || serverSettings.icon || 'toolDefault';
-  return ICONS[iconKey] || ICONS.toolDefault;
-}
-
-function createToolResultBody(toolName, args, result) {
-  const displayArgs = visibleToolArgs(toolName, args);
-  const sections = [];
-
-  if (Object.keys(displayArgs).length) {
-    sections.push(`
-      <div class="tr-section">
-        <div class="tr-section-label">Arguments</div>
-        <div class="tr-args">${formatArgsHtml(displayArgs)}</div>
-      </div>`);
-  }
-
-  sections.push(`
-    <div class="tr-section">
-      <div class="tr-section-label">Result</div>
-      ${renderToolResultHtml(result, toolName, args)}
-    </div>`);
-
-  return sections.join('');
+  return getToolIcon(toolName, ICONS, state.mcpTools, state.mcpServerSettings);
 }
 
 function applyToolResultStrip(strip, toolName, args, result, displayName = '') {
   const expanded = !state.hideToolBlocks;
   const label = getToolDisplayLabel(toolName, args) || displayName;
+  const outcome = getToolOutcome(toolName, result);
 
   strip.className = `tool-strip tool-strip-result tool-inline${expanded ? ' open' : ''}`;
+  strip.dataset.toolName = toolName;
+  strip.dataset.toolKind = getToolKind(toolName);
   strip.innerHTML = `
-    <button class="tr-summary">
+    <button class="tr-summary" title="${escapeHtml(label)}">
       <span class="tr-chevron">${expanded ? ICONS.chevronDown : ICONS.chevronRight}</span>
       <span class="tool-icon">${getToolIconSvg(toolName)}</span>
       <span class="tr-tool-name">${escapeHtml(label)}</span>
+      ${outcome ? `<span class="native-outcome native-outcome--${outcome.tone}">${escapeHtml(outcome.label)}</span>` : ''}
     </button>
-    <div class="tr-body" style="${expanded ? '' : 'display:none'}">${createToolResultBody(toolName, args, result)}</div>`;
+    <div class="tr-body" style="${expanded ? '' : 'display:none'}">${renderToolBody(toolName, args, result)}</div>`;
+
+  bindToolActions(strip, toolName, args);
 
   attachCollapsible(strip, {
     headerSelector:  '.tr-summary',
@@ -100,6 +81,7 @@ export function createToolStrip(toolName, displayName = '') {
   const row = prepareAssistantRow();
   const strip = createElement('div', { className: 'tool-strip tool-strip-using' });
   strip.dataset.toolName = toolName;
+  strip.dataset.toolKind = getToolKind(toolName);
   const usingLabel = getToolUsingLabel(toolName) || displayName || toolName;
   strip.dataset.displayName = usingLabel;
   strip.innerHTML = `
@@ -182,14 +164,15 @@ export function toolStripSetRunning(strip, args = {}) {
   const name = strip.dataset.toolName || '';
   const displayName = getToolDisplayLabel(name, args);
   strip.dataset.displayName = displayName;
-  const hasArgs = Object.keys(args).length > 0;
+  const runningArgs = getToolRunningArgs(name, args);
+  const hasArgs = Object.keys(runningArgs).length > 0;
   strip.className = 'tool-strip tool-strip-running';
   strip.innerHTML = `
     <div class="tool-strip-running-row">
       <span class="tool-icon">${getToolIconSvg(name)}</span>
       <span class="tui-name">${escapeHtml(displayName)}</span>
     </div>
-    ${hasArgs ? `<div class="tc-item-args" style="display:none">${formatArgsHtml(args)}</div>` : ''}`;
+    ${hasArgs ? `<div class="tc-item-args" style="display:none">${formatArgsHtml(runningArgs)}</div>` : ''}`;
 
   updateGroupLabel(strip.closest('.block-group'));
   scrollToBottom();

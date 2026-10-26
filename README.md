@@ -474,7 +474,8 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 | `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
 | `settings.js` | API and chat settings UI |
 | `markdown.js` | Markdown, code highlighting, KaTeX, safe workspace file links |
-| `tool_adapters/` | Per-tool display adapters (`core_tools.js` for `bash`, `read`, `write`, `edit`; `exa.js` for Exa) |
+| `tool_ui.js` / `native_tools/` | Shared presentation routing and dedicated Bash, Read, Write, Edit views |
+| `tool_adapters/` | External MCP display adapters, including Exa |
 
 The frontend maintains two parallel histories: `state.messages` (model/API-facing) and `state.displayLog` (UI-facing). These have different structures and indices — do not conflate them. Branches for edited messages and regenerated responses are stored in `displayLog` so the visible conversation can switch paths while preserving the saved model history.
 

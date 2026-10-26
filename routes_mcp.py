@@ -8,6 +8,7 @@ import mcp_adapters
 import mcp_service
 import store
 import builtin_tools
+import sandbox_runtime
 import re
 from mcp_adapters import ContainerConversationRequired
 
@@ -86,13 +87,14 @@ def call_mcp_tool():
         return jsonify({"error": "Reserved built-in tool name"}), 409
     conv_id = store.runtime_id(requested_conv_id)
     try:
-        result = mcp_service.run_async(mcp_service.invoke_tool(
-            server_name,
-            server_config,
-            body.get("tool", ""),
-            body.get("arguments", {}),
-            conv_id=conv_id,
-        ))
+        with sandbox_runtime.runtime_operation(conv_id):
+            result = mcp_service.run_async(mcp_service.invoke_tool(
+                server_name,
+                server_config,
+                body.get("tool", ""),
+                body.get("arguments", {}),
+                conv_id=conv_id,
+            ))
     except ContainerConversationRequired as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"result": result})

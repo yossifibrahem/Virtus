@@ -1,5 +1,5 @@
 /**
- * Tool Adapter Manifest
+ * External MCP Tool Adapter Manifest
  *
  * This is the only file you need to edit when adding or removing a tool adapter.
  *
@@ -18,7 +18,6 @@
  */
 
 // ── Adapter registrations (order does not matter) ─────────────────────────────
-import './core_tools.js';
 import './exa.js';
 
 // ── Re-export the registry API ────────────────────────────────────────────────
