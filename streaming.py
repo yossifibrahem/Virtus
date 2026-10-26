@@ -16,7 +16,7 @@ from openai import OpenAI
 
 def sse_event(payload: dict) -> str:
     """Encode a dict as a Server-Sent Event data line."""
-    return f"data: {json.dumps(payload)}\n\n"
+    return f"data: {json.dumps(payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
 def _merge_tool_call_chunk(store: dict[int, dict], chunk) -> None:

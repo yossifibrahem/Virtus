@@ -6,6 +6,7 @@ the real ~/.lumen directory.
 """
 from __future__ import annotations
 
+
 import base64
 import hashlib
 import pytest
@@ -242,3 +243,31 @@ class TestListAll:
         store._remove_index_entry("conv-1")
 
         assert lock.entries == 2
+
+
+def test_conversations_use_utf8_even_with_windows_locale(tmp_lumen, monkeypatch):
+    """Model output must persist when the system text encoding cannot represent it."""
+    from pathlib import Path
+    import store
+
+    original_open = Path.open
+    def windows_open(path, mode='r', buffering=-1, encoding=None, errors=None, newline=None):
+        if 'b' not in mode and encoding in (None, 'locale'):
+            encoding = 'cp1252'
+        return original_open(path, mode, buffering, encoding, errors, newline)
+    monkeypatch.setattr(Path, 'open', windows_open)
+    text = 'مرحبا 🌍'
+    conversation = store.create(text)
+    conversation['messages'] = [{'role': 'assistant', 'content': text}]
+    store.save(conversation['id'], conversation)
+    assert store.load(conversation['id'])['messages'][0]['content'] == text
+    store.invalidate_index()
+    assert store.list_all()[0]['title'] == text
+
+    # Legacy Windows conversations remain readable and migrate on their next save.
+    path = tmp_lumen['conv_dir'] / (conversation['id'] + '.json')
+    path.write_bytes('{"title":"Café","messages":[]}'.encode('cp1252'))
+    legacy = store.load(conversation['id'])
+    assert legacy['title'] == 'Café'
+    store.save(conversation['id'], legacy)
+    assert 'Café'.encode('utf-8') in path.read_bytes()

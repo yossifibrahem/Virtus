@@ -146,7 +146,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Build the Docker sandbox image (required for MCP tools)
+# 4. Build the Docker sandbox image (required for native and MCP tools)
 identity="$(python -c 'import build_info; print(build_info.sandbox_identity())')"
 docker build --build-arg "LUMEN_SANDBOX_IDENTITY=$identity" -f Dockerfile.sandbox -t lumen-sandbox:latest .
 
@@ -171,7 +171,7 @@ The built-in tools `bash`, `read`, `write`, and `edit` are provided by Lumen its
 | Requirement | Version | Notes |
 |---|---|---|
 | Python | 3.10+ | Needed only for source development; included in both desktop apps |
-| Docker | 20.10+ | Required for MCP sandbox containers |
+| Docker | 20.10+ | Required for the model’s sandbox computer |
 | OpenAI-compatible API | — | OpenAI, Ollama, LM Studio, or a compatible proxy |
 
 ### Python Dependencies
@@ -205,8 +205,8 @@ with `--build-arg "LUMEN_SANDBOX_IDENTITY=$identity"`.
 
 The default is the locally built `lumen-sandbox:latest` image. The packaged
 app embeds `Dockerfile.sandbox` and installs its runtimes and packages
-inside Ubuntu during first-run setup. A content identity derived only from
-`.dockerignore` and `Dockerfile.sandbox` determines whether
+inside Ubuntu during first-run setup. A content identity derived from
+`.dockerignore`, `Dockerfile.sandbox`, `sandbox_tools.py`, and `sandbox_files.py` determines whether
 the image needs rebuilding, so rebuilding or upgrading desktop-only code does
 not invalidate it. The image remains configurable through
 `LUMEN_SANDBOX_IMAGE` or advanced settings.
@@ -445,11 +445,11 @@ A single chat turn in `chat_turn_service.py`:
 2. Read `~/.lumen/memory.md` and inject its contents into the system message.
 3. Resolve the chat or Folder runtime; tools start its sandbox when needed. MCP paths never create host mounts.
 4. Stream model output via `streaming.py`; accumulate text and tool calls.
-5. For each tool call: request approval (unless auto-approved), invoke via the persistent `McpSessionPool` (reused across turns in the active runtime), append the tool result to message history.
+5. Validate each tool call’s JSON arguments. Native tools run inside the runtime automatically; additional MCP tools follow their approval settings and use the runtime’s persistent session pool. Append one result per call, including denied, failed, or cancelled calls.
 6. Loop until the model finishes without further tool calls.
-7. Emit `assistant_done` and optionally a generated `title` event.
+7. Optionally generate a title, save the completed or interrupted history, then emit `assistant_done` with that history. The terminal SSE marker releases the composer for another turn.
 
-Partial output is saved at most once per 0.75 seconds by `TurnRecorder`, with forced saves at tool boundaries and completion. Cancellation and model errors preserve partial output. One API client is reused and closed for each turn; conversation JSON is stored as compact UTF-8.
+Partial output is saved at most once per 0.75 seconds by `TurnRecorder`, with forced saves at tool boundaries and completion. Cancellation and model errors preserve partial output. One API client is reused and closed for each turn; conversation JSON is stored as compact UTF-8. Uploaded images stay as small references in the browser and are expanded server-side only for provider requests. Errors preserve partial replies and are recorded in the display log. SSE replay uses encoded snapshots, skips resolved approval prompts, and sends keep-alives while waiting for tools or approvals.
 
 ### Frontend
 
@@ -459,7 +459,7 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 |---|---|
 | `state.js` | Single shared mutable state object |
 | `app.js` | Bootstrap, event binding, startup loading |
-| `chat_send.js` | Send flow, stream start, SSE event handling |
+| `chat.js`, `chat_send.js` | Turn state, send flow, SSE rendering, cancellation, and reattachment |
 | `chat_payloads.js` | Builds API message payloads including images and file context |
 | `chat_attachments.js` | Pending image and file attachment lifecycle |
 | `chat_edit.js` | Edit, resend, and regenerate helpers |

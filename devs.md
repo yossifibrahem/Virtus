@@ -145,19 +145,30 @@ JSON response ceilings account for escaped preview text and listing metadata.
 
 A turn owns one API client and closes it after completion or failure. It reads up
 to 32 KiB of shared memory, adds native tools, streams model output, executes tool
-calls, and repeats until the assistant finishes. Tool images are persisted by
-reference and expanded only when constructing the model request.
+calls, and repeats until the assistant finishes. Uploaded and tool images are
+persisted by reference and expanded server-side only when constructing the model request. Do
+not fetch/re-encode stored images in the browser or cache their base64 data there.
 
 `TurnRecorder` saves partial output at most once per 0.75 seconds, with forced
 writes at tool boundaries and finalization. Model stream errors preserve partial
-text and clear the active stream marker. Conversation JSON uses compact UTF-8
-encoding; existing indented JSON remains readable.
+text and clear the active stream marker. Every emitted tool call gets a matching
+result, even if validation, approval, execution, or cancellation prevents it from
+running. Invalid arguments never execute with empty defaults. After optional title
+generation, finalization saves history before sending `assistant_done` for success,
+failure, or cancellation. The browser consumes that history before saving branches
+and keeps the composer busy until the terminal SSE marker. Conversation JSON uses
+explicit UTF-8 encoding on every platform; existing indented JSON remains readable.
 
 `routes_chat.py` stores active replay events and cancellation state in process
 memory. Keep one application worker process; use threads for concurrency.
 `gunicorn.conf.py` supplies one worker and four threads. Replay buffers retain
-active-turn events until completion. No database, cross-process stream broker,
-or persistent background job service is present.
+encoded active-turn events until completion; encoding once freezes histories and
+avoids repeating JSON serialization for each reader. Completed approval prompts
+become replay comments without shifting cursors. Keep-alives maintain idle SSE
+connections. Approval controls never block the reader: timeouts and results must
+still be consumed. Pending decisions survive navigation and are scoped to the
+current turn; stopping one chat must not deny another chat’s tools. No database,
+cross-process stream broker, or persistent background job service is present.
 
 ## MCP configuration and session ownership
 

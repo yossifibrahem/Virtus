@@ -7,7 +7,7 @@ or a thin stateful helper that does not touch the network.
 
 Functions under test (chat_turn_service):
   _parse_stream_payload   — typed dict event passthrough
-  _safe_tool_args         — silent JSON parser for tool arguments
+  _safe_tool_args         — bounded JSON object parser for tool arguments
   _tool_call_message      — OpenAI tool-call message constructor
   TurnRecorder            — throttled persistence helper
 
@@ -176,8 +176,7 @@ class TestExtractTitle:
 
 class TestSafeToolArgs:
     """
-    Tool argument JSON comes from the model and can be malformed. Errors must
-    be swallowed and return an empty dict so the tool-call loop doesn't crash.
+    Invalid model arguments must never turn into executable default arguments.
     """
 
     def test_valid_json_returns_dict(self):
@@ -186,8 +185,10 @@ class TestSafeToolArgs:
     def test_empty_string_returns_empty_dict(self):
         assert svc._safe_tool_args("") == {}
 
-    def test_invalid_json_returns_empty_dict(self):
-        assert svc._safe_tool_args("{bad json") == {}
+    @pytest.mark.parametrize("raw", ['{bad json', '[]', 'null', '1', None, 'x' * (svc.MAX_TOOL_ARGUMENT_BYTES + 1)])
+    def test_invalid_arguments_are_rejected(self, raw):
+        with pytest.raises(ValueError):
+            svc._safe_tool_args(raw)
 
     def test_none_like_empty_returns_empty_dict(self):
         assert svc._safe_tool_args("{}") == {}
@@ -322,7 +323,9 @@ def test_model_error_preserves_partial_response_and_closes_client(tmp_lumen, mon
     assert saved['messages'][-1]['content'] == 'Partial'
     assert not saved['streaming']
     assert len([event for event in events if event['type'] == 'error']) == 1
-    assert not any(event['type'] == 'assistant_done' for event in events)
+    assert events[-1]['type'] == 'assistant_done'
+    assert events[-1]['messages'] == saved['messages']
+    assert events[-1]['displayLog'] == saved['displayLog']
     client.close.assert_called_once()
 
 
@@ -348,3 +351,98 @@ def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch)
     assert clients == [client, client]
     create.assert_called_once()
     client.close.assert_called_once()
+
+
+@pytest.mark.parametrize('mode', ['cancel_native', 'cancel_approval', 'runtime_failure', 'invalid_native', 'invalid_mcp'])
+def test_tool_batches_always_have_matching_results(tmp_lumen, monkeypatch, mode):
+    import threading
+    import store
+    from contextlib import contextmanager
+
+    conv = store.create()
+    cancel = threading.Event()
+    client = MagicMock()
+    pool = MagicMock()
+    monkeypatch.setattr(svc, 'openai_client', lambda body: client)
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    monkeypatch.setattr(svc.mcp_service, 'get_persistent_pool', lambda runtime: pool)
+    native = mode in {'cancel_native', 'invalid_native'}
+    name = 'read' if native else 'external'
+    calls = [{'id': str(i), 'function': {'name': name, 'arguments': '{bad' if mode.startswith('invalid') else '{}'}}
+             for i in range(2)]
+    requests = []
+    def stream(*args, **kwargs):
+        requests.append(kwargs['messages'])
+        if len(requests) == 1:
+            yield {'type': 'text', 'content': 'Checking files'}
+            yield {'type': 'tool_calls', 'calls': calls}
+        else:
+            yield {'type': 'text', 'content': 'Finished'}
+    def invoke(*args):
+        cancel.set()
+        return {'text': 'first result'}
+    def approval(*args):
+        cancel.set()
+        return False
+    @contextmanager
+    def failed_runtime(*args):
+        raise ValueError('Container unavailable')
+        yield
+    native_invoke = MagicMock(side_effect=invoke)
+    monkeypatch.setattr(svc.builtin_tools, 'invoke', native_invoke)
+    monkeypatch.setattr(svc.tool_approval, 'request_tool_approval', approval)
+    monkeypatch.setattr(svc.sandbox_runtime, 'runtime_operation', failed_runtime)
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    events = []
+    def publish(event):
+        if event['type'] == 'assistant_done':
+            saved = store.load(conv['id'])
+            assert not saved['streaming']
+            assert saved['messages'] == event['messages']
+        events.append(event)
+    svc.run_persistent_chat_turn({
+        'conv_id': conv['id'],
+        'mcp_tool_meta': [] if native else [{'name': name, 'server': 'example', 'autoApprove': mode != 'cancel_approval'}],
+    }, cancel, 'batch-test', publish)
+    saved = store.load(conv['id'])
+    results = [m for m in saved['messages'] if m['role'] == 'tool']
+    assert [m['tool_call_id'] for m in results] == ['0', '1']
+    assert len([m for m in saved['messages'] if m.get('content') == 'Checking files']) == 1
+    assert native_invoke.call_count == (1 if mode == 'cancel_native' else 0)
+    pool.invoke_tool.assert_not_called()
+    if cancel.is_set():
+        assert len(requests) == 1
+        assert saved['displayLog'][-1]['content'] == 'Response stopped.'
+    else:
+        assert len(requests) == 2
+        assert all(m['content'].startswith('Error:') for m in results)
+    assert events[-1]['type'] == 'assistant_done'
+    client.close.assert_called_once()
+
+
+def test_unexpected_stream_exception_keeps_partial_text(tmp_lumen, monkeypatch):
+    import threading
+    import store
+    conv = store.create()
+    monkeypatch.setattr(svc, 'openai_client', lambda body: MagicMock())
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    def stream(*args, **kwargs):
+        yield {'type': 'text', 'content': 'Keep this'}
+        raise RuntimeError('Broken iterator')
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    svc.run_persistent_chat_turn({'conv_id': conv['id']}, threading.Event(), 'broken', lambda event: None)
+    assert store.load(conv['id'])['messages'] == [{'role': 'assistant', 'content': 'Keep this'}]
+
+
+def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_lumen):
+    import store
+    import tool_media
+    from conftest import make_png_b64
+    ref = store.save_image(make_png_b64(), 'image/png')
+    messages = [{'role': 'user', 'content': [{'type': 'image_ref', 'ref': ref}]}]
+    expanded = tool_media.expand(messages, store.create()['id'])
+    part = expanded[0]['content'][0]
+    assert part == {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + make_png_b64()}}
+    assert messages[0]['content'][0] == {'type': 'image_ref', 'ref': ref}
+    with pytest.raises(ValueError, match='image no longer available'):
+        tool_media.expand([{'role': 'user', 'content': [{'type': 'image_ref', 'ref': 'missing'}]}], '')

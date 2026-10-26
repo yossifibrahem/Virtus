@@ -361,4 +361,6 @@ def test_title_is_published_persisted_and_turn_finalized(tmp_lumen, monkeypatch,
     assert not saved["streaming"]
     assert "active_stream_id" not in saved
     assert not any(event["type"] == "error" for event in events)
+    assert events[-1]["type"] == "assistant_done"
+    assert events[-1]["messages"] == saved["messages"]
     client.close.assert_called_once()

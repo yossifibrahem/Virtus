@@ -2,7 +2,6 @@
 import base64
 import hashlib
 import re
-from pathlib import Path
 import store
 
 
@@ -47,6 +46,8 @@ def expand(messages, conv_id):
         if message.get('role') != 'tool':
             flush()
         clean = {k: v for k, v in message.items() if k != '_tool_media'}
+        if isinstance(clean.get('content'), list):
+            clean['content'] = [_expand_image(part) for part in clean['content']]
         output.append(clean)
         for ref in message.get('_tool_media', [])[:5]:
             try:
@@ -57,3 +58,14 @@ def expand(messages, conv_id):
                 pass
     flush()
     return output
+
+
+def _expand_image(part):
+    if part.get('type') != 'image_ref':
+        return part
+    target = store.get_image_path(part.get('ref', ''))
+    if target is None:
+        raise ValueError('Attached image no longer available')
+    mime = 'image/' + target.suffix[1:]
+    return {'type': 'image_url', 'image_url': {
+        'url': f'data:{mime};base64,' + base64.b64encode(target.read_bytes()).decode()}}

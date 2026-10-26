@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
 from openai import OpenAI
 
 import app_config
-from mcp_adapters import ContainerConversationRequired
 import container_service
 import mcp_service
 import store
@@ -128,29 +128,21 @@ def _tool_call_message(calls: list, content: str | None) -> dict:
 
 
 def _safe_tool_args(raw_args: str) -> dict:
-    try:
-        if not isinstance(raw_args, str) or len(raw_args.encode()) > MAX_TOOL_ARGUMENT_BYTES:
-            return {}
-        parsed = json.loads(raw_args or "{}")
-        return parsed if isinstance(parsed, dict) else {}
-    except Exception:
-        return {}
+    """Reject invalid arguments rather than executing a tool with guessed defaults."""
+    if not isinstance(raw_args, str) or len(raw_args.encode()) > MAX_TOOL_ARGUMENT_BYTES:
+        raise ValueError("Tool arguments must be JSON text of at most 3 MiB")
+    parsed = json.loads(raw_args or "{}")
+    if not isinstance(parsed, dict):
+        raise ValueError("Tool arguments must be a JSON object")
+    return parsed
 
 
-def _run_mcp_call(tool_meta: dict, call: dict, session_pool) -> tuple[dict, str]:
-    name = call.get("function", {}).get("name", "")
-    args = _safe_tool_args(call.get("function", {}).get("arguments", "{}"))
+def _run_mcp_call(tool_meta: dict, name: str, args: dict, session_pool) -> str:
     server_name = tool_meta.get("server", "")
     server_config = mcp_service.find_server(server_name)
     if not server_config:
-        return args, f"Error calling tool '{name}': MCP server '{server_name}' not found"
-    try:
-        result = session_pool.invoke_tool(server_name, server_config, name, args)
-    except ContainerConversationRequired as exc:
-        result = str(exc)
-    except Exception as exc:
-        result = f"Error calling tool '{name}': {exc}"
-    return args, result
+        raise ValueError(f"MCP server '{server_name}' not found")
+    return session_pool.invoke_tool(server_name, server_config, name, args)
 
 
 class TurnRecorder:
@@ -185,11 +177,11 @@ class TurnRecorder:
 
 def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_id: str, publish: Publish) -> None:
     conv_id = body.get("conv_id", "")
-    import re
-    if not isinstance(conv_id, str) or not re.fullmatch(r"[a-fA-F0-9-]{36}", conv_id) or not store.load(conv_id):
+    conversation = store.load(conv_id) if isinstance(conv_id, str) and re.fullmatch(r"[a-fA-F0-9-]{36}", conv_id) else None
+    if not conversation:
         publish({"type": "error", "message": "A valid conversation is required"})
         return
-    runtime_id = store.runtime_id(conv_id)
+    runtime_id = store.runtime_id(conv_id, conversation)
     title = body.get("title") or "Untitled"
     turn_messages = list(body.get("conversation_messages") or [])
     display_log = list(body.get("display_log") or [])
@@ -200,12 +192,13 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         return
     tools = [t for t in body.get("tools", []) if t.get("function", {}).get("name") not in builtin_tools.NAMES]
     tools.extend(builtin_tools.SCHEMAS)
-    is_first_message = len([m for m in turn_messages if m.get("role") == "user"]) == 1
+    is_first_message = sum(m.get("role") == "user" for m in turn_messages) == 1
     api_messages = _inject_memory(api_messages)
     recorder = TurnRecorder(conv_id, title, turn_messages, stream_id)
     assistant_completed = False
     session_pool: mcp_service.McpSessionPool | None = None
     client = None
+    acc_text = acc_reasoning = ""
 
     def finalize_partial_answer(reasoning: str, text: str) -> bool:
         nonlocal assistant_completed
@@ -245,7 +238,6 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     continue
                 etype = event.get("type")
                 if etype == "error":
-                    finalize_partial_answer(acc_reasoning, acc_text)
                     raise RuntimeError(event.get("message", "Model request failed"))
                 if etype == "done":
                     break
@@ -280,56 +272,44 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     name = call.get("function", {}).get("name", "")
                     meta = tool_meta.get(name, {})
                     call_id = call.get("id", "")
-                    args_preview = _safe_tool_args(call.get("function", {}).get("arguments", "{}"))
-
-                    if name not in builtin_tools.NAMES and meta and not meta.get("autoApprove", False):
-                        approved = tool_approval.request_tool_approval(
-                            stream_id, call_id, name, args_preview, publish, cancel_event
-                        )
-                        if not approved or cancel_event.is_set():
-                            result = "Tool call denied by user."
-                            deny_event = {
-                                "type": "tool_result",
-                                "name": name,
-                                "args": args_preview,
-                                "result": result,
-                                "denied": True,
-                            }
-                            display_log.append({"type": "tool_result", **{k: v for k, v in deny_event.items() if k != "type"}})
-                            turn_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-                            api_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-                            recorder.save(display_log, force=True)
-                            publish(deny_event)
-                            continue
-
-                    publish({"type": "tool_running", "name": name, "args": args_preview})
-
+                    args = {}
                     refs = []
-                    if name in builtin_tools.NAMES:
-                        args = args_preview
-                        try:
-                            raw_args = call.get("function", {}).get("arguments", "{}")
-                            if len(raw_args.encode()) > MAX_TOOL_ARGUMENT_BYTES:
-                                raise ValueError("Tool arguments exceed limit")
-                            args = json.loads(raw_args)
-                            native_result = builtin_tools.invoke(runtime_id, name, args, cancel_event)
-                            result = native_result["text"]
-                            refs = tool_media.save(conv_id, native_result.get("images", []))
-                        except Exception as exc:
-                            result = f"Error: {str(exc)[:1000]}"
-                    elif meta and session_pool:
-                        with sandbox_runtime.runtime_operation(runtime_id, cancel_event):
-                            args, result = _run_mcp_call(meta, call, session_pool)
-                    else:
-                        args, result = args_preview, f"Error: unknown tool {name}"
+                    denied = False
+                    try:
+                        args = _safe_tool_args(call.get("function", {}).get("arguments", "{}"))
+                        if cancel_event.is_set():
+                            raise ValueError("Tool call cancelled")
+                        if name not in builtin_tools.NAMES and meta and not meta.get("autoApprove", False):
+                            denied = not tool_approval.request_tool_approval(
+                                stream_id, call_id, name, args, publish, cancel_event)
+                        if cancel_event.is_set():
+                            raise ValueError("Tool call cancelled")
+                        if denied:
+                            result = "Tool call denied by user."
+                        else:
+                            publish({"type": "tool_running", "call_id": call_id, "name": name, "args": args})
+                            if name in builtin_tools.NAMES:
+                                native_result = builtin_tools.invoke(runtime_id, name, args, cancel_event)
+                                result = native_result["text"]
+                                refs = tool_media.save(conv_id, native_result.get("images", []))
+                            elif meta and session_pool:
+                                with sandbox_runtime.runtime_operation(runtime_id, cancel_event):
+                                    result = _run_mcp_call(meta, name, args, session_pool)
+                            else:
+                                raise ValueError(f"Unknown tool {name}")
+                    except Exception as exc:
+                        result = f"Error: {str(exc)[:1000]}"
                     event = {
                         "type": "tool_result",
+                        "call_id": call_id,
                         "name": name,
                         "args": args,
                         "result": result,
                         "media": [f"/api/conversations/{conv_id}/tool-media/{ref}" for ref in refs],
                     }
-                    display_log.append({"type": "tool_result", **{k: v for k, v in event.items() if k != "type"}})
+                    if denied:
+                        event["denied"] = True
+                    display_log.append(event)
                     response = {"role": "tool", "tool_call_id": call_id, "content": result}
                     if refs:
                         response["_tool_media"] = refs
@@ -337,25 +317,31 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     api_messages.append(response)
                     recorder.save(display_log, force=True)
                     publish(event)
+                acc_text = acc_reasoning = ""
                 continue
 
             finalize_partial_answer(acc_reasoning, acc_text)
-            recorder.save(display_log, force=True)
-            publish({"type": "assistant_done", "messages": turn_messages, "displayLog": display_log})
             break
 
         if assistant_completed and is_first_message and not cancel_event.is_set() \
                 and body.get("auto_generate_titles", True):
+            recorder.save(display_log, force=True)
             generated_title = title_service.generate_title(client, body, turn_messages)
             if generated_title:
                 recorder.update_title(generated_title)
                 publish({"type": "title", "title": generated_title})
-                recorder.save(display_log, force=True)
 
-        recorder.finalize(display_log)
     except Exception as exc:
+        finalize_partial_answer(acc_reasoning, acc_text)
+        display_log.append({"type": "status", "content": f"Error: {exc}"})
         publish({"type": "error", "message": str(exc)})
-        recorder.finalize(display_log)
     finally:
-        if callable(close := getattr(client, "close", None)):
-            close()
+        try:
+            if cancel_event.is_set():
+                display_log.append({"type": "status", "content": "Response stopped."})
+            recorder.finalize(display_log)
+            # All outcomes send authoritative history before the reader may save branches.
+            publish({"type": "assistant_done", "messages": turn_messages, "displayLog": display_log})
+        finally:
+            if callable(close := getattr(client, "close", None)):
+                close()

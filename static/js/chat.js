@@ -4,23 +4,23 @@ import { api }   from './api.js';
 import { state } from './state.js';
 import {
   createStreamingMessage, appendAssistantStatus,
-  cancelAllToolApprovals, finalizeStreamingMessage, setStreamingMessageLogIndex,
-  scrollToBottom, renderAllMessages, refreshMessageFooter,
+  finalizeStreamingMessage, setStreamingMessageLogIndex,
+  scrollToBottom, renderAllMessages,
   createThinkingBlock, updateThinkingBlock, finalizeThinkingBlock,
-  createToolStrip, toolStripFinalize, toolStripSetApproval, toolStripSetRunning, toolStripSetStopped,
+  createToolStrip, toolStripFinalize, toolStripSetApproval, toolStripSetRunning,
 } from './renderer.js';
 import { applyMarkdown } from './markdown.js';
 import { persistConversationFor, createNewConversation } from './conversations.js';
 import { refreshFilePanel } from './file_panel.js';
 import { escapeHtml } from './format.js';
 import { readResponseError, readSSEStream } from './stream_consumer.js';
-import { initImageAttachments, hasPendingAttachments } from './chat_attachments.js';
+import { hasPendingAttachments } from './chat_attachments.js';
 export { initImageAttachments, hasPendingAttachments } from './chat_attachments.js';
 import { buildApiMessages, buildToolsPayload, buildMcpToolMetaPayload } from './chat_payloads.js';
 import { createClientId } from './ids.js';
 import { sendMessage as sendMessageImpl } from './chat_send.js';
 import { editAndResend as editAndResendImpl, regenerateFrom as regenerateFromImpl } from './chat_edit.js';
-import { assistantFooterHostIndex, lastAssistantMessageIndex } from './chat_log_utils.js';
+import { lastAssistantMessageIndex } from './chat_log_utils.js';
 
 const activeTurns = new Map();
 
@@ -39,7 +39,7 @@ function setStreaming(active) {
 
   if (sendBtn) {
     sendBtn.hidden = active;
-    sendBtn.disabled = active || !(input?.value || '').trim();
+    sendBtn.disabled = active || (!(input?.value || '').trim() && !hasPendingAttachments());
   }
   if (stopBtn) stopBtn.hidden = !active;
 }
@@ -69,9 +69,9 @@ function createStreamContext(turn, streamId = '') {
     turn,
     toolStartNames:     [],
     toolStrips:         [],
-    toolApprovalIndex:  0,
-    toolRunningIndex:   0,
     toolResultIndex:    0,
+    pendingApproval:    null,
+    disposeApproval:    null,
     assistantDone:      false,
     streamId,
     abortController:    null,
@@ -86,25 +86,26 @@ function createStreamContext(turn, streamId = '') {
 }
 
 function activeTurnBaseLog(displayLog = []) {
-  const lastUserIndex = [...displayLog]
-    .map((entry, index) => ({ entry, index }))
-    .reverse()
-    .find(item => item.entry?.type === 'message' && item.entry?.role === 'user')?.index;
-  return lastUserIndex === undefined ? [] : displayLog.slice(0, lastUserIndex + 1);
+  for (let i = displayLog.length - 1; i >= 0; i--) {
+    if (displayLog[i]?.type === 'message' && displayLog[i]?.role === 'user') {
+      return displayLog.slice(0, i + 1);
+    }
+  }
+  return [];
 }
 
 function reattachRuntime(runtime) {
   if (!runtime || !isTurnVisible(runtime.turn)) return false;
 
   const { turn, ctx } = runtime;
+  ctx.disposeApproval?.();
   syncVisibleTurn(turn);
   renderAllMessages(turn.displayLog);
 
   ctx.contentEl = null;
   ctx.reasoningBodyEl = null;
 
-  // assistant_done can arrive before the backend finishes title generation and
-  // clears the active stream. In that window, turn.displayLog already contains
+  // The terminal SSE marker may still be in flight. turn.displayLog already contains
   // the final assistant answer, while ctx.accText still contains the same text
   // from the live stream. Do not rebuild ctx.accText, or reopening the active
   // conversation will show the last assistant turn twice.
@@ -139,6 +140,7 @@ function reattachRuntime(runtime) {
     ctx.toolStrips.push(createToolStrip(name));
   });
 
+  showPendingApproval(ctx);
   scrollToBottom(true);
   return true;
 }
@@ -155,7 +157,7 @@ async function attachServerStream(convId, streamId, data = {}) {
     existingRuntime.streamId ||= streamId;
     existingRuntime.ctx.streamId ||= streamId;
     const attached = reattachActiveTurn(convId);
-    if (attached && !existingRuntime.ctx?.assistantDone) {
+    if (attached) {
       state.streamId = existingRuntime.streamId;
       setStreaming(true);
     }
@@ -190,7 +192,7 @@ async function attachServerStream(convId, streamId, data = {}) {
 
     if (!resp.ok) throw new Error(await readResponseError(resp));
 
-    const success = await readSSEStream(resp, raw => processSSEEvent(raw, ctx));
+    const success = await readSSEStream(resp, event => processSSEEvent(event, ctx));
     if (!success || ctx.cancelled) return false;
 
     if (!ctx.assistantDone) {
@@ -211,9 +213,13 @@ document.addEventListener('chat:conversation-opened', async event => {
   if (data?.active_stream_id) {
     const attached = await attachServerStream(convId, data.active_stream_id, data);
     if (!attached && state.convId === convId) {
-      state.messages = data.messages || [];
-      state.displayLog = data.displayLog || [];
+      // The worker may finish between loading the chat and attaching its stream.
+      const saved = await api.get(`/api/conversations/${convId}`).catch(() => null);
+      if (state.convId !== convId) return;
+      state.messages = saved?.messages || data.messages || [];
+      state.displayLog = saved?.displayLog || data.displayLog || [];
       renderAllMessages(state.displayLog);
+      state.streamId = null;
       setStreaming(false);
     }
     return;
@@ -263,6 +269,7 @@ async function persistTurnConversation(turn) {
 function finishAssistantTurn(turn = null, ctx = null) {
   const isCurrent = !turn?.convId || !ctx || isCurrentStreamContext(turn, ctx);
 
+  ctx?.disposeApproval?.();
   if (turn?.convId && isCurrent) activeTurns.delete(turn.convId);
 
   if ((!turn || isTurnVisible(turn)) && isCurrent) {
@@ -278,14 +285,12 @@ function appendRuntimeEntry(ctx, entry) {
   syncVisibleTurn(ctx.turn);
 }
 
-function commitRuntimeAssistantPartial(ctx, { includeMessageHistory = false, onEntry = null } = {}) {
+function commitRuntimeAssistantPartial(ctx) {
   if (!ctx?.turn) return false;
 
   let changed = false;
   const appendCommittedEntry = entry => {
     appendRuntimeEntry(ctx, entry);
-    const logIndex = ctx.turn.displayLog.length - 1;
-    onEntry?.(entry, logIndex);
     changed = true;
   };
 
@@ -294,90 +299,13 @@ function commitRuntimeAssistantPartial(ctx, { includeMessageHistory = false, onE
   }
   if (ctx.accText && ctx.accText.trim()) {
     appendCommittedEntry({ type: 'message', role: 'assistant', content: ctx.accText });
-    if (includeMessageHistory) ctx.turn.messages.push({ role: 'assistant', content: ctx.accText });
   }
-  if (includeMessageHistory) syncVisibleTurn(ctx.turn);
   return changed;
-}
-
-function liveAssistantRowForContext(ctx) {
-  const liveNode = ctx?.contentEl ||
-    ctx?.reasoningBodyEl ||
-    ctx?.toolStrips?.find(strip => strip);
-  return liveNode?.closest('.msg-row') || null;
-}
-
-function markCommittedEntryInLiveDom(ctx, entry, logIndex) {
-  if (!Number.isInteger(logIndex) || logIndex < 0) return;
-
-  if (entry?.type === 'thinking') {
-    ctx.reasoningBodyEl?.closest('.thinking-block')?.setAttribute('data-log-index', String(logIndex));
-  } else if (entry?.type === 'message' && entry.role === 'assistant') {
-    ctx.contentEl?.closest('.msg-row')?.setAttribute('data-log-index', String(logIndex));
-  }
 }
 
 function branchForFooterHost(turn, logIndex) {
   const branch = turn?.displayLog?.[logIndex]?.branch;
   return branch?.kind === 'assistant' ? branch : null;
-}
-
-function stopLiveToolStrips(ctx) {
-  ctx.toolStrips.forEach(strip => {
-    if (!strip) return;
-    const isLive = strip.classList.contains('tool-strip-using') ||
-      strip.classList.contains('tool-strip-running') ||
-      strip.classList.contains('tool-strip-approval');
-    if (isLive) toolStripSetStopped(strip);
-  });
-}
-
-function appendStoppedStatus(ctx) {
-  appendRuntimeEntry(ctx, { type: 'status', content: 'Response stopped.' });
-  const logIndex = ctx.turn.displayLog.length - 1;
-  if (isTurnVisible(ctx.turn)) appendAssistantStatus('Response stopped.', logIndex, ctx.turn.displayLog[logIndex]);
-  return logIndex;
-}
-
-function finalizeInterruptedAssistantTurn(ctx) {
-  if (!ctx?.turn || ctx.assistantDone) return;
-
-  const liveRow = liveAssistantRowForContext(ctx);
-
-  if (ctx.reasoningBodyEl) {
-    finalizeThinkingBlock(ctx.reasoningBodyEl, ctx.accReasoning);
-  }
-
-  stopLiveToolStrips(ctx);
-
-  const hadContentEl = Boolean(ctx.contentEl);
-  const committed = commitRuntimeAssistantPartial(ctx, {
-    includeMessageHistory: true,
-    onEntry: (entry, logIndex) => markCommittedEntryInLiveDom(ctx, entry, logIndex),
-  });
-
-  let footerHostIndex = assistantFooterHostIndex(ctx.turn.displayLog);
-
-  if (hadContentEl) {
-    finalizeStreamingMessage(ctx.contentEl, ctx.accText, {
-      logIndex: footerHostIndex,
-      branch: branchForFooterHost(ctx.turn, footerHostIndex),
-    });
-  } else if (committed && footerHostIndex >= 0) {
-    refreshMessageFooter(footerHostIndex);
-  } else {
-    footerHostIndex = appendStoppedStatus(ctx);
-  }
-
-  if (!hadContentEl && committed && !liveRow?.querySelector('.msg-footer')) {
-    const row = liveAssistantRowForContext(ctx);
-    if (row && footerHostIndex >= 0) refreshMessageFooter(footerHostIndex);
-  }
-
-  ctx.reasoningBodyEl = null;
-  ctx.assistantDone = true;
-  syncVisibleTurn(ctx.turn);
-  scrollToBottom();
 }
 
 function syncFinalAssistantFooter(turn, ctx) {
@@ -409,10 +337,8 @@ function finalizeAssistantAnswer(ctx, messages = null, displayLog = null) {
     syncFinalAssistantFooter(ctx.turn, ctx);
   }
 
-  // assistant_done owns only the visible UI transition. Stream cleanup/title work may continue.
+  // The composer is released by finishAssistantTurn after the terminal SSE marker.
   if (isTurnVisible(ctx.turn) && isCurrentStreamContext(ctx.turn, ctx)) {
-    state.streamId = null;
-    setStreaming(false);
     scrollToBottom();
   }
 }
@@ -433,15 +359,11 @@ export async function stopAssistantTurn() {
   if (!state.isStreaming && !state.streamId) return;
 
   const runtime = state.convId ? activeTurns.get(state.convId) : null;
-  if (runtime?.ctx) finalizeInterruptedAssistantTurn(runtime.ctx);
-
   if (runtime?.ctx) runtime.ctx.cancelled = true;
-  cancelAllToolApprovals();
-  runtime?.ctx?.abortController?.abort();
-
+  runtime?.ctx?.disposeApproval?.();
+  // Keep consuming until Flask has saved the partial answer and completed every
+  // tool response. Releasing the composer early races the next turn's history.
   const streamId = runtime?.streamId || state.streamId;
-  state.streamId = null;
-  setStreaming(false);
 
   if (streamId) {
     try { await api.post('/api/chat/cancel', { stream_id: streamId }); } catch {}
@@ -469,19 +391,32 @@ export async function sendMessage(userText) {
 
 // ── SSE helpers ───────────────────────────────────────────────────────────────
 
-function stripForToolEvent(ctx, evt, cursorKey) {
-  const stripIndex = ctx[cursorKey] || 0;
+function stripForToolEvent(ctx, evt) {
+  // Tools execute serially; approvals and running events belong to the next result.
+  const stripIndex = ctx.toolResultIndex;
   let strip = ctx.toolStrips[stripIndex];
   if (!strip && ctx.isVisible()) strip = createToolStrip(evt.name);
   if (strip && !ctx.toolStrips[stripIndex]) ctx.toolStrips[stripIndex] = strip;
-  ctx[cursorKey] = stripIndex + 1;
   return strip;
 }
 
-/** Parses a single SSE event and mutates the streaming context. Returns false on terminal error. */
-async function processSSEEvent(raw, ctx) {
-  const evt = JSON.parse(raw);
+function showPendingApproval(ctx) {
+  ctx.disposeApproval?.();
+  const evt = ctx.pendingApproval;
+  if (!evt || !ctx.isVisible() || ctx.cancelled) return;
+  const strip = stripForToolEvent(ctx, evt);
+  // Do not block SSE consumption: timeout, cancel, or a decision in another tab
+  // must still be able to deliver the tool result and dispose these controls.
+  ctx.disposeApproval = toolStripSetApproval(strip, evt.name, evt.args || {}, approved => {
+    ctx.pendingApproval = null;
+    api.post('/api/chat/approve', {
+      stream_id: ctx.streamId, call_id: evt.call_id, approved,
+    }).catch(() => {});
+  });
+}
 
+/** Apply a server event to the current turn. */
+async function processSSEEvent(evt, ctx) {
   if (evt.type === 'reasoning') {
     ctx.accReasoning += evt.content;
     if (!ctx.reasoningBodyEl && ctx.isVisible()) ctx.reasoningBodyEl = createThinkingBlock();
@@ -509,30 +444,16 @@ async function processSSEEvent(raw, ctx) {
     // Tool execution is server-owned; frontend only renders starts/results.
 
   } else if (evt.type === 'tool_approval_required') {
-    // Server is paused waiting for the user to approve or deny this tool call.
-    // Use a cursor, not indexOf(name), so repeated calls to the same tool update
-    // the matching strip instead of always reusing the first one.
-    const strip = stripForToolEvent(ctx, evt, 'toolApprovalIndex');
-
-    let approved = false;
-    if (strip) {
-      const fakeCall = { function: { name: evt.name, arguments: JSON.stringify(evt.args || {}) } };
-      approved = await toolStripSetApproval(strip, fakeCall);
-      if (approved) toolStripSetRunning(strip, evt.args || {});
-    }
-
-    // Send the decision back to the server so it can unblock and proceed.
-    api.post('/api/chat/approve', {
-      stream_id: ctx.streamId,
-      call_id:   evt.call_id,
-      approved,
-    }).catch(() => {});
+    ctx.pendingApproval = evt;
+    showPendingApproval(ctx);
 
   } else if (evt.type === 'tool_running') {
-    const strip = stripForToolEvent(ctx, evt, 'toolRunningIndex');
+    const strip = stripForToolEvent(ctx, evt);
     if (strip) toolStripSetRunning(strip, evt.args || {});
 
   } else if (evt.type === 'tool_result') {
+    ctx.disposeApproval?.();
+    ctx.pendingApproval = null;
     if (ctx.reasoningBodyEl) {
       finalizeThinkingBlock(ctx.reasoningBodyEl, ctx.accReasoning);
       ctx.reasoningBodyEl = null;
@@ -540,23 +461,17 @@ async function processSSEEvent(raw, ctx) {
     const hadContentEl = Boolean(ctx.contentEl);
     if (ctx.contentEl) finalizeStreamingMessage(ctx.contentEl, ctx.accText);
 
-    const strip = stripForToolEvent(ctx, evt, 'toolResultIndex');
+    const strip = stripForToolEvent(ctx, evt);
     // Pass no displayName — renderer.js derives the label via getToolDisplayLabel()
     // which consults the tool_adapters/ system (each adapter declares its own labelArg).
     if (strip) toolStripFinalize(strip, evt.name, evt.args || {}, evt.media?.length ? { text: evt.result || '', media: evt.media } : evt.result || '');
-    // Note: stripForToolEvent already increments ctx.toolResultIndex internally.
+    ctx.toolResultIndex++;
 
     const committedPartial = commitRuntimeAssistantPartial(ctx);
     if (hadContentEl && committedPartial) syncFinalAssistantFooter(ctx.turn, ctx);
     ctx.contentEl = null;
 
-    appendRuntimeEntry(ctx, {
-      type: 'tool_result',
-      name: evt.name,
-      args: evt.args || {},
-      result: evt.media?.length ? { text: evt.result || '', media: evt.media } : evt.result || '',
-      ...(evt.displayName ? { displayName: evt.displayName } : {}),
-    });
+    appendRuntimeEntry(ctx, evt);
 
     ctx.accText = '';
     ctx.accReasoning = '';
@@ -565,6 +480,7 @@ async function processSSEEvent(raw, ctx) {
 
   } else if (evt.type === 'assistant_done') {
     finalizeAssistantAnswer(ctx, evt.messages, evt.displayLog);
+    if ((ctx.cancelled || ctx.failed) && ctx.isVisible()) renderAllMessages(ctx.turn.displayLog);
 
   } else if (evt.type === 'title') {
     if (ctx.turn) applyTurnTitle(ctx.turn, evt.title || ctx.turn.title);
@@ -572,7 +488,7 @@ async function processSSEEvent(raw, ctx) {
   } else if (evt.type === 'error') {
     const el = ctx.getContentEl();
     if (el) el.innerHTML = `<span class="inline-error">Error: ${escapeHtml(evt.message)}</span>`;
-    return false; // signal abort
+    ctx.failed = true; // Keep reading the authoritative partial history.
   }
 
   return true;
@@ -614,7 +530,7 @@ async function runChatLoop(turn) {
 
     if (!resp.ok) throw new Error(await readResponseError(resp));
 
-    const success = await readSSEStream(resp, raw => processSSEEvent(raw, ctx));
+    const success = await readSSEStream(resp, event => processSSEEvent(event, ctx));
     if (!success || ctx.cancelled) return ctx;
 
     if (!ctx.assistantDone) {
@@ -622,10 +538,16 @@ async function runChatLoop(turn) {
       finalizeAssistantAnswer(ctx);
     }
   } catch (err) {
-    if (ctx.cancelled || err.name === 'AbortError') return ctx;
+    if (err.name === 'AbortError') return ctx;
 
-    const el = ctx.getContentEl();
-    if (el) el.innerHTML = `<span class="inline-error">Network error: ${escapeHtml(err.message)}</span>`;
+    const saved = await api.get(`/api/conversations/${turn.convId}`).catch(() => null);
+    if (saved?.messages && saved?.displayLog) {
+      turn.messages = saved.messages;
+      turn.displayLog = saved.displayLog;
+      syncVisibleTurn(turn);
+      if (ctx.isVisible()) renderAllMessages(turn.displayLog);
+    }
+    if (ctx.isVisible()) appendAssistantStatus(`Network error: ${err.message}`);
   }
 
   return ctx;

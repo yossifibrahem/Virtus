@@ -36,9 +36,17 @@ _index_lock = threading.RLock()
 _folders_lock = threading.RLock()
 
 
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        # Earlier Windows builds wrote JSON using the machine's locale encoding.
+        return json.loads(path.read_text())
+
+
 def _conversation_summary(path: Path) -> dict | None:
     try:
-        data = json.loads(path.read_text())
+        data = _read_json(path)
         return {
             "id":                path.stem,
             "title":             data.get("title", "Untitled"),
@@ -140,16 +148,16 @@ def _read_folders() -> list[dict]:
     if not FOLDERS_FILE.exists():
         return []
     try:
-        data = json.loads(FOLDERS_FILE.read_text())
+        data = _read_json(FOLDERS_FILE)
         return data if isinstance(data, list) else []
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return []
 
 
 def _write_folders(folders: list[dict]) -> None:
     FOLDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = FOLDERS_FILE.with_suffix(f".tmp-{uuid.uuid4().hex}")
-    tmp_path.write_text(json.dumps(folders, indent=2))
+    tmp_path.write_text(json.dumps(folders, indent=2), encoding="utf-8")
     atomic_replace(tmp_path, FOLDERS_FILE)
 
 
@@ -233,8 +241,8 @@ def load(conv_id: str) -> dict | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
+        return _read_json(path)
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None
 
 
@@ -243,7 +251,7 @@ def save(conv_id: str, data: dict) -> dict:
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     path = _path(conv_id)
     tmp_path = path.with_suffix(f".tmp-{uuid.uuid4().hex}")
-    tmp_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     atomic_replace(tmp_path, path)
     _update_index_for(conv_id, data)
     return data

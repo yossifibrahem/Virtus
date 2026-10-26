@@ -37,6 +37,7 @@ def _stream_state(stream_id: str, conv_id: str = "") -> dict:
         "stream_id": stream_id,
         "conv_id": conv_id,
         "events": [],
+        "approvals": {},
         "done": False,
         "started": False,
         "lock": threading.Lock(),
@@ -47,8 +48,18 @@ def _stream_state(stream_id: str, conv_id: str = "") -> dict:
 
 
 def _publish_stream_event(state: dict, payload: dict) -> None:
+    # Encode once for all readers and freeze mutable turn histories for replay.
+    event = stream_module.sse_event(payload)
     with state["condition"]:
-        state["events"].append(payload)
+        call_id = payload.get("call_id")
+        if payload.get("type") == "tool_approval_required":
+            state["approvals"][call_id] = len(state["events"])
+        elif payload.get("type") == "tool_result":
+            index = state["approvals"].pop(call_id, None)
+            if index is not None:
+                # Keep replay cursors stable without asking again for completed calls.
+                state["events"][index] = ": approval resolved\n\n"
+        state["events"].append(event)
         state["condition"].notify_all()
 
 
@@ -109,14 +120,16 @@ def chat_stream():
         cursor = 0
         while True:
             with state["condition"]:
-                while cursor >= len(state["events"]) and not state["done"]:
+                if cursor >= len(state["events"]) and not state["done"]:
                     state["condition"].wait(timeout=15)
                 pending = state["events"][cursor:]
                 cursor += len(pending)
                 done = state["done"] and cursor >= len(state["events"])
 
-            for payload in pending:
-                yield stream_module.sse_event(payload)
+            for event in pending:
+                yield event
+            if not pending and not done:
+                yield ": keep-alive\n\n"
             if done:
                 yield "data: [DONE]\n\n"
                 break

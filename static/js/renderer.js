@@ -24,7 +24,7 @@ import { addUserFooter, addAssistantFooter } from './renderer_actions.js';
 import { assistantFooterHostIndex } from './chat_log_utils.js';
 
 export { createThinkingBlock, updateThinkingBlock, finalizeThinkingBlock } from './renderer_thinking.js';
-export { createToolStrip, toolStripSetApproval, toolStripSetRunning, toolStripFinalize, toolStripSetStopped, cancelAllToolApprovals } from './renderer_tools.js';
+export { createToolStrip, toolStripSetApproval, toolStripSetRunning, toolStripFinalize } from './renderer_tools.js';
 export { refreshMessageFooter } from './renderer_actions.js';
 
 // Wrap scrollToBottom with the same signature expected by callers

@@ -17,6 +17,124 @@ def run_node(script):
     assert result.returncode == 0, result.stderr
 
 
+def test_sse_handles_fragmented_unicode_truncation_and_callback_errors():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readSSEStream} from './static/js/stream_consumer.js';
+const bytes = new TextEncoder().encode(': heartbeat\n\ndata: broken\n\ndata: {"type":"text","content":"🌍"}\n\ndata: [DONE]\n\n');
+const body = new ReadableStream({start(controller) {
+  for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
+  controller.close();
+}});
+const seen = [];
+assert(await readSSEStream({body}, event => {seen.push(event); return true;}));
+assert.deepEqual(seen, [{type:'text',content:'🌍'}]);
+assert(!body.locked);
+const response = text => ({body: new ReadableStream({start(controller) {
+  controller.enqueue(new TextEncoder().encode(text)); controller.close();
+}})});
+await assert.rejects(readSSEStream(response('data: {}\n\n'), () => true), /before completion/);
+const failed = response('data: {}\n\ndata: [DONE]\n\n');
+await assert.rejects(readSSEStream(failed, () => {throw new Error('Handler failed');}), /Handler failed/);
+assert(!failed.body.locked);
+''')
+
+
+def test_chat_approvals_survive_navigation_without_blocking_or_cross_chat_cancellation():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const state = {convId:'a',isStreaming:true,streamId:'stream-a'};
+const posts=[], approvals=[], results=[], running=[];
+const noop = () => {};
+const renderer = Object.fromEntries([
+  'appendAssistantStatus','finalizeStreamingMessage','setStreamingMessageLogIndex',
+  'scrollToBottom','renderAllMessages','refreshMessageFooter','createThinkingBlock',
+  'updateThinkingBlock','finalizeThinkingBlock',
+].map(name => [name, noop]));
+Object.assign(renderer, {
+  createStreamingMessage: () => ({}),
+  createToolStrip: name => ({name}),
+  toolStripSetRunning: strip => running.push(strip),
+  toolStripFinalize: strip => results.push(strip),
+  toolStripSetApproval: (strip,name,args,decide) => {
+    const approval={strip,name,args,decide,disposed:false};
+    approvals.push(approval);
+    return () => approval.disposed=true;
+  },
+});
+const modules = {
+  './api.js': {api:{post:async (url,body) => {posts.push({url,body});}}},
+  './state.js': {state},
+  './renderer.js': renderer,
+  './markdown.js': {applyMarkdown:noop},
+  './conversations.js': {persistConversationFor:noop,createNewConversation:noop},
+  './file_panel.js': {refreshFilePanel:async () => {}},
+  './format.js': {escapeHtml:value=>value},
+  './stream_consumer.js': {readResponseError:noop,readSSEStream:noop},
+  './chat_attachments.js': {initImageAttachments:noop,hasPendingAttachments:noop},
+  './chat_payloads.js': {buildApiMessages:noop,buildToolsPayload:noop,buildMcpToolMetaPayload:noop},
+  './ids.js': {createClientId:noop},
+  './chat_send.js': {sendMessage:noop},
+  './chat_edit.js': {editAndResend:noop,regenerateFrom:noop},
+  './chat_log_utils.js': {lastAssistantMessageIndex:()=>-1},
+};
+const context=vm.createContext({document:{addEventListener:noop,getElementById:()=>null},AbortController});
+const source=readFileSync('static/js/chat.js','utf8')+
+  '\nexport {createStreamContext,processSSEEvent,reattachRuntime,activeTurns};';
+const module=new vm.SourceTextModule(source,{context});
+const linked=new Map();
+await module.link(specifier=>{
+  if (!linked.has(specifier)) {
+    const exports=modules[specifier];
+    assert(exports, specifier);
+    linked.set(specifier,new vm.SyntheticModule(Object.keys(exports),function(){
+      for(const [name,value] of Object.entries(exports)) this.setExport(name,value);
+    },{context}));
+  }
+  return linked.get(specifier);
+});
+await module.evaluate();
+const {createStreamContext,processSSEEvent:apply,reattachRuntime,activeTurns,stopAssistantTurn}=module.namespace;
+const turn={convId:'a',messages:[],displayLog:[]};
+const ctx=createStreamContext(turn,'stream-a');
+await apply({type:'tool_start',name:'read'},ctx);
+await apply({type:'tool_start',name:'external'},ctx);
+await apply({type:'tool_running',name:'read'},ctx);
+await apply({type:'tool_result',name:'read',result:'file'},ctx);
+await apply({type:'tool_approval_required',name:'external',call_id:'one',args:{}},ctx);
+assert.equal(approvals.length,1,'Approval must not block event consumption');
+assert.equal(approvals[0].strip,ctx.toolStrips[1],'Mixed auto/manual tools must use the matching strip');
+await apply({type:'tool_result',name:'external',result:'Timed out'},ctx);
+assert(approvals[0].disposed);
+assert.equal(results[1],ctx.toolStrips[1]);
+
+// An approval arriving in a background chat stays pending until it is visible.
+state.convId='b';
+await apply({type:'tool_start',name:'external'},ctx);
+await apply({type:'tool_approval_required',name:'external',call_id:'two',args:{x:1}},ctx);
+assert.equal(posts.length,0,'Navigation must not deny a tool call');
+state.convId='a';
+const runtime={turn,ctx,streamId:'stream-a'};
+activeTurns.set('a',runtime);
+reattachRuntime(runtime);
+assert.equal(approvals.length,2);
+assert.equal(approvals[1].name,'external');
+
+let otherDisposed=false;
+activeTurns.set('b',{ctx:{disposeApproval:()=>otherDisposed=true}});
+await stopAssistantTurn();
+assert(approvals[1].disposed);
+assert(!otherDisposed,'Stopping one chat must not deny another chat approvals');
+assert.equal(posts.at(-1).url,'/api/chat/cancel');
+assert.equal(posts.at(-1).body.stream_id,'stream-a');
+assert(state.isStreaming,'Composer waits for authoritative completion');
+await apply({type:'assistant_done',messages:[],displayLog:[]},ctx);
+assert(ctx.assistantDone);
+''')
+
+
 def test_shared_source_preserves_lines_escapes_and_bounds_large_previews():
     run_node(r'''
 import assert from 'node:assert/strict';
