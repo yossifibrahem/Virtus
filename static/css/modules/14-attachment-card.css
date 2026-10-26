@@ -40,10 +40,8 @@
   border-radius: 8px;
   background: var(--surface2);
   overflow: visible;
-  transition: border-color var(--fast);
 }
 
-.attachment-card:hover { border-color: var(--border2); }
 
 /* ─── Image variant ───────────────────────────────────────────────────────── */
 .attachment-card--image {
@@ -57,16 +55,12 @@
   height: 100%;
   display: block;
   object-fit: cover;
-  transition: transform .22s var(--ease), opacity .18s;
 }
 
 .attachment-card-thumb {
   border-radius: inherit;
 }
 
-.attachment-card--image:hover .attachment-card-thumb {
-  transform: scale(1.03);
-}
 
 /* ─── File variant ────────────────────────────────────────────────────────── */
 .attachment-card--file {
@@ -86,7 +80,7 @@
 /* ─── Text elements ───────────────────────────────────────────────────────── */
 .attachment-card-name {
   color: var(--text);
-  font-size: .62rem;
+  font-size: max(11px, .7rem);
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -115,13 +109,13 @@
   background: var(--surface2);
   color: var(--text2);
   font-family: var(--font-mono);
-  font-size: .62rem;
+  font-size: max(11px, .7rem);
   line-height: 1;
 }
 
 .attachment-card-size {
   color: var(--text3);
-  font-size: .62rem;
+  font-size: max(11px, .7rem);
   font-family: var(--font-mono);
 }
 
@@ -130,7 +124,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 22px 8px 8px;
+  padding: 5px 8px;
+  border-radius: 0 0 7px 7px;
+  background: rgba(0, 0, 0, .72);
   pointer-events: none;
 }
 
@@ -178,18 +174,20 @@
   opacity: .55;
 }
 
-.attachment-card.is-uploading::after {
-  content: '';
+.attachment-card.is-uploading::after,
+.attachment-card.is-error::after {
+  content: 'Uploading…';
   position: absolute;
-  inset: 0;
-  background-size: 200% 100%;
-  animation: attachmentSweep 1.4s linear infinite;
+  top: 6px;
+  left: 6px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text2);
+  font: .65rem/1.4 var(--font-mono);
+  pointer-events: none;
 }
-
-@keyframes attachmentSweep {
-  from { background-position: -200% 0; }
-  to   { background-position:  200% 0; }
-}
+.attachment-card.is-error::after { content: 'Upload failed'; color: var(--red); }
 
 .attachment-card.is-error {
   border-color: rgba(224,112,112,.4);
@@ -200,10 +198,6 @@
   filter: grayscale(1);
 }
 
-.attachment-card.is-error::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
+@media (hover: none) {
+  .attachment-card-remove { opacity: 1; pointer-events: auto; width: 28px; height: 28px; }
 }

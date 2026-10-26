@@ -66,7 +66,9 @@ html.hide-suggestion-chips #suggestions-bar { display: none !important; }
   flex-shrink: 0;
 }
 
-.cust-toggle input { display: none; }
+.cust-toggle { position: relative; }
+.cust-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.cust-toggle input:focus-visible + .cust-toggle-track { outline: 2px solid var(--border2); outline-offset: 3px; }
 
 .cust-toggle-track {
   position: relative;

@@ -11,6 +11,7 @@
 
 import { applyMarkdown } from './markdown.js';
 import { createElement } from './dom.js';
+import { initTabs } from './ui.js';
 import { ICONS } from './icons.js';
 import { escapeHtml } from './format.js';
 
@@ -72,10 +73,10 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
     history.id = 'folder-home-chats';
     history.innerHTML = `
       <div class="folder-home-tabs" role="tablist" aria-label="Folder content">
-        <button class="folder-home-tab active" type="button" role="tab" aria-selected="true" data-folder-tab="chats">Chats</button>
-        <button class="folder-home-tab" type="button" role="tab" aria-selected="false" data-folder-tab="instructions">Instructions</button>
+        <button class="folder-home-tab active" type="button" role="tab" aria-selected="true" id="folder-tab-chats" aria-controls="folder-panel-chats" data-folder-tab="chats">Chats</button>
+        <button class="folder-home-tab" type="button" role="tab" aria-selected="false" id="folder-tab-instructions" aria-controls="folder-panel-instructions" data-folder-tab="instructions">Instructions</button>
       </div>
-      <div class="folder-home-panel" role="tabpanel" data-folder-panel="chats">
+      <div class="folder-home-panel" role="tabpanel" id="folder-panel-chats" aria-labelledby="folder-tab-chats" data-folder-panel="chats">
         <div class="folder-home-list">
         ${conversations.length ? conversations.map(conv => `
           <div class="folder-home-chat" data-conv-id="${escapeHtml(conv.id)}">
@@ -99,7 +100,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
           </div>`).join('') : '<div class="folder-home-no-chats">No chats in this folder yet</div>'}
         </div>
       </div>
-      <div class="folder-home-panel folder-instructions-panel" role="tabpanel" data-folder-panel="instructions" hidden>
+      <div class="folder-home-panel folder-instructions-panel" role="tabpanel" id="folder-panel-instructions" aria-labelledby="folder-tab-instructions" data-folder-panel="instructions" hidden>
         <div class="folder-instructions-heading">
           <div class="section-title">Folder instructions</div>
           <p class="tool-card-desc">Guide how the assistant should respond in every chat in this folder.</p>
@@ -111,16 +112,6 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
           <button class="btn-secondary" type="button" data-save-folder-instructions>Save</button>
         </div>
       </div>`;
-    const tabs = [...history.querySelectorAll('[data-folder-tab]')];
-    const panels = [...history.querySelectorAll('[data-folder-panel]')];
-    tabs.forEach(tab => tab.addEventListener('click', () => {
-      tabs.forEach(item => {
-        const active = item === tab;
-        item.classList.toggle('active', active);
-        item.setAttribute('aria-selected', String(active));
-      });
-      panels.forEach(panel => { panel.hidden = panel.dataset.folderPanel !== tab.dataset.folderTab; });
-    }));
     history.querySelectorAll('.folder-home-chat').forEach(item => {
       const convId = item.dataset.convId;
       item.querySelector('.folder-home-chat-open').addEventListener('click', () => document.dispatchEvent(new CustomEvent(
@@ -170,6 +161,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
       }));
     });
     messages.appendChild(history);
+    initTabs(history.querySelector('[role="tablist"]'));
   }
 
   const suggestionsBar = document.getElementById('suggestions-bar');

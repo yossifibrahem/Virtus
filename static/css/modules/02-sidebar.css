@@ -129,33 +129,22 @@
   color: var(--text2);
   transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
+.folder-group.active .folder-header,
 .folder-header:hover,
 .folder-group.folder-menu-open .folder-header {
   background: var(--surface);
   color: var(--text);
 }
 .folder-open {
-  appearance: none;
-  -webkit-appearance: none;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  line-height: 0;
-  flex-shrink: 0;
-  transition: color var(--fast), background var(--fast), opacity var(--fast), transform var(--fast);
-}
-.folder-open {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
-  width: auto;
-  display: flex;
-  justify-content: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: inherit;
   text-align: left;
 }
@@ -197,9 +186,8 @@
 .conv-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 36px;
-  padding: 0 8px 0 8px;
+  min-height: 38px;
+  padding: 0 4px;
   margin-bottom: 1px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -216,7 +204,21 @@
   background: var(--surface);
   color: var(--text);
 }
-.conv-item.active .conv-menu-btn { opacity: 1; }
+.conv-item.active .conv-menu-btn,
+.conv-item:focus-within .conv-menu-btn { opacity: 1; }
+.conv-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
 .conv-title {
   color: inherit;
   font-size: .74rem;
@@ -226,7 +228,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.conv-menu-wrap { position: absolute; right: 8px; }
+.conv-menu-wrap { position: relative; flex-shrink: 0; }
 .conv-menu-btn {
   width: 28px;
   height: 28px;
@@ -317,4 +319,9 @@
 .sidebar-label {
   white-space: nowrap;
   transition: opacity .15s var(--ease);
+}
+
+@media (hover: none) {
+  .conv-menu-btn { opacity: 1; width: 36px; height: 36px; }
+  .folder-menu-btn { pointer-events: auto; }
 }

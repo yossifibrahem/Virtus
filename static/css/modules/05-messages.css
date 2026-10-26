@@ -7,7 +7,6 @@
   margin: 0 auto;
   padding: 24px 30px 8px;
   position: relative;
-  animation: fadeUp .22s ease both;
 }
 .msg-row:first-child { padding-top: 34px; }
 
@@ -87,8 +86,6 @@
 .user-row .msg-content {
   max-width: min(78%, 680px);
   margin-left: auto;
-  background: var(--accent-dim);
-  border-color: var(--accent-border-dim);
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -169,16 +166,7 @@
   .user-row .msg-footer { max-width: 92%; }
 }
 
-/* ─── Message attachment cards → see 14-attachment-card.css ──────────────── *
- * Unified class names:                                                         *
- *   .msg-attachment-card   →  .attachment-card                                 *
- *   .msg-image-card        →  .attachment-card.attachment-card--image          *
- *   .msg-attachment-image  →  .attachment-card-thumb                           *
- *   .msg-file-card         →  .attachment-card.attachment-card--file           *
- *   .msg-file-card-body    →  .attachment-card-body                            *
- *   .msg-file-card-name    →  .attachment-card-name                            *
- *   .msg-file-card-subtle  →  .attachment-card-subtle                          *
- *   .msg-file-card-meta    →  .attachment-card-footer                          *
- *   .msg-file-card-badge   →  .attachment-card-badge                           *
- *   .msg-file-card-size    →  .attachment-card-size                            *
- * ─────────────────────────────────────────────────────────────────────────── */
+@media (hover: none) {
+  .msg-footer { opacity: 1; }
+  .msg-action-btn { min-width: 36px; height: 36px; }
+}

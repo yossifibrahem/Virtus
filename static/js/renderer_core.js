@@ -5,6 +5,8 @@ import { state } from './state.js';
 
 const BOTTOM_THRESHOLD = 32;
 export let stickToBottom = true;
+let scrollFrame = null;
+let forceScroll = false;
 
 export const messagesEl = () => $('#messages');
 const mainEl = () => document.getElementById('main');
@@ -20,6 +22,11 @@ export function moveComposerToMain() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const composer = composerEl();
+  if (composer) new ResizeObserver(([entry]) => {
+    mainEl()?.style.setProperty('--composer-height', `${Math.ceil(entry.target.getBoundingClientRect().height)}px`);
+    scrollToBottom();
+  }).observe(composer);
   messagesEl()?.addEventListener('scroll', event => {
     stickToBottom = isNearBottom(event.currentTarget);
   }, { passive: true });
@@ -30,11 +37,15 @@ export function scrollToBottom(force = false) {
   if (!el || (!force && !stickToBottom)) return;
   if (!force && state.isStreaming && !state.autoScrollStreaming) return;
 
-  requestAnimationFrame(() => {
-    if (force || stickToBottom) {
+  forceScroll ||= force;
+  if (scrollFrame !== null) return;
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = null;
+    if (forceScroll || stickToBottom) {
       el.scrollTop = el.scrollHeight;
       stickToBottom = true;
     }
+    forceScroll = false;
   });
 }
 

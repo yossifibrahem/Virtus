@@ -1,0 +1,26 @@
+/* Shared source rows: wrapping, gutter, spacing and keyboard scrolling. */
+.source-view {
+  --source-gutter: calc(var(--line-number-ch, 2ch) + 20px);
+  min-width: 0;
+  padding: 10px 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text2);
+  font: max(12px, .8rem)/1.6 var(--font-mono);
+  tab-size: 4;
+}
+.source-view:focus-visible { outline: 2px solid var(--border2); outline-offset: 2px; }
+.source-line { display: grid; grid-template-columns: var(--source-gutter) minmax(0, 1fr); }
+.source-line-number {
+  padding: 0 10px 0 6px;
+  border-right: 1px solid var(--border);
+  color: var(--text3);
+  text-align: right;
+  user-select: none;
+}
+.source-line code { min-width: 0; padding: 0 12px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-note { padding: 6px 12px; color: var(--text3); white-space: pre-wrap; overflow-wrap: anywhere; }
+.native-tool-body .source-view { max-height: 360px; }
+.file-preview-code .source-view { min-height: 100%; border: 0; border-radius: 0; }

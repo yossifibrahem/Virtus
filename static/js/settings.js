@@ -160,7 +160,7 @@ function _renderChips(container, chipClass, models) {
     return;
   }
   container.innerHTML = models.map(m =>
-    `<div class="${chipClass}${m === _draftModel ? ' selected' : ''}" data-model="${_escape(m)}" title="${_escape(m)}">${_escape(m)}</div>`
+    `<button type="button" class="${chipClass}${m === state.model ? ' selected' : ''}" aria-pressed="${m === state.model}" data-model="${_escape(m)}" title="${_escape(m)}">${_escape(m)}</button>`
   ).join('');
 
   container.querySelectorAll(`.${chipClass}`).forEach(chip => {

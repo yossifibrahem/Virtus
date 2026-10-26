@@ -6,18 +6,13 @@
 .native-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .native-action { padding: 3px 7px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface2); color: var(--text2); font-size: .68rem; cursor: pointer; }
 .native-action:hover { border-color: var(--border2); color: var(--text); }
-.native-action:focus-visible, .native-details > summary:focus-visible, .native-source:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.native-action:focus-visible, .native-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .native-section { min-width: 0; }
 .native-section-title { margin-bottom: 5px; color: var(--text3); font-size: .67rem; }
 .native-code { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg); color: var(--text2); font-family: var(--font-mono); font-size: .73rem; line-height: 1.6; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
 .native-details > summary { cursor: pointer; color: var(--text3); font-size: .7rem; padding: 3px 0; }
 .native-details[open] > summary { margin-bottom: 8px; }
 .native-replacement { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-.native-source { border: 1px solid var(--border); border-radius: 6px; background: var(--code-bg); max-height: 360px; overflow: auto; padding: 6px 0; font-family: var(--font-mono); font-size: .73rem; line-height: 1.6; }
-.native-source-line { display: flex; min-width: max-content; }
-.native-line-number { min-width: 4.5ch; flex-shrink: 0; padding: 0 10px; color: var(--text3); text-align: right; user-select: none; border-right: 1px solid var(--border); }
-.native-source-line code { padding: 0 12px; white-space: pre; tab-size: 4; color: var(--text2); font: inherit; }
-.native-read-note { padding: 5px 12px; color: var(--text3); white-space: pre-wrap; }
 .native-media { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
 .native-media:empty { display: none; }
 .native-media figure { margin: 0; min-width: 0; }
@@ -25,7 +20,6 @@
 .native-media img { display: block; max-width: 100%; max-height: 480px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); }
 .native-media figcaption { font-size: .65rem; color: var(--text3); margin-top: 5px; }
 .native-outcome { flex-shrink: 0; margin-left: 8px; font-size: .64rem; color: var(--text3); }
-.native-outcome--success { color: var(--green); }
 .native-outcome--error { color: var(--red); }
 .tool-strip[data-tool-kind="native"] .tr-tool-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-strip-running[data-tool-kind="native"] .tui-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

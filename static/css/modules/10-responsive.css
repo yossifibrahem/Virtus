@@ -1,14 +1,14 @@
 /* General responsive behavior for the app shell and composer. */
 
 /* ─── Responsive ──────────────────────────────────────────────────────────── */
-#sidebar-backdrop { display: none; position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); opacity: 0; transition: opacity .28s; }
+#sidebar-backdrop { display: none; position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.55); opacity: 0; transition: opacity .28s; }
 #sidebar-backdrop.visible { display: block; opacity: 1; }
 
 @media (max-width: 768px) {
   :root { --sidebar-w: 280px; }
   /* On mobile, fully slide off-screen instead of icon-rail collapse */
   #sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; height: var(--vvh, 100dvh); width: var(--sidebar-w) !important; min-width: var(--sidebar-w) !important; transition: transform .28s var(--ease); }
-  #sidebar:not(.collapsed) { transform: translateX(0); box-shadow: 8px 0 40px rgba(0,0,0,.6); }
+  #sidebar:not(.collapsed) { transform: translateX(0); box-shadow: 8px 0 24px rgba(0,0,0,.16); }
   #sidebar.collapsed { transform: translateX(-100%); }
   /* Make sure labels are always visible on mobile (no icon-rail state) */
   #sidebar.collapsed .logo-name,
@@ -21,7 +21,7 @@
   #main { margin-left: 0 !important; }
   #chat-header { height: calc(var(--chat-header-mobile-h, 50px) + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) 12px 0; gap: 8px; }
   #chat-title-wrap, #chat-title-input { font-size: .82rem; }
-  #composer-area { bottom: env(safe-area-inset-bottom, 12px); width: calc(100% - 24px); }
+  #composer-area { bottom: max(12px, env(safe-area-inset-bottom, 0px)); width: calc(100% - 24px); }
   #main.is-empty #composer-area { width: 100%; transform: none; }
   .msg-row { padding: 12px 14px 4px; }
   .msg-row:first-child { padding-top: 18px; }
@@ -39,26 +39,18 @@
   .folder-home-title { font-size: 1.2rem; }
   .folder-home-title svg { width: 21px; height: 21px; }
   .input-hint { display: none; }
-  .conv-item { padding: 10px 8px; }
+  .conv-item { min-height: 44px; padding: 0 4px; }
+  .conv-open { min-height: 42px; }
+  .folder-open { min-height: 40px; }
   .conv-menu-btn { opacity: 1; padding: 6px; }
   .sidebar-action { padding: 11px 10px; }
   #btn-toggle-sidebar, #btn-toggle-files { width: 36px; height: 36px; }
   #btn-toggle-sidebar svg { width: 20px; height: 20px; }
-  .modal-overlay { align-items: flex-end; padding: 0; }
-  .modal { width: 100%; max-width: 100%; height: 90dvh; max-height: 90dvh; border-bottom: none; border-radius: 16px 16px 0 0; transform: translateY(20px) scale(1); }
-  .modal-overlay.open .modal { transform: translateY(0) scale(1); }
-  .modal-header { padding: 14px 16px 12px; }
-  .modal-body { padding: 16px; }
-  .modal-footer { padding: 12px 16px; }
-  .search-modal-header { min-height: 68px; padding: 0 14px; }
-  .search-modal-header .modal-close { width: 36px; height: 36px; }
-  #conv-search { height: 50px; padding-left: 36px; font-size: .92rem; }
-  .search-modal-input-icon svg { width: 18px; height: 18px; }
-  .search-modal-body { padding: 8px 8px 18px; }
-  .search-result-open { padding-inline: 12px; }
-  .search-result time { margin-left: 14px; }
-  .field :is(input, select, textarea) { padding: 11px 12px; font-size: 0.94rem; }
-  .btn-primary, .btn-secondary, .btn-danger { padding: 10px 18px; }
+  .modal-overlay { padding: 12px; }
+  .modal, .modal-wide { max-height: calc(var(--vvh, 100dvh) - 24px); }
+  .modal-close { min-width: 36px; min-height: 36px; }
+  .field :is(input:not([type="range"]), select, textarea) { padding: 9px 10px; font-size: 0.94rem; }
+  .btn-primary, .btn-secondary, .btn-danger { min-height: 36px; padding: 8px 12px; }
   #model-badge-label { max-width: 100px; }
   .suggestion-chip { font-size: .65rem; padding: 6px 11px; }
 }

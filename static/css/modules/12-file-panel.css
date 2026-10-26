@@ -140,8 +140,8 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
 }
 .file-row.active {
   color: var(--text);
-  border-color: var(--accent-border-mid);
-  background: var(--accent-dim);
+  border-color: var(--border2);
+  background: var(--surface2);
 }
 .file-row-icon {
   width: 18px;
@@ -187,8 +187,6 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   white-space: nowrap;
 }
 .file-tree-status.is-error { color: var(--red); }
-.file-tree-status.is-loading { animation: file-tree-pulse 1.1s ease-in-out infinite; }
-@keyframes file-tree-pulse { 50% { opacity: .45; } }
 .file-panel-empty,
 .file-panel-note {
   padding: 18px 10px;
@@ -238,7 +236,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   padding: 0;
   background: var(--code-bg);
 }
-.file-preview-content.msg-content {
+.file-preview-content {
   flex: 1 0 auto;
   width: 100%;
   max-width: 100%;
@@ -246,108 +244,14 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   min-height: 100%;
   overflow-wrap: anywhere;
 }
-#file-preview .file-preview-content.msg-content {
+#file-preview .file-preview-content {
   padding: 0;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
 }
-#file-preview .file-preview-code.msg-content { background: var(--code-bg); }
-.file-preview-content.msg-content pre {
-  max-width: 100%;
-  overflow-x: hidden;
-}
-.file-preview-content.msg-content pre code {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-.file-preview-content.msg-content :is(img, picture, video, canvas, svg) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-}
-.file-preview-content.msg-content img {
-  object-fit: contain;
-  margin: .75em 0;
-}
-.file-preview-content.msg-content a:has(> img) {
-  display: inline-block;
-  max-width: 100%;
-}
-.file-preview-code.msg-content {
-  display: flex;
-  flex-direction: column;
-  overflow-x: hidden;
-  background: var(--code-bg);
-}
-.file-preview-code.msg-content .file-preview-code-block {
-  --line-number-gutter-w: calc(var(--line-number-ch, 2ch) + 14px);
-  --file-preview-line-height: 1.55;
-  position: relative;
-  flex: 1 0 auto;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 100%;
-  margin: 0;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-sizing: border-box;
-  color: var(--text2);
-  font-family: var(--font-mono);
-  font-size: .72rem;
-  line-height: var(--file-preview-line-height);
-}
-.file-preview-code.msg-content .file-preview-code-block::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 var(--line-number-gutter-w);
-  border-left: 1px solid var(--border);
-  pointer-events: none;
-}
-.file-preview-code.msg-content .file-preview-code-line {
-  display: grid;
-  grid-template-columns: var(--line-number-gutter-w) minmax(0, 1fr);
-  align-items: start;
-  min-width: 0;
-  min-height: calc(1em * var(--file-preview-line-height));
-}
-.file-preview-code.msg-content .file-preview-line-number {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
-  min-height: inherit;
-  padding: 0 8px 0 6px;
-  background: var(--code-bg);
-  color: var(--text3);
-  text-align: right;
-  line-height: inherit;
-  user-select: none;
-}
-.file-preview-code.msg-content .file-preview-code-line code {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  min-height: inherit;
-  padding: 0 12px;
-  box-sizing: border-box;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-.file-preview-code.msg-content .file-preview-code-line:first-child { padding-top: 12px; }
-.file-preview-code.msg-content .file-preview-code-line:last-child { padding-bottom: 12px; }
+#file-preview .file-preview-code { min-height: 100%; background: var(--code-bg); }
 
 /* ─── HTML iframe preview ──────────────────────────────────────────────────── */
 .file-preview-iframe {
@@ -380,7 +284,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
     max-width: 94vw;
     height: var(--vvh, 100dvh);
     margin-right: 0;
-    box-shadow: -12px 0 40px rgba(0,0,0,.55);
+    box-shadow: -8px 0 24px rgba(0,0,0,.16);
     transform: translateX(105%);
   }
   #file-panel.open { transform: translateX(0); }

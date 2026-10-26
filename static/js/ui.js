@@ -43,6 +43,7 @@ function applySidebarState(open, { persist = !sidebarMedia.matches } = {}) {
   if (!sidebar || !toggle) return;
 
   const isMobile = sidebarMedia.matches;
+  sidebar.inert = isMobile && !open;
   sidebar.classList.toggle('collapsed', !open);
   sidebar.dataset.state = open ? 'open' : (isMobile ? 'hidden' : 'mini');
 
@@ -86,8 +87,80 @@ export function initSidebar(defaultOpen = true) {
 
 // ── Modals ────────────────────────────────────────────────────────────────────
 
-export function openModal(id)  { document.getElementById(id).classList.add('open'); }
-export function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+const modalOpeners = new WeakMap();
+const focusable = 'button, input, textarea, select, a[href], [tabindex="0"]';
+const modalControls = modal => [...modal.querySelectorAll(focusable)]
+  .filter(el => el.tabIndex >= 0 && !el.disabled && el.getClientRects().length);
+
+export function openModal(id) {
+  const modal = document.getElementById(id);
+  modalOpeners.set(modal, document.activeElement);
+  modal.inert = false;
+  modal.classList.add('open');
+  modalControls(modal)[0]?.focus();
+}
+
+export function closeModal(id) {
+  const modal = document.getElementById(id);
+  modal.classList.remove('open');
+  modal.inert = true;
+  modalOpeners.get(modal)?.focus();
+  modalOpeners.delete(modal);
+}
+
+// Keep keyboard navigation inside the visible dialog.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') return;
+  const modal = document.querySelector('.modal-overlay.open');
+  if (!modal) return;
+  const controls = modalControls(modal);
+  const first = controls[0], last = controls.at(-1);
+  if (!modal.contains(document.activeElement) || (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first)?.focus();
+  }
+});
+
+// Settings and folder tabs share selection and keyboard behavior.
+export function initTabs(list) {
+  if (!list) return;
+  const tabs = [...list.querySelectorAll('[role="tab"], [data-tab]')].filter(tab => {
+    const id = tab.getAttribute('aria-controls') || tab.dataset.tab;
+    if (!id || !document.getElementById(id)) return false;
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-controls', id);
+    return true;
+  });
+  if (!tabs.length) return;
+  list.setAttribute('role', 'tablist');
+  function select(tab) {
+    tabs.forEach(item => {
+      const selected = item === tab;
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      const panel = document.getElementById(item.getAttribute('aria-controls'));
+      if (!panel) return;
+      panel.hidden = !selected;
+      panel.classList.toggle('active', selected);
+    });
+  }
+  list.addEventListener('click', event => {
+    const tab = event.target.closest('[role="tab"]');
+    if (tabs.includes(tab)) select(tab);
+  });
+  list.addEventListener('keydown', event => {
+    const index = tabs.indexOf(event.target);
+    if (index < 0) return;
+    const next = {ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length,
+      Home: 0, End: tabs.length - 1}[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    select(tabs[next]);
+    tabs[next].focus();
+  });
+  select(tabs.find(tab => tab.getAttribute('aria-selected') === 'true' || tab.classList.contains('active')) || tabs[0]);
+}
 
 // ── Input helpers ─────────────────────────────────────────────────────────────
 
@@ -115,9 +188,10 @@ export function initMobileKeyboardHandling() {
   function applyVVH() {
     rafId  = null;
     const h = window.visualViewport.height;
+    const atBottom = messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 32;
     root.style.setProperty('--vvh', `${h}px`);
 
-    if (messages) {
+    if (atBottom) {
       requestAnimationFrame(() => {
         messages.scrollTop = messages.scrollHeight;
       });

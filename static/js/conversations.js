@@ -9,6 +9,7 @@ import { ICONS } from './icons.js';
 import { escapeHtml } from './format.js';
 import { refreshFilePanel, resetFilePanel } from './file_panel.js';
 
+let navigationId = 0;
 let folders = [];
 let conversations = [];
 let pendingFolderId = null;
@@ -123,7 +124,7 @@ export function bindConversationSearch() {
 
 function _buildFolderGroup(folder) {
   const group = document.createElement('section');
-  group.className = 'folder-group';
+  group.className = `folder-group${folder.id === state.folderId ? ' active' : ''}`;
   group.dataset.folderId = folder.id;
   group.innerHTML = `
     <div class="folder-header">
@@ -186,9 +187,9 @@ function _buildConvItem(conv) {
   const title = conv.title || 'Untitled';
 
   item.innerHTML = `
-    <div class="conv-info">
-      <div class="conv-title">${escapeHtml(title)}</div>
-    </div>
+    <button class="conv-open" type="button" title="${escapeHtml(title)}"${conv.id === state.convId ? ' aria-current="page"' : ''}>
+      <span class="conv-title">${escapeHtml(title)}</span>
+    </button>
     <div class="conv-menu-wrap">
       <button class="conv-menu-btn" type="button" title="Conversation options" aria-label="Conversation options" aria-expanded="false">
         ${ICONS.moreVertical}
@@ -204,14 +205,12 @@ function _buildConvItem(conv) {
         </button>
         <button class="conv-menu-item danger" type="button" role="menuitem" data-action="remove">
           ${ICONS.trash}
-          <span>Remove</span>
+          <span>Delete</span>
         </button>
       </div>
     </div>`;
 
-  item.addEventListener('click', e => {
-    if (!e.target.closest('.conv-menu-wrap')) openConversation(conv.id);
-  });
+  item.querySelector('.conv-open').addEventListener('click', () => openConversation(conv.id));
 
   const menuBtn = item.querySelector('.conv-menu-btn');
   menuBtn.addEventListener('click', e => {
@@ -323,12 +322,20 @@ function updateConversationListTitle(convId, title) {
   if (!titleEl || titleEl.textContent === title) return;
 
   titleEl.textContent = title;
+  item.querySelector('.conv-open').title = title;
 }
 
 function setActiveConversationItem(convId) {
-  document.querySelectorAll('.conv-item.active').forEach(item => item.classList.remove('active'));
-  const item = document.querySelector(`.conv-item[data-id="${CSS.escape(convId)}"]`);
+  document.querySelectorAll('.folder-group').forEach(group => {
+    group.classList.toggle('active', group.dataset.folderId === state.folderId);
+  });
+  document.querySelectorAll('.conv-item.active').forEach(item => {
+    item.classList.remove('active');
+    item.querySelector('.conv-open')?.removeAttribute('aria-current');
+  });
+  const item = convId ? document.querySelector(`.conv-item[data-id="${CSS.escape(convId)}"]`) : null;
   item?.classList.add('active');
+  item?.querySelector('.conv-open')?.setAttribute('aria-current', 'page');
 }
 
 function upsertConversationListItem(conv) {
@@ -387,7 +394,10 @@ function applyConversationData(id, data, { render = true } = {}) {
 }
 
 export async function openConversation(id) {
+  const requestId = ++navigationId;
   const data = await api.get(`/api/conversations/${id}`);
+  if (requestId !== navigationId) return;
+  if (data.error) throw new Error(data.error);
   state.convId = id;
   storage.set(STORAGE_KEYS.lastConv, id);
   const hasActiveStream = Boolean(data.active_stream_id);
@@ -403,6 +413,7 @@ export async function openConversation(id) {
 // Resets the UI to an empty chat without touching the server.
 // The actual conversation record is created lazily on the first send (chat.js).
 export function startNewChat(folderId = null) {
+  ++navigationId;
   pendingFolderId = folderId;
   state.convId     = null;
   state.messages   = [];
@@ -415,7 +426,7 @@ export function startNewChat(folderId = null) {
   document.dispatchEvent(new CustomEvent('chat:conversation-opened', {
     detail: { convId: null, data: folderId ? { folder_id: folderId } : {} },
   }));
-  document.querySelectorAll('.conv-item.active').forEach(el => el.classList.remove('active'));
+  setActiveConversationItem(null);
   if (window.innerWidth <= 768) toggleSidebar(false);
 }
 

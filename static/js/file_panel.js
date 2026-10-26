@@ -5,6 +5,7 @@ import { STORAGE_KEYS, state } from './state.js';
 import { ICONS } from './icons.js';
 
 import { applyMarkdown } from './markdown.js';
+import { renderSource } from './source_view.js';
 import { showToast } from './ui.js';
 import { storage } from './storage.js';
 import { escapeHtml, formatBytes, fileExtension as ext } from './format.js';
@@ -22,6 +23,8 @@ let renderMode = 'render';   // 'render' | 'code'
 let currentFileData = null;  // last loaded file payload, for re-rendering without re-fetch
 let panelWidth = DEFAULT_PANEL_WIDTH;
 let treeRenderId = 0;
+let listRequestId = 0;
+let previewRequestId = 0;
 const expandedPaths = new Set([WORKSPACE_ROOT]);
 
 // Resolved once in initFilePanel — these elements are stable for the page lifetime.
@@ -61,16 +64,6 @@ function savePanelWidth(width) {
   storage.set(PANEL_WIDTH_KEY, panelWidth);
 }
 
-function languageFromName(name = '') {
-  const map = {
-    js: 'javascript', mjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
-    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp',
-    cs: 'csharp', php: 'php', sh: 'bash', bash: 'bash', css: 'css', html: 'html', htm: 'html',
-    json: 'json', yaml: 'yaml', yml: 'yaml', xml: 'xml', sql: 'sql', md: 'markdown', toml: 'toml',
-  };
-  return map[ext(name)] || '';
-}
-
 function isMarkdown(name = '') {
   return ['md', 'markdown'].includes(ext(name));
 }
@@ -83,41 +76,6 @@ function isRenderable(name = '') {
   return isMarkdown(name) || isHtml(name);
 }
 
-function sourceLines(content = '') {
-  const text = String(content ?? '').replace(/\r\n?/g, '\n');
-  const displayText = text.endsWith('\n') ? text.slice(0, -1) : text;
-  return displayText.split('\n');
-}
-
-function renderCodePreview(root, content = '', language = '') {
-  const lines = sourceLines(content);
-  const lineDigits = Math.max(2, String(lines.length).length);
-  const safeLanguage = String(language || '').replace(/[^\w#+.-]/g, '');
-  const pre = document.createElement('pre');
-  pre.className = 'file-preview-code-block';
-  pre.style.setProperty('--line-number-ch', `${lineDigits}ch`);
-
-  lines.forEach((line, index) => {
-    const row = document.createElement('span');
-    row.className = 'file-preview-code-line';
-
-    const number = document.createElement('span');
-    number.className = 'file-preview-line-number';
-    number.setAttribute('aria-hidden', 'true');
-    number.textContent = String(index + 1);
-
-    const code = document.createElement('code');
-    if (safeLanguage) code.className = `language-${safeLanguage}`;
-    code.textContent = line || '​';
-
-    row.append(number, code);
-    pre.appendChild(row);
-  });
-
-  root.appendChild(pre);
-  pre.querySelectorAll('code').forEach(block => window.hljs?.highlightElement(block));
-}
-
 function isMissingWorkspacePath(error = '') {
   return ['Path not found', 'File not found', 'Path is not a file'].includes(error);
 }
@@ -127,6 +85,9 @@ function setPanelOpen(open, { persist = true } = {}) {
   if (persist) storage.set(STORAGE_KEYS.filePanelOpen, open);
   els.panel?.classList.toggle('open', open);
   els.toggle?.classList.toggle('active', open);
+  els.toggle?.setAttribute('aria-expanded', String(open));
+  if (!open && els.panel?.contains(document.activeElement)) els.toggle?.focus();
+  if (els.panel) els.panel.inert = !open;
 
   if (open) {
     refreshFilePanel({ keepPreview: Boolean(selectedPath) }).catch(() => {});
@@ -134,7 +95,9 @@ function setPanelOpen(open, { persist = true } = {}) {
 }
 
 function setPreviewOpen(open) {
+  const changed = open && !els.panel?.classList.contains('preview-open');
   els.panel?.classList.toggle('preview-open', open);
+  if (changed && isOpen) els.back?.focus();
 }
 
 function updateToggleButton(name, mode) {
@@ -205,54 +168,33 @@ document.addEventListener('click', function(e) {
 }
 
 function renderContent(data, mode) {
-  els.body.innerHTML = '';
-
-  if (isHtml(data.name)) {
-    if (mode === 'render') {
-      const iframe = document.createElement('iframe');
-      iframe.className = 'file-preview-iframe';
-      // allow-scripts: needed for JS in previewed HTML.
-      // allow-popups: required for target="_blank" links to actually open a new tab;
-      //   without it the browser silently blocks window.open and <a target="_blank">.
-      // allow-popups-to-escape-sandbox: lets popup tabs behave as normal browser tabs
-      //   rather than inheriting the iframe's sandbox restrictions.
-      // allow-same-origin is intentionally omitted: when present, clicking a
-      // link to localhost (or any same-origin URL) navigates the iframe to the
-      // full app, rendering a duplicate of the UI inside the file panel.
-      // Without allow-same-origin the iframe runs in a unique opaque origin so
-      // same-origin navigation is blocked by the browser's sandbox policy.
-      iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
-      // Inject a <base target="_blank"> so all links open in a new tab
-      // rather than navigating the iframe.
-      const safeContent = injectBaseTarget(data.content || '');
-      iframe.srcdoc = safeContent;
-      els.body.appendChild(iframe);
-    } else {
-      const preview = document.createElement('div');
-      preview.className = 'file-preview-content msg-content file-preview-code';
-      els.body.appendChild(preview);
-      renderCodePreview(preview, data.content || '', 'html');
-    }
-  } else if (isMarkdown(data.name)) {
-    const preview = document.createElement('div');
-    preview.className = `file-preview-content msg-content${mode === 'render' ? '' : ' file-preview-code'}`;
-    els.body.appendChild(preview);
-    if (mode === 'render') {
-      applyMarkdown(preview, data.content || '', { copyCodeButtons: false });
-    } else {
-      renderCodePreview(preview, data.content || '', 'markdown');
-    }
+  els.body.replaceChildren();
+  const content = data.content || '';
+  if (isHtml(data.name) && mode === 'render') {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'file-preview-iframe';
+    iframe.title = data.name || 'HTML preview';
+    // Preserve an opaque origin even when the preview runs scripts.
+    iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
+    iframe.srcdoc = injectBaseTarget(content);
+    els.body.appendChild(iframe);
+    return;
+  }
+  const preview = document.createElement('div');
+  preview.className = 'file-preview-content';
+  els.body.appendChild(preview);
+  if (isMarkdown(data.name) && mode === 'render') {
+    preview.classList.add('msg-content');
+    applyMarkdown(preview, content, { copyCodeButtons: false });
   } else {
-    const language = languageFromName(data.name);
-    const preview = document.createElement('div');
-    preview.className = 'file-preview-content msg-content file-preview-code';
-    els.body.appendChild(preview);
-    renderCodePreview(preview, data.content || '', language);
+    preview.classList.add('file-preview-code');
+    preview.innerHTML = renderSource(content, { filename: data.name });
   }
 }
 
 
 function resetPreview() {
+  previewRequestId++;
   selectedPath = null;
   setSelectedTreeRow(null);
   currentFileData = null;
@@ -260,15 +202,17 @@ function resetPreview() {
   els.title.textContent = 'Preview';
   els.body.innerHTML = '';
   els.copy.disabled = true;
-  els.copy.removeAttribute('data-content');
   els.download.disabled = true;
   els.download.removeAttribute('data-path');
   if (els.toggleRender) els.toggleRender.hidden = true;
 }
 
 function closePreview() {
+  const returnFocus = els.panel?.contains(document.activeElement);
+  const row = els.list?.querySelector('.file-row.active');
   resetPreview();
   setPreviewOpen(false);
+  if (returnFocus && isOpen) (row || els.refresh)?.focus();
 }
 
 function setEmptyPreview(message = 'Select a file to preview it here.') {
@@ -298,7 +242,8 @@ function treeStatus(message, className = '') {
 async function fetchDirectory(path) {
   const apiBase = workspaceApiBase();
   if (!apiBase) return { error: 'Start or open a chat to browse its workspace.' };
-  return api.get(`${apiBase}/files?path=${encodeURIComponent(path)}`);
+  return api.get(`${apiBase}/files?path=${encodeURIComponent(path)}`)
+    .catch(error => ({ error: error.message || 'Could not load files' }));
 }
 
 async function populateTreeGroup(group, payload, depth, renderId) {
@@ -419,6 +364,8 @@ async function renderList(payload) {
 }
 
 async function loadFileList() {
+  const requestId = ++listRequestId;
+  ++treeRenderId;
   const apiBase = workspaceApiBase();
   if (!apiBase) {
     els.list.innerHTML = '<div class="file-panel-empty">Start or open a chat to browse its workspace.</div>';
@@ -430,7 +377,8 @@ async function loadFileList() {
   if (!els.list.children.length) {
     els.list.innerHTML = '<div class="file-panel-empty">Loading files…</div>';
   }
-  const payload = await api.get(`${apiBase}/files?path=${encodeURIComponent(WORKSPACE_ROOT)}`);
+  const payload = await fetchDirectory(WORKSPACE_ROOT);
+  if (requestId !== listRequestId || apiBase !== workspaceApiBase()) return false;
   if (payload.error) {
     els.list.innerHTML = `<div class="file-panel-empty">${escapeHtml(payload.error)}</div>`;
     return false;
@@ -442,18 +390,21 @@ async function loadFileList() {
 async function loadFilePreview(path) {
   const apiBase = workspaceApiBase();
   if (!apiBase || !path) return;
+  const requestId = ++previewRequestId;
   selectedPath = path;
+  currentFileData = null;
+  els.toggleRender.hidden = true;
+  els.title.textContent = displayNameForPath(path);
   setPreviewOpen(true);
 
-  if (!els.body.children.length) {
-    els.body.innerHTML = '<div class="file-panel-empty">Loading preview…</div>';
-  }
+  els.body.innerHTML = '<div class="file-panel-empty" role="status">Loading preview…</div>';
   els.copy.disabled = true;
-  els.copy.removeAttribute('data-content');
   els.download.disabled = true;
   els.download.removeAttribute('data-path');
 
-  const data = await api.get(`${apiBase}/files/content?path=${encodeURIComponent(path)}`);
+  const data = await api.get(`${apiBase}/files/content?path=${encodeURIComponent(path)}`)
+    .catch(error => ({ error: error.message || 'Could not load file' }));
+  if (requestId !== previewRequestId || apiBase !== workspaceApiBase()) return false;
   if (data.error) {
     if (isMissingWorkspacePath(data.error)) {
       closePreview();
@@ -467,6 +418,7 @@ async function loadFilePreview(path) {
   }
 
   els.title.textContent = data.name || 'File';
+  els.title.title = data.path || path;
   els.download.disabled = false;
   els.download.dataset.path = data.path;
 
@@ -480,10 +432,8 @@ async function loadFilePreview(path) {
   }
 
   els.copy.disabled = false;
-  els.copy.dataset.content = data.content || '';
 
   currentFileData = data;
-  renderMode = 'render';
   updateToggleButton(data.name, renderMode);
   renderContent(data, renderMode);
   return true;
@@ -507,25 +457,32 @@ function initPanelResize() {
     };
 
     const onUp = upEvent => {
-      els.resizer.releasePointerCapture?.(upEvent.pointerId);
+      if (els.resizer.hasPointerCapture?.(upEvent.pointerId)) {
+        els.resizer.releasePointerCapture(upEvent.pointerId);
+      }
       els.panel.classList.remove('resizing');
       document.body.classList.remove('file-panel-resizing');
       savePanelWidth(panelWidth);
       window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
   });
 }
 
 export async function refreshFilePanel({ keepPreview = true } = {}) {
   if (!els.panel || !isOpen) return;
 
+  const path = keepPreview ? selectedPath : null;
+  const requestId = previewRequestId;
   try {
     await loadFileList();
-    if (keepPreview && selectedPath && els.panel.classList.contains('preview-open')) {
-      await loadFilePreview(selectedPath);
+    if (path && requestId === previewRequestId && els.panel.classList.contains('preview-open')) {
+      await loadFilePreview(path);
     }
   } catch (err) {
     console.warn('Could not refresh workspace files', err);
@@ -533,6 +490,9 @@ export async function refreshFilePanel({ keepPreview = true } = {}) {
 }
 
 export function resetFilePanel() {
+  ++listRequestId;
+  ++treeRenderId;
+  els.list?.replaceChildren();
   expandedPaths.clear();
   expandedPaths.add(WORKSPACE_ROOT);
   closePreview();
@@ -583,7 +543,7 @@ export function initFilePanel() {
 
   els.copy?.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(els.copy.dataset.content || '');
+      await navigator.clipboard.writeText(currentFileData?.content || '');
       showToast('Copied file content');
     } catch {
       showToast('Copy failed');
@@ -597,6 +557,12 @@ export function initFilePanel() {
     link.href = `${apiBase}/files/download?path=${encodeURIComponent(els.download.dataset.path)}`;
     link.download = '';
     link.click();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && isOpen && !document.querySelector('.modal-overlay.open, #model-popover.open')) {
+      setPanelOpen(false);
+    }
   });
 
   document.addEventListener('lumen:open-workspace-file', async e => {

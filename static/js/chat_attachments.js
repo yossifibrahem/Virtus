@@ -49,9 +49,12 @@ function refreshImagePreviewBar() {
           ${ICONS.close}
         </button>`;
 
+      wrap.setAttribute('aria-busy', 'true');
       entry.uploadPromise.then(result => {
-        if (result) wrap.classList.remove('is-uploading');
-        else        wrap.classList.add('is-error');
+        wrap.classList.remove('is-uploading');
+        wrap.classList.toggle('is-error', !result);
+        wrap.setAttribute('aria-busy', 'false');
+        if (!result) wrap.title = 'Upload failed. Remove this attachment and try again.';
       });
     } else {
       wrap.innerHTML = `

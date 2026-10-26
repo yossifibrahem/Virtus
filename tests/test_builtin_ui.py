@@ -65,7 +65,7 @@ assert(bash.renderBody({command:'echo <script>'}, '\n[exit status 0]').includes(
 assert(!bash.renderBody({command:'echo <script>'}, '').includes('<script>'));
 const read=nativeAdapterFor('read');
 const html=read.renderBody({path:'a.py',range:'10:11'}, '10: <img>\n11: second\n[more content]');
-assert(html.includes('native-line-number'));
+assert(html.includes('source-line-number'));
 assert(html.includes('&lt;img&gt;'));
 assert(html.includes('[more content]'));
 assert(html.includes('Range 10:11'));

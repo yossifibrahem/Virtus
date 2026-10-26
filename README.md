@@ -474,6 +474,7 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 | `renderer_actions.js` | Copy/edit/regenerate buttons and branch arrows in message footers |
 | `mcp.js` | MCP config UI, tool loading, enable/auto-approve toggles |
 | `file_panel.js` | Workspace browser, preview, and download |
+| `source_view.js` | Shared numbered source rendering for file previews and native Read results |
 | `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
 | `settings.js` | API and chat settings UI |
 | `markdown.js` | Markdown, code highlighting, KaTeX, safe workspace file links |
@@ -594,7 +595,7 @@ Standalone chats have separate workspaces. Chats in a Folder share a runtime and
 
 Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
 
-The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Smaller upload limits are supported. Large transfers use bounded JSON/base64 transport and temporarily consume more memory than the raw file size. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
+The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; the file panel’s Copy and Download actions retain the full loaded file content. Smaller upload limits are supported. Large transfers use bounded JSON/base64 transport and temporarily consume more memory than the raw file size. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
 
 After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `read`, `write`, and `edit` are reserved; rename conflicting MCP tools.
 

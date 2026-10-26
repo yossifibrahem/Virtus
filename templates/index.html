@@ -153,11 +153,11 @@
     <div id="chat-title-wrap">
       <button id="chat-folder-prefix" type="button" hidden></button>
       <span id="chat-title-separator" hidden>/</span>
-      <input id="chat-title-input" type="text" placeholder="New Conversation" maxlength="80" />
+      <input id="chat-title-input" aria-label="Conversation title" type="text" placeholder="New Conversation" maxlength="80" />
     </div>
 
     <div class="header-actions">
-      <button id="btn-toggle-files" title="Workspace files" aria-label="Workspace files">
+      <button id="btn-toggle-files" aria-controls="file-panel" aria-expanded="false" title="Workspace files" aria-label="Workspace files">
         <span data-icon="mcpFileSystem"></span>
       </button>
     </div>
@@ -171,7 +171,7 @@
       <div id="composer-input-panel">
         <div id="image-preview-bar" hidden></div>
 
-        <textarea id="user-input" rows="1" placeholder="Ask anything…"></textarea>
+        <textarea aria-label="Message" id="user-input" rows="1" placeholder="Ask anything…"></textarea>
 
         <div class="input-toolbar">
           <div class="toolbar-left">
@@ -189,7 +189,7 @@
                 <span id="model-badge-label">No model</span>
                 <span id="model-badge-chevron" data-icon="chevronDown"></span>
               </button>
-              <div id="model-popover">
+              <div id="model-popover" inert>
                 <div class="mp-header">Select model</div>
                 <div id="mp-model-list"><span class="mp-empty">No models — fetch them in Settings</span></div>
               </div>
@@ -218,7 +218,7 @@
 </main>
 
 <!-- Workspace Files Panel -->
-<aside id="file-panel">
+<aside id="file-panel" aria-label="Workspace files" inert>
   <div id="file-panel-resizer" title="Resize workspace panel" aria-hidden="true"></div>
   <div class="file-panel-header">
     <div class="file-panel-title">Workspace</div>
@@ -247,32 +247,32 @@
 </aside>
 
 <!-- Settings Modal -->
-<div class="modal-overlay" id="settings-modal">
-  <div class="modal">
+<div class="modal-overlay" inert id="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
+  <div class="modal modal-wide">
     <div class="modal-header">
-      <nav class="modal-tabs">
-        <button class="modal-tab active" data-tab="tab-api">
+      <nav class="modal-tabs" role="tablist" aria-label="Settings sections">
+        <button class="modal-tab active" id="tab-api-tab" role="tab" aria-controls="tab-api" aria-selected="true" tabindex="0" data-tab="tab-api">
           <span data-icon="tabApi"></span>
           API
         </button>
-        <button class="modal-tab" data-tab="tab-chat">
+        <button class="modal-tab" id="tab-chat-tab" role="tab" aria-controls="tab-chat" aria-selected="false" tabindex="-1" data-tab="tab-chat">
           <span data-icon="tabChat"></span>
           Chat
         </button>
-        <button class="modal-tab" data-tab="tab-appearance">
+        <button class="modal-tab" id="tab-appearance-tab" role="tab" aria-controls="tab-appearance" aria-selected="false" tabindex="-1" data-tab="tab-appearance">
           <span data-icon="tabAppearance"></span>
           Appearance
         </button>
-        <button class="modal-tab" data-tab="tab-mcp">
+        <button class="modal-tab" id="tab-mcp-tab" role="tab" aria-controls="tab-mcp" aria-selected="false" tabindex="-1" data-tab="tab-mcp">
           <span data-icon="tabMcp"></span>
           MCP
         </button>
-        <button class="modal-tab" data-tab="tab-containers">
+        <button class="modal-tab" id="tab-containers-tab" role="tab" aria-controls="tab-containers" aria-selected="false" tabindex="-1" data-tab="tab-containers">
           <span data-icon="tabContainers"></span>
           Containers
         </button>
       </nav>
-      <button class="modal-close" data-close="settings-modal">
+      <button class="modal-close" data-close="settings-modal" aria-label="Close settings">
         <span data-icon="close"></span>
       </button>
     </div>
@@ -280,20 +280,20 @@
     <div class="modal-body">
 
       <!-- ── API tab ── -->
-      <div id="tab-api" class="tab-panel active">
+      <div id="tab-api" class="tab-panel active" role="tabpanel" aria-labelledby="tab-api-tab">
 
         <div class="settings-section">
           <div class="section-title">Connection</div>
           <div class="field">
-            <label>API Base URL</label>
+            <label for="api-base">API Base URL</label>
             <input type="text" id="api-base" placeholder="https://api.openai.com/v1" />
             <div class="field-note">Compatible with OpenAI, Anthropic proxies, Ollama, LM Studio&hellip;</div>
           </div>
           <div class="field">
-            <label>API Key</label>
+            <label for="api-key">API Key</label>
             <div class="input-with-eye">
               <input type="password" id="api-key" placeholder="sk-&hellip;" autocomplete="off" />
-              <button class="eye-btn" id="btn-toggle-key" title="Show / hide key" tabindex="-1">
+              <button class="eye-btn" id="btn-toggle-key" title="Show / hide key" aria-label="Show or hide API key">
                 <span id="eye-icon-show" data-icon="eyeShow"></span>
                 <span id="eye-icon-hide" data-icon="eyeHide" style="display:none"></span>
               </button>
@@ -317,7 +317,7 @@
           <div class="section-title">Model Parameters</div>
 
           <div class="field">
-            <label>Temperature <span class="param-badge" id="temp-badge">0.7</span></label>
+            <label for="setting-temperature">Temperature <span class="param-badge" id="temp-badge">0.7</span></label>
             <input type="range" id="setting-temperature" min="0" max="2" step="0.05" value="0.7" class="range-slider" />
             <div class="range-labels"><span>Precise (0)</span><span>Balanced</span><span>Creative (2)</span></div>
             <div class="field-note">Controls randomness. Lower = more deterministic, higher = more creative.</div>
@@ -327,12 +327,12 @@
       </div>
 
       <!-- ── Chat tab ── -->
-      <div id="tab-chat" class="tab-panel">
+      <div id="tab-chat" class="tab-panel" role="tabpanel" aria-labelledby="tab-chat-tab">
 
         <div class="settings-section">
           <div class="section-title">System Prompt</div>
           <div class="field">
-            <textarea id="system-prompt" class="textarea-tall" placeholder="You are a helpful assistant&hellip;"></textarea>
+            <textarea aria-label="System prompt" id="system-prompt" class="textarea-tall" placeholder="You are a helpful assistant&hellip;"></textarea>
             <div class="field-note">Sent as the system message at the start of every conversation.</div>
           </div>
         </div>
@@ -348,7 +348,7 @@
               <span class="cust-hint">Name new conversations automatically after the first reply</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="setting-auto-titles" />
+              <input type="checkbox" aria-label="Auto-generate titles" id="setting-auto-titles" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -360,7 +360,7 @@
               <span class="cust-hint">On: Enter sends, Shift+Enter adds a new line. Off: Enter adds a new line, Shift+Enter sends.</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="setting-enter-send" />
+              <input type="checkbox" aria-label="Enter sends message" id="setting-enter-send" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -371,7 +371,7 @@
               <span class="cust-hint">Follow new tokens only while you are already near the bottom</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="setting-auto-scroll" />
+              <input type="checkbox" aria-label="Auto-scroll while responding" id="setting-auto-scroll" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -380,7 +380,7 @@
       </div>
 
       <!-- ── Appearance tab ── -->
-      <div id="tab-appearance" class="tab-panel">
+      <div id="tab-appearance" class="tab-panel" role="tabpanel" aria-labelledby="tab-appearance-tab">
 
         <div class="settings-section">
           <div class="section-title">Theme</div>
@@ -421,7 +421,7 @@
           <div class="section-title">Typography</div>
           <div class="field-row">
             <div class="field">
-              <label>Font size</label>
+              <label for="cust-font-size">Font size</label>
               <select id="cust-font-size">
                 <option value="small">Small (12&ndash;14px)</option>
                 <option value="medium">Medium (14&ndash;16px)</option>
@@ -429,7 +429,7 @@
               </select>
             </div>
             <div class="field">
-              <label>Font family</label>
+              <label for="cust-font-family">Font family</label>
               <select id="cust-font-family">
                 <option value="geist">Standard — Geist</option>
                 <option value="system">System default</option>
@@ -453,9 +453,9 @@
             <button class="cust-swatch" data-color="#8C72D8" title="Amethyst Violet" aria-label="Amethyst violet accent" style="--sw: #8C72D8;"></button>
           </div>
           <div class="custom-color-row">
-            <label class="custom-color-label">Custom color</label>
+            <label class="custom-color-label" for="cust-accent-hex">Custom color</label>
             <div class="custom-color-input-wrap">
-              <input type="color" id="cust-accent-picker" title="Pick a custom color" />
+              <input type="color" id="cust-accent-picker" aria-label="Custom accent color" title="Pick a custom color" />
               <input type="text" id="cust-accent-hex" placeholder="#rrggbb" maxlength="7" spellcheck="false" />
             </div>
           </div>
@@ -472,7 +472,7 @@
               <span class="cust-hint">Prompt shortcuts shown on new conversations</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="cust-suggestion-chips" />
+              <input type="checkbox" aria-label="Show suggestion chips" id="cust-suggestion-chips" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -483,7 +483,7 @@
               <span class="cust-hint">Tool-use blocks start collapsed</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="cust-hide-tool-blocks" />
+              <input type="checkbox" aria-label="Hide tool blocks" id="cust-hide-tool-blocks" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -494,7 +494,7 @@
               <span class="cust-hint">Thinking blocks start collapsed while streaming</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="cust-hide-thinking" />
+              <input type="checkbox" aria-label="Hide thinking tokens" id="cust-hide-thinking" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -505,7 +505,7 @@
               <span class="cust-hint">Collapse consecutive thinking and tool-use blocks into a single group</span>
             </div>
             <label class="cust-toggle">
-              <input type="checkbox" id="cust-group-seq-blocks" />
+              <input type="checkbox" aria-label="Group sequential blocks" id="cust-group-seq-blocks" />
               <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
             </label>
           </div>
@@ -515,7 +515,7 @@
       </div>
 
       <!-- ── MCP tab ── -->
-      <div id="tab-mcp" class="tab-panel">
+      <div id="tab-mcp" class="tab-panel" role="tabpanel" aria-labelledby="tab-mcp-tab">
         <div class="settings-section">
           <div class="section-title">Server Configuration</div>
           <div class="field">
@@ -544,14 +544,14 @@
       </div><!-- /#tab-mcp -->
 
       <!-- ── Containers tab ── -->
-      <div id="tab-containers" class="tab-panel">
+      <div id="tab-containers" class="tab-panel" role="tabpanel" aria-labelledby="tab-containers-tab">
 
         <!-- Sandbox Container ─────────────────────────────────────────── -->
         <div class="settings-section">
           <div class="section-title">Sandbox Container</div>
 
           <div class="field">
-            <label class="adv-label-row">
+            <label class="adv-label-row" for="adv-sandbox_image">
               Docker image
               <span class="adv-env-badge" id="adv-lock-sandbox_image" hidden title="">ENV</span>
             </label>
@@ -561,7 +561,7 @@
 
           <div class="field-row">
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-container_memory">
                 Memory limit
                 <span class="adv-env-badge" id="adv-lock-container_memory" hidden title="">ENV</span>
               </label>
@@ -577,7 +577,7 @@
             </div>
 
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-container_cpus">
                 CPU limit
                 <span class="adv-env-badge" id="adv-lock-container_cpus" hidden title="">ENV</span>
               </label>
@@ -588,7 +588,7 @@
 
           <div class="field-row">
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-container_network">
                 Docker network
                 <span class="adv-env-badge" id="adv-lock-container_network" hidden title="">ENV</span>
               </label>
@@ -597,7 +597,7 @@
             </div>
 
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-container_idle_timeout">
                 Idle timeout (seconds)
                 <span class="adv-env-badge" id="adv-lock-container_idle_timeout" hidden title="">ENV</span>
               </label>
@@ -615,7 +615,7 @@
 
           <div class="field-row">
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-max_file_preview_bytes">
                 Max inline preview size
                 <span class="adv-env-badge" id="adv-lock-max_file_preview_bytes" hidden title="">ENV</span>
               </label>
@@ -630,7 +630,7 @@
             </div>
 
             <div class="field">
-              <label class="adv-label-row">
+              <label class="adv-label-row" for="adv-max_file_list_entries">
                 Max directory entries
                 <span class="adv-env-badge" id="adv-lock-max_file_list_entries" hidden title="">ENV</span>
               </label>
@@ -640,7 +640,7 @@
           </div>
 
           <div class="field">
-            <label class="adv-label-row">
+            <label class="adv-label-row" for="adv-max_upload_bytes">
               Max upload size
               <span class="adv-env-badge" id="adv-lock-max_upload_bytes" hidden title="">ENV</span>
             </label>
@@ -678,35 +678,35 @@
 </div>
 
 <!-- Conversation search modal -->
-<div class="modal-overlay" id="search-modal" role="dialog" aria-modal="true" aria-label="Search conversations">
-  <div class="modal search-modal-shell">
-    <div class="modal-header search-modal-header">
+<div class="modal-overlay" inert id="search-modal" role="dialog" aria-modal="true" aria-label="Search conversations">
+  <div class="modal modal-wide">
+    <div class="modal-header">
       <div class="search-modal-input-wrap">
         <span class="search-modal-input-icon" data-icon="search"></span>
         <input id="conv-search" type="search" placeholder="Search chats and folders" autocomplete="off" aria-label="Search conversations" />
       </div>
       <button class="modal-close" data-close="search-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body search-modal-body">
+    <div class="modal-body">
       <div id="search-results" class="folder-home-list search-results" aria-live="polite"></div>
     </div>
   </div>
 </div>
 
 <!-- Create / rename folder modal -->
-<div class="modal-overlay" id="folder-modal" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
-  <div class="modal" style="max-width:420px;height:auto;">
-    <div class="modal-header" style="display:flex;">
-      <span id="folder-modal-title" class="section-title" style="margin:0;font-size:.95rem;">New folder</span>
-      <button class="modal-close" data-close="folder-modal" aria-label="Close" style="margin-left:auto;" data-icon="close"></button>
+<div class="modal-overlay" inert id="folder-modal" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="folder-modal-title" class="section-title">New folder</span>
+      <button class="modal-close" data-close="folder-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body" style="padding:20px 22px 16px;">
-      <div class="field" style="margin-bottom:0;">
+    <div class="modal-body">
+      <div class="field">
         <label for="folder-name-input">Name</label>
         <input id="folder-name-input" type="text" class="input-base" placeholder="Folder name" autocomplete="off" />
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;">
+    <div class="modal-footer">
       <button class="btn-secondary" data-close="folder-modal">Cancel</button>
       <button class="btn-primary" id="folder-modal-confirm">Create</button>
     </div>
@@ -714,16 +714,16 @@
 </div>
 
 <!-- Delete folder confirm modal -->
-<div class="modal-overlay" id="delete-folder-modal" role="dialog" aria-modal="true" aria-labelledby="delete-folder-title">
-  <div class="modal" style="max-width:400px;height:auto;">
-    <div class="modal-header" style="display:flex;">
-      <span id="delete-folder-title" class="section-title" style="margin:0;font-size:.95rem;">Delete folder?</span>
-      <button class="modal-close" data-close="delete-folder-modal" aria-label="Close" style="margin-left:auto;" data-icon="close"></button>
+<div class="modal-overlay" inert id="delete-folder-modal" role="dialog" aria-modal="true" aria-labelledby="delete-folder-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="delete-folder-title" class="section-title">Delete folder?</span>
+      <button class="modal-close" data-close="delete-folder-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body" style="padding:16px 22px;">
-      <p style="margin:0;color:var(--text2);font-size:.82rem;line-height:1.55;">All chats in this folder, its shared container, and its workspace files will be permanently removed.</p>
+    <div class="modal-body">
+      <p class="dialog-description">All chats in this folder, its shared container, and its workspace files will be permanently removed.</p>
     </div>
-    <div class="modal-footer" style="display:flex;">
+    <div class="modal-footer">
       <button class="btn-secondary" data-close="delete-folder-modal">Cancel</button>
       <button class="btn-danger" id="delete-folder-confirm">Delete folder</button>
     </div>
@@ -731,19 +731,19 @@
 </div>
 
 <!-- Move conversation modal -->
-<div class="modal-overlay" id="move-conv-modal" role="dialog" aria-modal="true" aria-labelledby="move-conv-title">
-  <div class="modal" style="max-width:420px;height:auto;">
-    <div class="modal-header" style="display:flex;">
-      <span id="move-conv-title" class="section-title" style="margin:0;font-size:.95rem;">Move conversation</span>
-      <button class="modal-close" data-close="move-conv-modal" aria-label="Close" style="margin-left:auto;" data-icon="close"></button>
+<div class="modal-overlay" inert id="move-conv-modal" role="dialog" aria-modal="true" aria-labelledby="move-conv-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="move-conv-title" class="section-title">Move conversation</span>
+      <button class="modal-close" data-close="move-conv-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body" style="padding:20px 22px 16px;">
-      <div class="field" style="margin-bottom:0;">
+    <div class="modal-body">
+      <div class="field">
         <label for="move-conv-folder">Folder</label>
         <select id="move-conv-folder" class="input-base"></select>
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;">
+    <div class="modal-footer">
       <button class="btn-secondary" data-close="move-conv-modal">Cancel</button>
       <button class="btn-primary" id="move-conv-confirm">Move</button>
     </div>
@@ -751,21 +751,19 @@
 </div>
 
 <!-- Rename conversation modal -->
-<div class="modal-overlay" id="rename-conv-modal" role="dialog" aria-modal="true" aria-labelledby="rename-conv-title">
-  <div class="modal" style="max-width:420px;height:auto;">
-    <div class="modal-header" style="display:flex;">
-      <span id="rename-conv-title" class="section-title" style="margin:0;font-size:.95rem;">Rename conversation</span>
-      <button class="modal-close" data-close="rename-conv-modal" aria-label="Close" style="margin-left:auto;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+<div class="modal-overlay" inert id="rename-conv-modal" role="dialog" aria-modal="true" aria-labelledby="rename-conv-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="rename-conv-title" class="section-title">Rename conversation</span>
+      <button class="modal-close" data-close="rename-conv-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body" style="padding:20px 22px 16px;">
-      <div class="field" style="margin-bottom:0;">
+    <div class="modal-body">
+      <div class="field">
         <label for="rename-conv-input">Title</label>
         <input id="rename-conv-input" type="text" class="input-base" placeholder="Conversation title" autocomplete="off" />
       </div>
     </div>
-    <div class="modal-footer" style="display:flex;">
+    <div class="modal-footer">
       <button class="btn-secondary" data-close="rename-conv-modal">Cancel</button>
       <button class="btn-primary" id="rename-conv-confirm">Rename</button>
     </div>
@@ -773,18 +771,16 @@
 </div>
 
 <!-- Delete conversation confirm modal -->
-<div class="modal-overlay" id="delete-conv-modal" role="dialog" aria-modal="true" aria-labelledby="delete-conv-title">
-  <div class="modal" style="max-width:380px;height:auto;">
-    <div class="modal-header" style="display:flex;">
-      <span id="delete-conv-title" class="section-title" style="margin:0;font-size:.95rem;">Delete conversation?</span>
-      <button class="modal-close" data-close="delete-conv-modal" aria-label="Close" style="margin-left:auto;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+<div class="modal-overlay" inert id="delete-conv-modal" role="dialog" aria-modal="true" aria-labelledby="delete-conv-title">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="delete-conv-title" class="section-title">Delete conversation?</span>
+      <button class="modal-close" data-close="delete-conv-modal" aria-label="Close" data-icon="close"></button>
     </div>
-    <div class="modal-body" style="padding:16px 22px;">
-      <p style="margin:0;color:var(--text2);font-size:.82rem;line-height:1.55;">This will permanently delete the conversation and cannot be undone.</p>
+    <div class="modal-body">
+      <p class="dialog-description">This will permanently delete the conversation and cannot be undone.</p>
     </div>
-    <div class="modal-footer" style="display:flex;">
+    <div class="modal-footer">
       <button class="btn-secondary" data-close="delete-conv-modal">Cancel</button>
       <button class="btn-danger" id="delete-conv-confirm">Delete</button>
     </div>
@@ -792,7 +788,7 @@
 </div>
 
 <!-- Toast -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

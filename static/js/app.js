@@ -6,7 +6,7 @@
 import { STORAGE_KEYS, state } from './state.js';
 import { storage }  from './storage.js';
 
-import { openModal, closeModal, toggleSidebar, initSidebar, autoResize, updateCharCount, initMobileKeyboardHandling, showToast } from './ui.js';
+import { openModal, closeModal, toggleSidebar, initSidebar, initTabs, autoResize, updateCharCount, initMobileKeyboardHandling, showToast } from './ui.js';
 import { loadSettings, saveSettings, saveChatSettings, syncSettingsUI, fetchModels, initKeyToggle, initParameterSliders } from './settings.js';
 import { bindConversationSearch, createFolder, loadConversationList, openConversation, renameConversationTitle, startNewChat, persistConversationFor } from './conversations.js';
 import { loadMcpConfig, saveMcpConfig, applyMcpToolSettings, resetMcpDraftSettings, reloadTools, loadCachedTools } from './mcp.js';
@@ -63,15 +63,30 @@ function bindModelPickerEvents() {
     modelPopover.classList.remove('open', 'open-downward');
     modelBadge.classList.remove('open');
     modelBadge.setAttribute('aria-expanded', 'false');
+    modelPopover.inert = true;
   }
 
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && modelPopover.classList.contains('open')) {
+      closeModelPopover();
+      modelBadge.focus();
+      event.stopImmediatePropagation();
+    }
+  });
   modelBadge.addEventListener('click', e => {
     e.stopPropagation();
     const isOpen = modelPopover.classList.toggle('open');
     modelBadge.classList.toggle('open', isOpen);
+    modelPopover.inert = !isOpen;
     modelBadge.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) positionModelPopover();
     else modelPopover.classList.remove('open-downward');
+  });
+  modelPopover.addEventListener('click', event => {
+    if (event.target.closest('.mp-chip')) {
+      closeModelPopover();
+      modelBadge.focus();
+    }
   });
   document.addEventListener('click', e => {
     if (!document.getElementById('model-picker-wrap').contains(e.target)) {
@@ -83,42 +98,27 @@ function bindModelPickerEvents() {
   window.visualViewport?.addEventListener('scroll', positionModelPopover);
 }
 
+function dismissModal(id) {
+  closeModal(id);
+  if (id === 'settings-modal') {
+    syncSettingsUI();
+    syncCustomizationUI();
+    resetMcpDraftSettings();
+  }
+}
+
 function bindModalEvents() {
   document.getElementById('btn-open-settings').addEventListener('click', () => openModal('settings-modal'));
-
   document.querySelectorAll('[data-close]').forEach(btn =>
-    btn.addEventListener('click', () => {
-      closeModal(btn.dataset.close);
-      if (btn.dataset.close === 'settings-modal') {
-        syncSettingsUI();
-        syncCustomizationUI();
-        resetMcpDraftSettings();
-      }
-    })
+    btn.addEventListener('click', () => dismissModal(btn.dataset.close))
   );
   document.querySelectorAll('.modal-overlay').forEach(overlay =>
-    overlay.addEventListener('click', e => {
-      if (e.target === overlay) {
-        closeModal(overlay.id);
-        if (overlay.id === 'settings-modal') {
-          syncSettingsUI();
-          syncCustomizationUI();
-          resetMcpDraftSettings();
-        }
-      }
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) dismissModal(overlay.id);
     })
   );
 
-  // Tab switching
-  document.querySelectorAll('.modal-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      const targetId = tab.dataset.tab;
-      document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById(targetId).classList.add('active');
-    });
-  });
+  initTabs(document.querySelector('#settings-modal .modal-tabs'));
 }
 
 async function applyAllSettings() {
@@ -259,11 +259,7 @@ function bindInputEvents() {
 function bindKeyboardEvents() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      const openModals = document.querySelectorAll('.modal-overlay.open');
-      openModals.forEach(m => {
-        m.classList.remove('open');
-        if (m.id === 'settings-modal') syncCustomizationUI();
-      });
+      document.querySelectorAll('.modal-overlay.open').forEach(modal => dismissModal(modal.id));
     }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
