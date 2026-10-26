@@ -251,7 +251,7 @@ class TestTurnRecorder:
     TurnRecorder throttles disk writes during streaming to avoid hammering the
     filesystem on every token. The key contracts are:
       - force=True always writes regardless of throttle window
-      - Within the throttle window and below the size delta, writes are skipped
+      - Within the throttle window, writes are skipped regardless of chunk size
       - finalize() always writes with no active stream_id
     """
 
@@ -281,14 +281,14 @@ class TestTurnRecorder:
         # Only the forced first call should have persisted
         assert mock_save.call_count == 1
 
-    def test_large_size_delta_bypasses_throttle(self, tmp_lumen):
-        """A text burst > 512 chars must not be dropped even within the window."""
+    def test_large_chunks_do_not_bypass_throttle(self, tmp_lumen):
+        """Large chunks still respect the 0.75s persistence window."""
         recorder = self._make_recorder("stub")
         big_text = "x" * 600
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)
             recorder.save([], text=big_text)
-        assert mock_save.call_count == 2
+        assert mock_save.call_count == 1
 
     def test_finalize_calls_save_turn_without_stream_id(self, tmp_lumen):
         recorder = self._make_recorder("stub")
@@ -305,3 +305,46 @@ class TestTurnRecorder:
             recorder.save([], force=True)
         _, title_arg, *_ = mock_save.call_args.args
         assert title_arg == "New Title"
+
+
+def test_model_error_preserves_partial_response_and_closes_client(tmp_lumen, monkeypatch):
+    import threading
+    import store
+    conv = store.create()
+    client = MagicMock()
+    monkeypatch.setattr(svc, 'openai_client', lambda body: client)
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', lambda *a, **k: iter([
+        {'type': 'text', 'content': 'Partial'}, {'type': 'error', 'message': 'Disconnected'}]))
+    events = []
+    svc.run_persistent_chat_turn({'conv_id': conv['id']}, threading.Event(), 'error-test', events.append)
+    saved = store.load(conv['id'])
+    assert saved['messages'][-1]['content'] == 'Partial'
+    assert not saved['streaming']
+    assert len([event for event in events if event['type'] == 'error']) == 1
+    assert not any(event['type'] == 'assistant_done' for event in events)
+    client.close.assert_called_once()
+
+
+def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch):
+    import threading
+    import store
+    conv = store.create()
+    client = MagicMock()
+    create = MagicMock(return_value=client)
+    monkeypatch.setattr(svc, 'openai_client', create)
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    clients = []
+    def stream(current, **kwargs):
+        clients.append(current)
+        if len(clients) == 1:
+            yield {'type': 'tool_calls', 'calls': [{'id': 'one', 'function': {
+                'name': 'read', 'arguments': '{"path":"x"}'}}]}
+        else:
+            yield {'type': 'text', 'content': 'Done'}
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    monkeypatch.setattr(svc.builtin_tools, 'invoke', lambda *a: {'text': 'File'})
+    svc.run_persistent_chat_turn({'conv_id': conv['id']}, threading.Event(), 'reuse-test', lambda event: None)
+    assert clients == [client, client]
+    create.assert_called_once()
+    client.close.assert_called_once()

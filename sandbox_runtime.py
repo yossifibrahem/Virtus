@@ -3,20 +3,28 @@ from __future__ import annotations
 from contextlib import contextmanager
 import subprocess
 import threading
+import weakref
 import time
 
 import container_service
 import docker_cli
 
-_LOCKS = {}
+_LOCKS = weakref.WeakValueDictionary()
 _GUARD = threading.Lock()
 _ACTIVE = {}
 
 
+def runtime_lock(runtime_id):
+    with _GUARD:
+        lock = _LOCKS.get(runtime_id)
+        if lock is None:
+            lock = _LOCKS[runtime_id] = threading.RLock()
+        return lock
+
+
 @contextmanager
 def runtime_operation(runtime_id, cancel=None):
-    with _GUARD:
-        lock = _LOCKS.setdefault(runtime_id, threading.RLock())
+    lock = runtime_lock(runtime_id)
     while not lock.acquire(timeout=.1):
         if cancel and cancel.is_set():
             raise ValueError('Operation cancelled')
@@ -62,7 +70,7 @@ class Capture:
     def value(self):
         if self.total > self.limit and self.tail:
             return bytes(self.first[:-80]) + b'\n[output truncated; redirect to a file for full logs]\n' + bytes(self.last)
-        return bytes(self.first + self.last)
+        return bytes(self.first) + bytes(self.last) if self.last else bytes(self.first)
 
 
 def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, limit=8*1024*1024, tail=False):
@@ -81,9 +89,10 @@ def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, lim
     def feed():
         try:
             proc.stdin.write(payload)
-            proc.stdin.close()
         except (BrokenPipeError, OSError):
             pass
+        finally:
+            proc.stdin.close()
     threads = [threading.Thread(target=drain, args=(proc.stdout, output), daemon=True),
                threading.Thread(target=drain, args=(proc.stderr, errors), daemon=True),
                threading.Thread(target=feed, daemon=True)]

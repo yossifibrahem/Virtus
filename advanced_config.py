@@ -11,6 +11,7 @@ can disable the corresponding form field and show an informative hint.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -87,8 +88,20 @@ def _invalidate_cache() -> None:
 
 def _cast(key: str, raw) -> int | str:
     if key in _INT_KEYS:
-        return int(raw)
-    return str(raw).strip()
+        value = int(raw)
+        ceilings = {'max_file_preview_bytes': 4*1024*1024,
+                    'max_file_list_entries': 5000, 'max_upload_bytes': 50*1024*1024}
+        if isinstance(raw, bool) or value < (0 if key == 'container_idle_timeout' else 1):
+            raise ValueError('Expected a positive integer (or zero for idle timeout)')
+        return min(value, ceilings.get(key, value))
+    value = str(raw).strip()
+    if not value:
+        raise ValueError('Value must not be empty')
+    if key == 'container_network' and (value == 'host' or value.startswith('container:')):
+        raise ValueError('Host/shared container network namespaces are not allowed')
+    if key == 'container_cpus' and (not math.isfinite(float(value)) or float(value) <= 0):
+        raise ValueError('CPU limit must be positive and finite')
+    return value
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

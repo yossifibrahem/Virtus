@@ -183,7 +183,11 @@ def save_container_settings():
 @blueprint.route("/api/models", methods=["POST"])
 def fetch_models():
     try:
-        models = sorted(m.id for m in chat_turn_service.openai_client(_body()).models.list())
+        client = chat_turn_service.openai_client(_body())
+        try:
+            models = sorted(m.id for m in client.models.list())
+        finally:
+            client.close()
         return jsonify({"models": models})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400

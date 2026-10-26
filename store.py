@@ -243,7 +243,7 @@ def save(conv_id: str, data: dict) -> dict:
     data["updated_at"] = datetime.now(timezone.utc).isoformat()
     path = _path(conv_id)
     tmp_path = path.with_suffix(f".tmp-{uuid.uuid4().hex}")
-    tmp_path.write_text(json.dumps(data, indent=2))
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     atomic_replace(tmp_path, path)
     _update_index_for(conv_id, data)
     return data

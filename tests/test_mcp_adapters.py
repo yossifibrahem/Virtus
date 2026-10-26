@@ -1,6 +1,6 @@
 """
 Tests for mcp_adapters.py — container launch parameter mutation,
-environment variable expansion, and host mount extraction.
+explicit container environment and path handling.
 
 Docker is never called; `container_service.ensure_container` and
 `container_service.wrap_command_for_exec` are always mocked.
@@ -13,32 +13,6 @@ from unittest.mock import patch, MagicMock
 
 import mcp_adapters
 from mcp_adapters import ContainerConversationRequired
-
-
-# ---------------------------------------------------------------------------
-# expand_config_env
-# ---------------------------------------------------------------------------
-
-class TestExpandConfigEnv:
-
-    def test_string_value_unchanged(self):
-        result = mcp_adapters.expand_config_env({"KEY": "value"})
-        assert result["KEY"] == "value"
-
-    def test_tilde_expanded_to_absolute_path(self):
-        # Must produce an absolute path, not leave ~ in place.
-        # Use os.path.isabs() so the check works on Windows (C:\...) too.
-        result = mcp_adapters.expand_config_env({"P": "~/projects"})
-        assert not result["P"].startswith("~")
-        assert os.path.isabs(result["P"])
-
-    def test_none_input_returns_empty_dict(self):
-        assert mcp_adapters.expand_config_env(None) == {}
-
-    def test_non_string_value_passed_through_unchanged(self):
-        # Integer env values (e.g. port numbers) must not be coerced
-        result = mcp_adapters.expand_config_env({"PORT": 3000})
-        assert result["PORT"] == 3000
 
 
 # ---------------------------------------------------------------------------
@@ -136,106 +110,14 @@ class TestApplyWorkspaceProcessOptions:
         assert "WORKING_DIR" not in passed_env
 
 
-# ---------------------------------------------------------------------------
-# extract_host_mounts
-# ---------------------------------------------------------------------------
-
-class TestExtractHostMounts:
-
-    def test_empty_config_returns_empty_list(self):
-        assert mcp_adapters.extract_host_mounts({}) == []
-
-    def test_relative_args_skipped(self):
-        config = {"args": ["relative/path/server.js"]}
-        assert mcp_adapters.extract_host_mounts(config) == []
-
-    def test_missing_absolute_path_skipped(self):
-        config = {"args": ["/absolutely/does/not/exist/server.js"]}
-        assert mcp_adapters.extract_host_mounts(config) == []
-
-    def test_existing_absolute_path_never_mounts_host(self, tmp_path):
-        script = tmp_path / "server.js"
-        script.write_text("// server")
-        config = {"args": [str(script)]}
-        result = mcp_adapters.extract_host_mounts(config)
-        assert result == []
-
-    def test_duplicate_paths_deduplicated(self, tmp_path):
-        script = tmp_path / "a.js"
-        script.write_text("a")
-        config = {"args": [str(script), str(script)]}
-        result = mcp_adapters.extract_host_mounts(config)
-        sources = [spec.split(":")[0] for spec in result]
-        assert len(sources) == len(set(sources))
-
-    def test_non_string_args_skipped(self):
-        config = {"args": [42, None, True]}
-        assert mcp_adapters.extract_host_mounts(config) == []
-
-    def test_volume_spec_is_readonly(self, tmp_path):
-        script = tmp_path / "srv.py"
-        script.write_text("# srv")
-        config = {"args": [str(script)]}
-        result = mcp_adapters.extract_host_mounts(config)
-        for spec in result:
-            assert spec.endswith(":ro")
-
-
-
-
-# ---------------------------------------------------------------------------
-# find_project_root
-# ---------------------------------------------------------------------------
-
-class TestFindProjectRoot:
-    """
-    find_project_root() decides what host directories get mounted read-only
-    into the sandbox. Mounting too broadly (e.g. /home or /) is a security
-    issue; not mounting enough breaks MCP server startup.
-    """
-
-    def test_directory_with_package_json_is_root(self, tmp_path):
-        (tmp_path / "package.json").write_text("{}")
-        script = tmp_path / "server.js"
-        script.write_text("// server")
-        assert mcp_adapters.find_project_root(script) == tmp_path
-
-    def test_directory_with_pyproject_toml_is_root(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text("[build-system]")
-        deep = tmp_path / "src"
-        deep.mkdir()
-        script = deep / "server.py"
-        script.write_text("# s")
-        assert mcp_adapters.find_project_root(script) == tmp_path
-
-    def test_walks_up_to_find_marker(self, tmp_path):
-        """Marker in a parent directory must still be found."""
-        (tmp_path / "package.json").write_text("{}")
-        nested = tmp_path / "a" / "b"
-        nested.mkdir(parents=True)
-        script = nested / "index.js"
-        script.write_text("// x")
-        assert mcp_adapters.find_project_root(script) == tmp_path
-
-    def test_no_marker_returns_none(self, tmp_path):
-        """When no marker is found within 6 levels, return None — never mount /home."""
-        script = tmp_path / "standalone.js"
-        script.write_text("// no project")
-        assert mcp_adapters.find_project_root(script) is None
-
-    def test_node_modules_counts_as_marker(self, tmp_path):
-        (tmp_path / "node_modules").mkdir()
-        script = tmp_path / "index.js"
-        script.write_text("// x")
-        assert mcp_adapters.find_project_root(script) == tmp_path
-
-    def test_does_not_walk_more_than_6_levels(self, tmp_path):
-        """Marker > 6 levels up must NOT be found — prevents mounting /."""
-        (tmp_path / "package.json").write_text("{}")
-        deep = tmp_path
-        for i in range(8):
-            deep = deep / f"l{i}"
-            deep.mkdir()
-        script = deep / "server.js"
-        script.write_text("// deep")
-        assert mcp_adapters.find_project_root(script) is None
+def test_mcp_paths_and_env_are_container_values():
+    params = {"command": "node", "args": ["/workspace/server.js"]}
+    with patch("container_service.ensure_container") as ensure, patch(
+        "container_service.wrap_command_for_exec", return_value=("docker", [])
+    ) as wrap:
+        mcp_adapters.apply_workspace_process_options(
+            params, {}, conv_id="chat", server_config={"env": {"HOME": "/root", "DATA": "~/data"}}
+        )
+    ensure.assert_called_once_with("chat")
+    assert wrap.call_args.kwargs["env"]["DATA"] == "~/data"
+    assert wrap.call_args.args[2] == ["/workspace/server.js"]

@@ -4,7 +4,6 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 import container_service
-import mcp_adapters
 import mcp_service
 import store
 import builtin_tools
@@ -48,14 +47,7 @@ def list_mcp_tools():
         return jsonify([])
 
     if discovery_mode:
-        all_volumes: list[str] = []
-        seen: set[str] = set()
-        for cfg in configs.values():
-            for volume in mcp_adapters.extract_host_mounts(cfg):
-                if volume not in seen:
-                    seen.add(volume)
-                    all_volumes.append(volume)
-        container_service.ensure_container(conv_id, extra_volumes=all_volumes)
+        container_service.ensure_container(conv_id)
 
     try:
         for name, cfg in configs.items():

@@ -109,8 +109,8 @@ export async function sendMessage(userText, deps) {
   await deps.runAssistantTurnAndPersist(turn);
 
   deps.syncVisibleTurn(turn);
-  syncVisibleBranches();
-  turn.messages = state.messages;
-  turn.displayLog = state.displayLog;
+  // Navigation can change state while the reply streams. Persist this turn's
+  // history, and only synchronize visible branches when its chat is still open.
+  if (deps.isTurnVisible(turn)) syncVisibleBranches();
   await deps.persistTurnConversation(turn);
 }

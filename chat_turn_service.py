@@ -87,7 +87,7 @@ def _save_turn(conv_id: str, title: str, messages: list, display_log: list, *, s
         "messages": messages,
         "displayLog": display_log,
         "streaming": bool(stream_id),
-        "working_directory": str(store.working_directory(conv_id)),
+        "working_directory": str(container_service.conversation_workspace(store.runtime_id(conv_id, data))),
     })
     if stream_id:
         data["active_stream_id"] = stream_id
@@ -129,7 +129,7 @@ def _tool_call_message(calls: list, content: str | None) -> dict:
 
 def _safe_tool_args(raw_args: str) -> dict:
     try:
-        if not isinstance(raw_args, str) or len(raw_args) > MAX_TOOL_ARGUMENT_BYTES:
+        if not isinstance(raw_args, str) or len(raw_args.encode()) > MAX_TOOL_ARGUMENT_BYTES:
             return {}
         parsed = json.loads(raw_args or "{}")
         return parsed if isinstance(parsed, dict) else {}
@@ -161,17 +161,16 @@ class TurnRecorder:
         self.title = title
         self.messages = messages
         self.stream_id = stream_id
-        self.last_snapshot = {"at": 0.0, "size": -1}
+        self.last_saved_at = 0.0
 
     def update_title(self, title: str) -> None:
         self.title = title
 
     def save(self, display_log: list, reasoning: str = "", text: str = "", *, force: bool = False) -> None:
         now = time.monotonic()
-        size = len(reasoning) + len(text) + len(display_log)
-        if not force and now - self.last_snapshot["at"] < 0.75 and size - self.last_snapshot["size"] < 512:
+        if not force and now - self.last_saved_at < 0.75:
             return
-        self.last_snapshot.update({"at": now, "size": size})
+        self.last_saved_at = now
         _save_turn(
             self.conv_id,
             self.title,
@@ -206,6 +205,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     recorder = TurnRecorder(conv_id, title, turn_messages, stream_id)
     assistant_completed = False
     session_pool: mcp_service.McpSessionPool | None = None
+    client = None
 
     def finalize_partial_answer(reasoning: str, text: str) -> bool:
         nonlocal assistant_completed
@@ -222,14 +222,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     recorder.save(display_log, force=True)
 
     try:
-        if conv_id and body.get("mcp_tool_meta"):
-            server_names = list({
-                t.get("server", "") for t in body["mcp_tool_meta"] if t.get("server")
-            })
-            if server_names:
-                extra_volumes = mcp_service.collect_all_extra_volumes(server_names)
-                container_service.ensure_container(runtime_id, extra_volumes)
-
+        client = openai_client(body)
         if conv_id and tool_meta:
             session_pool = mcp_service.get_persistent_pool(runtime_id)
 
@@ -239,7 +232,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
             tool_calls = []
 
             for raw in stream_module.stream_chat_completion(
-                openai_client(body),
+                client,
                 model=body.get("model", "gpt-4o"),
                 messages=tool_media.expand(api_messages, conv_id),
                 tools=tools,
@@ -251,6 +244,9 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                 if not event:
                     continue
                 etype = event.get("type")
+                if etype == "error":
+                    finalize_partial_answer(acc_reasoning, acc_text)
+                    raise RuntimeError(event.get("message", "Model request failed"))
                 if etype == "done":
                     break
                 if etype == "tool_calls":
@@ -350,7 +346,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
 
         if assistant_completed and is_first_message and not cancel_event.is_set() \
                 and body.get("auto_generate_titles", True):
-            generated_title = title_service.generate_title(openai_client(body), body, turn_messages)
+            generated_title = title_service.generate_title(client, body, turn_messages)
             if generated_title:
                 recorder.update_title(generated_title)
                 publish({"type": "title", "title": generated_title})
@@ -360,3 +356,6 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     except Exception as exc:
         publish({"type": "error", "message": str(exc)})
         recorder.finalize(display_log)
+    finally:
+        if callable(close := getattr(client, "close", None)):
+            close()

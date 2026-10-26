@@ -8,40 +8,20 @@ isolation without any other Lumen module.
 Functions under test:
   _messages_to_text  — converts message history to a compact plain-text block
   _extract_title     — extracts a title string from three possible model response shapes
-  _SET_TITLE_TOOL    — the tool definition sent to the model (shape contract)
   generate_title     — end-to-end orchestration (mocked client)
 """
 from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock
+from types import SimpleNamespace
+
+import httpx
+from openai import BadRequestError
 
 import pytest
 
 import title_service as svc
-
-
-# ---------------------------------------------------------------------------
-# _SET_TITLE_TOOL shape
-# ---------------------------------------------------------------------------
-
-class TestSetTitleToolShape:
-    """The tool definition must satisfy the OpenAI function-calling schema."""
-
-    def test_type_is_function(self):
-        assert svc._SET_TITLE_TOOL["type"] == "function"
-
-    def test_function_name_is_set_title(self):
-        assert svc._SET_TITLE_TOOL["function"]["name"] == "set_title"
-
-    def test_title_parameter_is_required(self):
-        params = svc._SET_TITLE_TOOL["function"]["parameters"]
-        assert "title" in params["properties"]
-        assert "title" in params["required"]
-
-    def test_title_parameter_is_string_type(self):
-        params = svc._SET_TITLE_TOOL["function"]["parameters"]
-        assert params["properties"]["title"]["type"] == "string"
 
 
 # ---------------------------------------------------------------------------
@@ -244,83 +224,141 @@ class TestExtractTitle:
 # ---------------------------------------------------------------------------
 
 class TestGenerateTitle:
-    """
-    generate_title orchestrates one chat-completions request using a mocked
-    OpenAI client.  Network calls must never be made in these tests.
-    """
+    messages = [{"role": "user", "content": "How do I fix Docker volume permissions?"}]
 
-    def _make_client(self, title: str) -> MagicMock:
-        """Return a mock OpenAI client whose models.list yields the given title."""
-        tc = MagicMock()
-        tc.function.arguments = json.dumps({"title": title})
-        message = MagicMock()
-        message.tool_calls = [tc]
-        message.reasoning_content = None
-        choice = MagicMock()
-        choice.message = message
-        completion = MagicMock()
-        completion.choices = [choice]
+    def _make_client(self, content="<title>Docker Volume Permissions</title>", finish_reason="stop"):
         client = MagicMock()
-        client.chat.completions.create.return_value = completion
+        client.with_options.return_value = client
+        choice = client.chat.completions.create.return_value.choices[0]
+        choice.message = SimpleNamespace(content=content, tool_calls=None, reasoning_content=None)
+        choice.finish_reason = finish_reason
         return client
 
-    def test_returns_generated_title(self):
-        client = self._make_client("Fibonacci in Python")
-        messages = [{"role": "user", "content": "How do I write Fibonacci in Python?"}]
-        result = svc.generate_title(client, {"model": "gpt-4o"}, messages)
-        assert result == "Fibonacci in Python"
+    def test_returns_generated_text_title_without_tools(self):
+        client = self._make_client()
+        assert svc.generate_title(client, {"model": "qwen/test"}, self.messages) == "Docker Volume Permissions"
+        request = client.chat.completions.create.call_args.kwargs
+        assert "tools" not in request and "tool_choice" not in request
+        assert request["reasoning_effort"] == "none"
+        assert request["model"] == "qwen/test"
+        assert request["max_tokens"] == 96
+        assert request["messages"][1]["content"].endswith("/no_think")
+        client.with_options.assert_called_once_with(timeout=15.0, max_retries=0)
 
-    def test_uses_model_from_body(self):
-        client = self._make_client("Test Title")
-        svc.generate_title(client, {"model": "gpt-4o-mini"}, [])
-        call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["model"] == "gpt-4o-mini"
+    def test_normal_chat_reasoning_settings_are_not_used(self):
+        client = self._make_client()
+        svc.generate_title(client, {"reasoning_effort": "high", "max_tokens": 10000}, self.messages)
+        assert client.chat.completions.create.call_args.kwargs["reasoning_effort"] == "none"
 
-    def test_default_model_when_body_has_no_model(self):
-        client = self._make_client("Test Title")
-        svc.generate_title(client, {}, [])
-        call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["model"]  # non-empty default
-
-    def test_tool_choice_is_required(self):
-        """The model must be forced to call set_title, not answer in text."""
-        client = self._make_client("T")
-        svc.generate_title(client, {}, [])
-        call_kwargs = client.chat.completions.create.call_args.kwargs
-        assert call_kwargs.get("tool_choice") == "required"
-
-    def test_set_title_tool_is_passed(self):
-        client = self._make_client("T")
-        svc.generate_title(client, {}, [])
-        call_kwargs = client.chat.completions.create.call_args.kwargs
-        tool_names = [t["function"]["name"] for t in call_kwargs.get("tools", [])]
-        assert "set_title" in tool_names
-
-    def test_returns_none_on_client_exception(self):
-        """Any exception from the API must be swallowed and return None."""
-        client = MagicMock()
-        client.chat.completions.create.side_effect = Exception("network error")
-        result = svc.generate_title(client, {}, [{"role": "user", "content": "hi"}])
-        assert result is None
-
-    def test_returns_none_when_model_gives_no_tool_call(self):
-        """If the model skips the tool call, generate_title must not raise."""
-        message = MagicMock()
-        message.tool_calls = None
-        message.reasoning_content = None
-        choice = MagicMock()
-        choice.message = message
-        completion = MagicMock()
-        completion.choices = [choice]
-        client = MagicMock()
-        client.chat.completions.create.return_value = completion
-        result = svc.generate_title(client, {}, [{"role": "user", "content": "hi"}])
-        assert result is None
-
-    def test_only_first_four_messages_sent(self):
-        """The caller slices [:4]; generate_title must not crash on fewer or more."""
-        client = self._make_client("Any Title")
+    def test_first_four_messages_and_context_are_bounded(self):
+        client = self._make_client()
         messages = [{"role": "user", "content": f"msg{i}"} for i in range(10)]
-        # Pass all 10 — function must accept them; only first 4 should be used
-        result = svc.generate_title(client, {}, messages[:4])
-        assert result == "Any Title"
+        svc.generate_title(client, {}, messages)
+        content = client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+        assert "msg3" in content and "msg4" not in content
+        svc.generate_title(client, {}, [{"role": "user", "content": "a" * 10000}])
+        assert len(client.chat.completions.create.call_args.kwargs["messages"][1]["content"]) == svc.MAX_CONTEXT_CHARS
+
+    def test_network_error_uses_user_fallback_without_retry(self, caplog):
+        client = self._make_client()
+        client.chat.completions.create.side_effect = TimeoutError("private message")
+        assert svc.generate_title(client, {}, self.messages) == "How do I fix Docker volume permissions?"
+        assert client.chat.completions.create.call_count == 1
+        assert "TimeoutError" in caplog.text
+        assert "private message" not in caplog.text
+
+    @pytest.mark.parametrize("content,reason", [(None, "stop"), ("<think>Still thinking", "length"), ("<title>Partial", "length"), ('{"title": 42}', "stop")])
+    def test_missing_invalid_or_truncated_title_uses_fallback(self, content, reason):
+        client = self._make_client(content, reason)
+        assert svc.generate_title(client, {}, self.messages) == "How do I fix Docker volume permissions?"
+
+    def test_unsupported_reasoning_option_gets_compatibility_attempt(self):
+        client = self._make_client()
+        good_response = client.chat.completions.create.return_value
+        request = httpx.Request("POST", "http://localhost/v1/chat/completions")
+        error = BadRequestError("Unsupported parameter: reasoning_effort", response=httpx.Response(400, request=request), body=None)
+        client.chat.completions.create.side_effect = [error, good_response]
+        assert svc.generate_title(client, {}, self.messages) == "Docker Volume Permissions"
+        calls = client.chat.completions.create.call_args_list
+        assert "reasoning_effort" in calls[0].kwargs
+        assert "reasoning_effort" not in calls[1].kwargs
+        assert 0 < client.with_options.call_args.kwargs["timeout"] <= 15
+
+    def test_other_bad_request_is_not_retried(self):
+        client = self._make_client()
+        request = httpx.Request("POST", "http://localhost/v1/chat/completions")
+        client.chat.completions.create.side_effect = BadRequestError("Model not found", response=httpx.Response(400, request=request), body=None)
+        assert svc.generate_title(client, {}, self.messages)
+        assert client.chat.completions.create.call_count == 1
+
+    def test_empty_input_does_not_call_model(self):
+        client = self._make_client()
+        assert svc.generate_title(client, {}, []) is None
+        client.chat.completions.create.assert_not_called()
+
+    def test_multimodal_fallback_is_bounded(self):
+        client = self._make_client(None)
+        messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {}}, {"type": "text", "text": "x" * 300}]}]
+        assert svc.generate_title(client, {}, messages) == "x" * 80
+
+
+@pytest.mark.parametrize("content,expected", [
+    ("<title>Docker Volume Permissions</title>", "Docker Volume Permissions"),
+    ('"Docker Volume Permissions"', "Docker Volume Permissions"),
+    ("Title: Docker Volume Permissions", "Docker Volume Permissions"),
+    ('{"title": "Docker Volume Permissions"}', "Docker Volume Permissions"),
+    ("<think>Ignore this title</think><title>Actual Subject</title>", "Actual Subject"),
+    ("<think>Ignore this title</think>Actual Subject", "Actual Subject"),
+    ("<title>تصحيح أخطاء بايثون</title>", "تصحيح أخطاء بايثون"),
+])
+def test_text_response_formats(content, expected):
+    assert svc._extract_title(SimpleNamespace(content=content)) == expected
+
+
+@pytest.mark.parametrize("content", ["<think>Never finished", "<think>Only reasoning</think>", "<title></title>", "a" * 81, "Here's a title:\nUnstructured response"])
+def test_rejects_reasoning_or_invalid_text(content):
+    with pytest.raises(ValueError):
+        svc._extract_title(SimpleNamespace(content=content))
+
+
+@pytest.mark.parametrize("mode", ["generated", "fallback", "disabled"])
+def test_title_is_published_persisted_and_turn_finalized(tmp_lumen, monkeypatch, mode):
+    import threading
+
+    import chat_turn_service
+    import store
+
+    conversation = store.create()
+    client = TestGenerateTitle()._make_client()
+    if mode == "fallback":
+        client.chat.completions.create.side_effect = TimeoutError()
+    monkeypatch.setattr(chat_turn_service, "openai_client", lambda body: client)
+    monkeypatch.setattr(chat_turn_service, "_inject_memory", lambda messages: messages)
+    monkeypatch.setattr(chat_turn_service.stream_module, "stream_chat_completion", lambda *a, **k: iter([
+        {"type": "text", "content": "Check the mounted directory's ownership."},
+        {"type": "done"},
+    ]))
+    messages = [{"role": "user", "content": "How do I fix Docker volume permissions?"}]
+    events = []
+    chat_turn_service.run_persistent_chat_turn({
+        "conv_id": conversation["id"],
+        "title": "New Conversation",
+        "conversation_messages": messages,
+        "messages": messages,
+        "auto_generate_titles": mode != "disabled",
+    }, threading.Event(), "title-test", events.append)
+    saved = store.load(conversation["id"])
+    title_events = [event for event in events if event["type"] == "title"]
+    if mode == "disabled":
+        assert saved["title"] == "New Conversation"
+        assert not title_events
+        client.chat.completions.create.assert_not_called()
+    else:
+        expected = "Docker Volume Permissions" if mode == "generated" else messages[0]["content"]
+        assert saved["title"] == expected
+        assert title_events == [{"type": "title", "title": expected}]
+    assert saved["messages"][-1]["role"] == "assistant"
+    assert not saved["streaming"]
+    assert "active_stream_id" not in saved
+    assert not any(event["type"] == "error" for event in events)
+    client.close.assert_called_once()

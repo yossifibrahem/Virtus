@@ -176,7 +176,7 @@ class TestDeleteConversation:
             resp = client.delete("/api/conversations/ghost-99")
         assert resp.status_code == 404
 
-    def test_shared_runtime_survives_until_last_folder_chat_is_deleted(self, client, tmp_lumen):
+    def test_folder_runtime_survives_deleting_all_its_chats(self, client, tmp_lumen):
         folder = store.create_folder("Shared")
         first = store.create("One", folder["id"])
         second = store.create("Two", folder["id"])
@@ -186,7 +186,7 @@ class TestDeleteConversation:
             stop.assert_not_called()
             delete_workspace.assert_not_called()
             client.delete(f"/api/conversations/{second['id']}")
-            stop.assert_called_once_with(f"folder_{folder['id']}")
+            stop.assert_not_called()
 
 
 class TestConversationMetaRoutes:
@@ -340,15 +340,6 @@ class TestWorkspaceFileRoutes:
             root = tmp_lumen["containers_dir"] / runtime_id
             root.mkdir(parents=True, exist_ok=True)
             monkeypatch.setattr(sandbox_files, 'ROOT', root)
-            def resolve(value):
-                raw = str(value or '')
-                if raw.startswith('/workspace'):
-                    raw = str(root) + raw[len('/workspace'):]
-                target = (root / raw).resolve()
-                if target != root and root not in target.parents:
-                    raise ValueError('Path escapes workspace')
-                return target
-            monkeypatch.setattr(sandbox_files, 'resolve', resolve)
             try:
                 result = sandbox_files.execute(json.loads(payload))
             except FileNotFoundError:
@@ -379,49 +370,44 @@ class TestWorkspaceFileRoutes:
     def test_list_files_returns_200_with_entries(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
         (root / "readme.md").write_text("# hi")
-        with patch("workspace_service.workspace_root", return_value=root):
-            resp = client.get(f"/api/conversations/{conv_id}/files")
+        resp = client.get(f"/api/conversations/{conv_id}/files")
         assert resp.status_code == 200
         assert "entries" in resp.json
 
     def test_file_content_returns_text(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
         (root / "script.py").write_text("x = 42")
-        with patch("workspace_service.workspace_root", return_value=root):
-            resp = client.get(
-                f"/api/conversations/{conv_id}/files/content",
-                query_string={"path": "/workspace/script.py"},
-            )
+        resp = client.get(
+            f"/api/conversations/{conv_id}/files/content",
+            query_string={"path": "/workspace/script.py"},
+        )
         assert resp.status_code == 200
         assert resp.json["content"] == "x = 42"
 
     def test_file_download_returns_attachment(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
         (root / "data.txt").write_text("download me")
-        with patch("workspace_service.workspace_root", return_value=root):
-            resp = client.get(
-                f"/api/conversations/{conv_id}/files/download",
-                query_string={"path": "/workspace/data.txt"},
-            )
+        resp = client.get(
+            f"/api/conversations/{conv_id}/files/download",
+            query_string={"path": "/workspace/data.txt"},
+        )
         assert resp.status_code == 200
         assert b"download me" in resp.data
 
     def test_download_nonexistent_file_returns_404(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
-        with patch("workspace_service.workspace_root", return_value=root):
-            resp = client.get(
-                f"/api/conversations/{conv_id}/files/download",
-                query_string={"path": "/workspace/ghost.txt"},
-            )
+        resp = client.get(
+            f"/api/conversations/{conv_id}/files/download",
+            query_string={"path": "/workspace/ghost.txt"},
+        )
         assert resp.status_code == 404
 
     def test_list_with_traversal_path_returns_400(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
-        with patch("workspace_service.workspace_root", return_value=root):
-            resp = client.get(
-                f"/api/conversations/{conv_id}/files",
-                query_string={"path": "../escape"},
-            )
+        resp = client.get(
+            f"/api/conversations/{conv_id}/files",
+            query_string={"path": "../escape"},
+        )
         assert resp.status_code == 400
 
     def test_folder_workspace_lists_shared_files_without_a_conversation(self, client, tmp_lumen):
@@ -722,7 +708,6 @@ class TestMcpToolsDiscoveryRoutes:
 
         with (
             patch("mcp_service.load_config", return_value=config),
-            patch("mcp_adapters.extract_host_mounts", return_value=[]),
             patch("container_service.ensure_container") as ensure_container,
             patch("container_service.stop_container_process") as stop_container_process,
             patch("mcp_service.fetch_tools", new=MagicMock(side_effect=fake_fetch)) as fetch_tools,
@@ -739,7 +724,6 @@ class TestMcpToolsDiscoveryRoutes:
         }]
         ensure_container.assert_called_once_with(
             "mcp-discovery",
-            extra_volumes=[],
         )
         fetch_tools.assert_called_once_with(
             "fs",
@@ -747,41 +731,6 @@ class TestMcpToolsDiscoveryRoutes:
             conv_id="mcp-discovery",
         )
         stop_container_process.assert_called_once_with("mcp-discovery")
-
-    def test_no_conversation_mounts_deduplicated_discovery_volumes(self, client, tmp_lumen):
-        config = {
-            "mcpServers": {
-                "a": {"command": "node", "args": ["/srv/a/server.js"]},
-                "b": {"command": "node", "args": ["/srv/b/server.js"]},
-            }
-        }
-
-        def fake_extract(cfg):
-            if cfg is config["mcpServers"]["a"]:
-                return [
-                    "/host/shared:/host/shared:ro",
-                    "/host/unique:/host/unique:ro",
-                ]
-            return ["/host/shared:/host/shared:ro"]
-
-        with (
-            patch("mcp_service.load_config", return_value=config),
-            patch("mcp_adapters.extract_host_mounts", side_effect=fake_extract),
-            patch("container_service.ensure_container") as ensure_container,
-            patch("container_service.stop_container_process"),
-            patch("mcp_service.fetch_tools", new=MagicMock(return_value=object())),
-            patch("mcp_service.run_async", return_value=[]),
-        ):
-            resp = client.get("/api/mcp/tools")
-
-        assert resp.status_code == 200
-        ensure_container.assert_called_once_with(
-            "mcp-discovery",
-            extra_volumes=[
-                "/host/shared:/host/shared:ro",
-                "/host/unique:/host/unique:ro",
-            ],
-        )
 
     def test_existing_conversation_keeps_real_conversation_id(self, client, tmp_lumen):
         config = {"mcpServers": {"bash": {"command": "bash", "args": []}}}
@@ -823,7 +772,6 @@ class TestMcpToolsDiscoveryRoutes:
 
         with (
             patch("mcp_service.load_config", return_value=config),
-            patch("mcp_adapters.extract_host_mounts", return_value=[]),
             patch("container_service.ensure_container"),
             patch("container_service.stop_container_process") as stop_container_process,
             patch("mcp_service.fetch_tools", new=MagicMock(return_value=object())),
@@ -856,3 +804,28 @@ def test_direct_mcp_call_tracks_shared_runtime_activity(client, tmp_lumen, monke
     assert response.status_code == 200
     assert response.json == {'result': 'done'}
     assert not sandbox_runtime.is_active(conv['id'])
+
+
+def test_moving_last_chat_keeps_folder_workspace(client, tmp_lumen):
+    folder = store.create_folder('Project')
+    conv = store.create('Last chat', folder['id'])
+    with patch('container_service.stop_container') as stop, patch('container_service.delete_workspace') as remove:
+        response = client.put(f"/api/conversations/{conv['id']}", json={'folder_id': None})
+    assert response.status_code == 200
+    stop.assert_not_called()
+    remove.assert_not_called()
+    assert store.get_folder(folder['id'])
+
+
+def test_delete_all_includes_empty_folders_and_removes_shared_runtime_once(client, tmp_lumen):
+    empty = store.create_folder('Empty')
+    shared = store.create_folder('Shared')
+    store.create('One', shared['id'])
+    store.create('Two', shared['id'])
+    with patch('container_service.stop_container') as stop, patch('container_service.delete_workspace') as remove:
+        response = client.post('/api/danger/delete-all')
+    assert response.status_code == 200 and response.json['deleted'] == 2
+    expected = {f"folder_{empty['id']}", f"folder_{shared['id']}"}
+    assert {call.args[0] for call in stop.call_args_list} == expected
+    assert stop.call_count == remove.call_count == 2
+    assert not store.list_all() and not store.list_folders()

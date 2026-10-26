@@ -2,17 +2,43 @@
 import base64
 import io
 import json
+import re
+
+import advanced_config
 import sandbox_runtime
 import store
 
 
+MAX_UPLOAD = 50 * 1024 * 1024
+
+
+def file_limits():
+    cfg = advanced_config.load_advanced_config()
+    return {key: min(max(1, int(cfg[key])), ceiling) for key, ceiling in (
+        ('max_file_preview_bytes', 4 * 1024 * 1024),
+        ('max_file_list_entries', 5000),
+        ('max_upload_bytes', MAX_UPLOAD),
+    )}
+
+
+def safe_upload_name(name):
+    filename = str(name or '').replace('\\', '/').rsplit('/', 1)[-1]
+    return re.sub(r'[^A-Za-z0-9._ -]+', '_', filename).strip(' ._') or 'file'
+
+
 def operation(runtime_id, action, path='', **kwargs):
     try:
+        limits = file_limits()
+        # JSON can escape each source byte as six ASCII bytes.
+        response_limit = 70*1024*1024 if action == 'download' else max(
+            1024*1024, 6*limits['max_file_preview_bytes'] + 4096)
+        if action == 'list':
+            response_limit = max(response_limit, limits['max_file_list_entries'] * 20000)
         with sandbox_runtime.runtime_operation(runtime_id):
             code, raw, error = sandbox_runtime.docker_operation(runtime_id,
                 ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
-                json.dumps({'action': action, 'path': path, **kwargs}).encode(),
-                timeout=60, limit=70*1024*1024 if action == 'download' else 1024*1024)
+                json.dumps({'action': action, 'path': path, 'limits': limits, **kwargs}).encode(),
+                timeout=60, limit=response_limit)
         if code:
             raise ValueError('Container file operation failed')
         result = json.loads(raw)
@@ -36,18 +62,21 @@ def folder(folder_id, action, path=''):
 
 
 def uploads(conv_id, files):
-    import workspace_service
     if not store.load(conv_id):
         return {'error': 'Conversation not found'}, 404
     saved = []
-    limit = min(workspace_service._file_limits()[2], 50*1024*1024)
+    runtime_id = store.runtime_id(conv_id)
+    limit = file_limits()['max_upload_bytes']
     for item in files:
         if not item or not item.filename:
             continue
         data = item.stream.read(limit + 1)
         if len(data) > limit:
             return {'error': 'Upload exceeds size limit'}, 413
-        result, status = operation(store.runtime_id(conv_id), 'upload', name=workspace_service.safe_upload_name(item.filename), data=base64.b64encode(data).decode())
+        encoded = base64.b64encode(data).decode()
+        del data
+        result, status = operation(runtime_id, 'upload', name=safe_upload_name(item.filename), data=encoded)
+        del encoded
         if status != 200:
             return result, status
         saved.append(result)

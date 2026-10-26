@@ -47,3 +47,12 @@ def test_shutdown_is_idempotent(monkeypatch):
     app._shutdown_containers(deadline=time.monotonic() + 1)
 
     assert sorted(calls) == ["docker", "mcp"]
+
+
+def test_startup_keeps_runtime_for_empty_folder(tmp_lumen, monkeypatch):
+    import store
+    folder = store.create_folder('Project')
+    known = []
+    monkeypatch.setattr(app.container_service, 'cleanup_stale', lambda ids: known.extend(ids) or [])
+    app._cleanup_stale_containers()
+    assert known == [f"folder_{folder['id']}"]

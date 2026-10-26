@@ -132,13 +132,21 @@ class McpSessionPool:
             writer,
             read_timeout_seconds=timedelta(seconds=self.tool_timeout),
         )
-        session = await session_cm.__aenter__()
-        await session.initialize()
+        try:
+            session = await session_cm.__aenter__()
+        except BaseException:
+            await stdio_cm.__aexit__(None, None, None)
+            raise
         self._sessions[server_name] = {
             "session": session,
             "session_cm": session_cm,
             "stdio_cm": stdio_cm,
         }
+        try:
+            await session.initialize()
+        except BaseException:
+            await self._close_one_session(server_name)
+            raise
         return session
 
     async def _invoke(self, server_name: str, server_config: dict, tool_name: str, arguments: dict) -> str:
@@ -150,15 +158,10 @@ class McpSessionPool:
                 raise TimeoutError(
                     f"MCP tool '{tool_name}' timed out after {self.tool_timeout:g} seconds"
                 ) from exc
-            # Session may have gone stale (e.g. container restarted between turns).
-            # Drop the cached entry and retry once with a fresh connection.
-            log.warning(
-                "[mcp] session for %r raised %s; dropping and retrying once",
-                server_name, exc,
-            )
+            # A failed transport may have already executed a tool with side effects.
+            # Drop the connection; let the caller decide whether to try again.
             await self._close_one_session(server_name)
-            session = await self._open_session(server_name, server_config)
-            result = await session.call_tool(tool_name, arguments)
+            raise
         return "\n".join(
             c.text if hasattr(c, "text") else str(c)
             for c in result.content

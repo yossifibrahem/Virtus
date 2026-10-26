@@ -145,9 +145,7 @@ def update_conversation(conv_id: str):
     new_runtime_id = store.runtime_id(conv_id, data)
     data["working_directory"] = str(container_service.conversation_workspace(new_runtime_id))
     saved = store.save(conv_id, data)
-    if old_runtime_id != new_runtime_id and not any(
-        store.runtime_id(item["id"]) == old_runtime_id for item in store.list_all()
-    ):
+    if old_runtime_id != new_runtime_id and old_runtime_id == conv_id:
         container_service.stop_container(old_runtime_id)
         container_service.delete_workspace(old_runtime_id)
     return jsonify(saved)
@@ -164,7 +162,7 @@ def delete_conversation(conv_id: str):
         return jsonify({"error": "Stop the active turn before deleting this chat"}), 409
     runtime_id = store.runtime_id(conv_id, data)
     store.delete(conv_id)
-    if not any(store.runtime_id(item["id"]) == runtime_id for item in store.list_all()):
+    if runtime_id == conv_id:
         container_service.stop_container(runtime_id)
         container_service.delete_workspace(runtime_id)
     return jsonify({"ok": True})
@@ -176,20 +174,20 @@ def danger_delete_all():
     conversations = store.list_all()
     if any((store.load(c["id"]) or {}).get("active_stream_id") for c in conversations):
         return jsonify({"error": "Stop active chats before deleting conversations"}), 409
+    runtime_ids = {store.runtime_id(c["id"], c) for c in conversations}
+    folders = store.list_folders()
+    runtime_ids.update(f"folder_{folder['id']}" for folder in folders)
     errors = []
-    for conv in conversations:
-        conv_id = conv.get("id")
-        if not conv_id:
-            continue
+    for runtime_id in runtime_ids:
         try:
-            runtime_id = store.runtime_id(conv_id)
-            store.delete(conv_id)
             container_service.stop_container(runtime_id)
             container_service.delete_workspace(runtime_id)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{conv_id}: {exc}")
+        except Exception as exc:
+            errors.append(f"{runtime_id}: {exc}")
     if errors:
         return jsonify({"ok": False, "errors": errors}), 500
-    for folder in store.list_folders():
+    for conv in conversations:
+        store.delete(conv["id"])
+    for folder in folders:
         store.delete_folder(folder["id"])
     return jsonify({"ok": True, "deleted": len(conversations)})

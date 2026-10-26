@@ -237,7 +237,7 @@ def execute(name, args):
 
 if __name__ == '__main__':
     try:
-        request = json.loads(sys.stdin.buffer.read(3 * FILE_LIMIT))
+        request = json.loads(sys.stdin.buffer.read(12 * FILE_LIMIT + 65536))
         print(json.dumps(execute(request['name'], request['args'])))
     except Exception as exc:
         print(json.dumps({'text': f'Error: {str(exc)[:1000]}', 'error': True}))

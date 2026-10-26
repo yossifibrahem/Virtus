@@ -11,6 +11,9 @@ Docker subprocess calls are never made here. The functions under test are:
 from __future__ import annotations
 
 import container_service
+import json
+import subprocess
+import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -192,15 +195,14 @@ class TestVolumeArgs:
     def test_workspace_volume_always_first(self, tmp_path):
         import docker_path_utils
 
-        result = container_service._volume_args(tmp_path, [])
+        result = container_service._volume_args(tmp_path)
         assert result[0] == "--volume"
         assert result[1].startswith(docker_path_utils.host_path_to_docker_src(str(tmp_path)))
         assert ":/workspace" in result[1]
 
-    def test_extra_volumes_appended(self, tmp_path):
-        extra = ["/host/path:/host/path:ro"]
-        result = container_service._volume_args(tmp_path, extra)
-        assert "/host/path:/host/path:ro" in result
+    def test_implicit_host_mounts_rejected(self):
+        with pytest.raises(ValueError, match="Implicit host mounts"):
+            container_service.ensure_container("chat", ["/host:/host:ro"])
 
     def test_no_extra_volumes_include_workspace_and_memory(self, tmp_path, monkeypatch):
         import docker_path_utils
@@ -210,7 +212,7 @@ class TestVolumeArgs:
             "_memory_volume_spec",
             lambda: "/host/memory.md:/memory.md:rw",
         )
-        result = container_service._volume_args(tmp_path, [])
+        result = container_service._volume_args(tmp_path)
         assert result == [
             "--volume",
             f"{docker_path_utils.host_path_to_docker_src(str(tmp_path))}:/workspace",
@@ -227,7 +229,6 @@ class TestVolumeArgs:
 
         result = container_service._volume_args(
             PureWindowsPath(r"C:\Users\User\.lumen\containers\abc"),
-            [],
         )
 
         assert result == [
@@ -247,84 +248,48 @@ class TestContainerImageIdentity:
             "container_network": "bridge",
         })
 
-        command = container_service._docker_run_command("lumen-chat-test", tmp_path, [])
+        command = container_service._docker_run_command("lumen-chat-test", tmp_path)
 
         label = f"{container_service.build_info.CONTAINER_BUILD_LABEL}=registry.example/lumen:1.2.3"
         assert ["--label", label] == command[command.index("--label"):command.index("--label") + 2]
         identity_label = f"{container_service.build_info.CONTAINER_IDENTITY_LABEL}=sandbox-digest"
         assert identity_label in command
 
-    def test_existing_container_with_old_image_is_recreated(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(container_service, "_workspace", lambda _conv: tmp_path)
-        monkeypatch.setattr(container_service, "get_status", lambda _conv: "running")
-        monkeypatch.setattr(container_service, "_get_mounted_sources", lambda _name: set())
-        monkeypatch.setattr(container_service, "_get_container_image_marker", lambda _name: "old-image")
-        monkeypatch.setattr(
-            container_service,
-            "_get_container_identity_marker",
-            lambda _name: "sandbox-digest",
-        )
-        monkeypatch.setattr(container_service.build_info, "sandbox_identity", lambda: "sandbox-digest")
-        monkeypatch.setattr(container_service._adv_cfg, "load_advanced_config", lambda: {
-            "sandbox_image": "new-image",
-            "container_memory": "512m",
-            "container_cpus": "1",
-            "container_network": "bridge",
-        })
-        removed = []
-        monkeypatch.setattr(container_service, "stop_container", lambda conv: removed.append(conv))
-        monkeypatch.setattr(
-            container_service,
-            "_run",
-            lambda args: __import__("subprocess").CompletedProcess(args, 0, stdout="container-id", stderr=""),
-        )
-
-        info = container_service._ensure_container_locked("conversation", [])
-
-        assert removed == ["conversation"]
-        assert info.status == "running"
-
-    def test_existing_container_with_rebuilt_same_tag_is_recreated(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(container_service, "_workspace", lambda _conv: tmp_path)
-        monkeypatch.setattr(container_service, "get_status", lambda _conv: "running")
-        monkeypatch.setattr(container_service, "_get_mounted_sources", lambda _name: set())
-        monkeypatch.setattr(container_service, "_get_container_image_marker", lambda _name: "lumen-sandbox:latest")
-        monkeypatch.setattr(
-            container_service,
-            "_get_container_identity_marker",
-            lambda _name: "sandbox-digest",
-        )
-        monkeypatch.setattr(container_service.build_info, "sandbox_identity", lambda: "sandbox-digest")
-        monkeypatch.setattr(container_service, "_get_container_image_id", lambda _name: "sha256:old")
-        monkeypatch.setattr(container_service, "_get_tagged_image_id", lambda _image: "sha256:new")
-        monkeypatch.setattr(container_service._adv_cfg, "load_advanced_config", lambda: {
-            "sandbox_image": "lumen-sandbox",
-            "container_memory": "512m",
-            "container_cpus": "1",
-            "container_network": "bridge",
-        })
-        removed = []
-        monkeypatch.setattr(container_service, "stop_container", lambda conv: removed.append(conv))
-        monkeypatch.setattr(
-            container_service,
-            "_run",
-            lambda args: __import__("subprocess").CompletedProcess(args, 0, stdout="container-id", stderr=""),
-        )
-
-        info = container_service._ensure_container_locked("conversation", [])
-
-        assert removed == ["conversation"]
-        assert info.status == "running"
-
-    def test_desktop_version_does_not_change_container_compatibility(self, monkeypatch):
-        monkeypatch.setattr(container_service, "_get_container_image_marker", lambda _name: "lumen-sandbox:latest")
-        monkeypatch.setattr(container_service, "_get_container_identity_marker", lambda _name: "sandbox-digest")
-        monkeypatch.setattr(container_service, "_get_container_image_id", lambda _name: "sha256:same")
-        monkeypatch.setattr(container_service, "_get_tagged_image_id", lambda _image: "sha256:same")
-        monkeypatch.setattr(container_service.build_info, "sandbox_identity", lambda: "sandbox-digest")
-        monkeypatch.setattr(container_service.build_info, "APP_VERSION", "99.0.0-desktop-only")
-
-        assert not container_service._container_image_changed("container", "lumen-sandbox")
+    @pytest.mark.parametrize('change', ['image_tag', 'image_id', 'identity', 'mount', None])
+    def test_existing_container_validation_uses_two_docker_calls(self, tmp_path, monkeypatch, change):
+        monkeypatch.setattr(container_service, '_workspace', lambda cid: tmp_path)
+        monkeypatch.setattr(container_service, '_memory_volume_spec', lambda: None)
+        monkeypatch.setattr(container_service.build_info, 'sandbox_identity', lambda: 'identity')
+        monkeypatch.setattr(container_service.build_info, 'APP_VERSION', '99.0.0-desktop-only')
+        monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {
+            'sandbox_image': 'lumen-sandbox', 'container_memory': '512m',
+            'container_cpus': '1', 'container_network': 'bridge'})
+        info = {
+            'State': {'Status': 'running'}, 'Image': 'sha256:current',
+            'Config': {'Labels': {
+                container_service.build_info.CONTAINER_BUILD_LABEL: 'lumen-sandbox:latest',
+                container_service.build_info.CONTAINER_IDENTITY_LABEL: 'identity'}},
+            'Mounts': [{'Type': 'bind', 'RW': True, 'Source': str(tmp_path), 'Destination': '/workspace'}],
+        }
+        if change == 'image_tag':
+            info['Config']['Labels'][container_service.build_info.CONTAINER_BUILD_LABEL] = 'old-tag'
+        elif change == 'identity':
+            info['Config']['Labels'][container_service.build_info.CONTAINER_IDENTITY_LABEL] = 'old-identity'
+        elif change == 'image_id':
+            info['Image'] = 'sha256:old'
+        elif change == 'mount':
+            info['Mounts'].append({'Type': 'bind', 'RW': True, 'Source': '/', 'Destination': '/host'})
+        calls, removed = [], []
+        def run(args):
+            calls.append(args)
+            output = json.dumps(info) if args[1] == 'inspect' else 'sha256:current'
+            return subprocess.CompletedProcess(args, 0, output, '')
+        monkeypatch.setattr(container_service, '_run', run)
+        monkeypatch.setattr(container_service, 'stop_container', removed.append)
+        assert container_service.ensure_container('conversation').status == 'running'
+        assert removed == (['conversation'] if change else [])
+        assert len(calls) == (3 if change else 2)
+        assert calls[0][1] == 'inspect' and calls[1][1:3] == ['image', 'inspect']
 
 
 class TestShutdownTimeouts:

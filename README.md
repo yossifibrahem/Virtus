@@ -1,6 +1,6 @@
 # Lumen AI Chat
 
-A local-first AI chatbot with real-time streaming, folder-based chat organization, isolated Docker sandboxes, MCP server support, and a zero-build-step frontend.
+A local-first AI chatbot that gives the LLM its own computer inside Docker, separate from the host machine, with streaming, shared Folder/Project workspaces, MCP support, and a zero-build-step frontend.
 
 Lumen is distributed as an installable desktop application for normal users while keeping a straightforward source-development workflow. The backend is Flask, and the existing browser UI remains the product interface rather than being replaced by Electron or a native chat window.
 
@@ -11,6 +11,7 @@ Lumen is distributed as an installable desktop application for normal users whil
 - **Desktop experience:** small macOS menu-bar and Windows tray applications run Lumen locally and open the same chat UI in the user's default browser.
 - **User prerequisite:** Docker Desktop is the only external runtime users install. Python, Node.js, npm, Git, and the Lumen source tree are included or handled internally.
 - **Sandbox installation:** the app bundles `Dockerfile.sandbox`. After explicit confirmation on first run, Docker pulls `ubuntu:24.04`, installs the sandbox runtimes and packages, and creates the local `lumen-sandbox:latest` image.
+- **Execution and sharing:** model commands run inside Docker. Standalone chats have separate workspaces; chats in a Folder/Project share one. File sharing is explicit, and network access defaults to Docker bridge networking. The current UI supports uploads; arbitrary host-directory mounting is not implemented and belongs only in Folder/Project settings if added later.
 - **MCP boundary:** user-configured servers run only inside Lumen's containers. No MCP server is bundled or automatically registered; configure servers through settings or `mcp.json`.
 - **Distribution:** desktop artifacts are an Apple Silicon macOS 14+ DMG and a portable Windows x64 `onedir` ZIP. The Windows package must remain intact; the executable is not a standalone distribution.
 - **Data ownership:** chats, settings, memory, and workspaces remain under `~/.lumen/`; replacing or uninstalling the app does not remove them.
@@ -43,7 +44,7 @@ Lumen AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser UI
 
 - Add MCP servers through the UI or `mcp.json`
 - Tool metadata keeps the MCP server name separate from the model-facing tool name
-- Persistent MCP stdio session pooling — sessions are opened once per conversation and reused across all turns until the container stops
+- Persistent MCP stdio session pooling — sessions are opened per chat or shared Folder runtime and reused across turns until the container stops
 - Approve or deny individual tool calls; enable auto-approval per server
 - Tool activity renders inline: arguments, running state, and results
 
@@ -72,7 +73,7 @@ Lumen AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser UI
 
 - Upload files into the conversation workspace via the browser panel
 - Browse nested workspace directories in an expandable file tree
-- Preview text/code/Markdown files inline; download any workspace file
+- Preview text/code/Markdown files inline; download workspace files up to 50 MiB
 - Access a folder's shared workspace before opening or creating a chat
 - Images are stored by SHA-256 content hash and sent as vision inputs to compatible models
 
@@ -384,21 +385,21 @@ Model-facing tool names use the MCP tool name directly. The matching MCP server 
 2. Open the folder to create chats, browse its shared workspace, or add folder-level instructions.
 3. Use a conversation's menu to move an existing chat into a folder or back to **Recent**.
 
-Each chat retains its own message history, but chats in the same folder use one shared Docker container and `/workspace`. Folder instructions are used in place of the global system prompt for chats in that folder. Deleting a folder permanently deletes its chats, shared container, and workspace files.
+Each chat retains its own message history, but chats in the same folder use one shared Docker container and `/workspace`. Folder instructions are used in place of the global system prompt for chats in that folder. The folder retains its files when its last chat is deleted or moved out. Moving a chat switches workspaces without copying files. Deleting a folder permanently deletes its chats, shared container, and workspace files.
 
 ### Uploading Files
 
-Open the workspace panel, upload a file, and it will appear under `/workspace/uploads/` inside the active sandbox. Expand directories in the file tree, preview text files in the browser, or download any workspace file directly. When you are working in a folder, every chat in that folder sees the same files.
+Open the workspace panel, upload a file, and it will appear under `/workspace/uploads/` inside the active sandbox. Expand directories in the file tree, preview text files in the browser, or download workspace files up to 50 MiB directly. When you are working in a folder, every chat in that folder sees the same files.
 
 ### Using MCP Tools
 
 1. Build the sandbox image if you have not already, using the content-identity command in [Build the Sandbox Image](#build-the-sandbox-image).
 2. Open the MCP settings panel and add a server (command, args, optional env vars).
-3. Save the config and click **Load Tools** — a conversation must be open for tool discovery.
+3. Save the config and click **Load Tools**. Without an open chat, discovery uses a temporary discovery runtime that stops after listing tools.
 4. Send a message asking the model to use a tool.
 5. Approve or deny the tool call when prompted (or enable auto-approval per server).
 
-Tool activity is shown inline with the tool name, arguments, running state, and result.
+Tool activity is shown inline with the tool name, arguments, running state, and result. Failed MCP transports are reported without automatically replaying the tool call; a later request can reopen the connection.
 
 ### Cancelling a Stream
 
@@ -428,10 +429,12 @@ Click the stop button while a response is streaming. The server marks the stream
 | `tool_approval.py` | Pending tool-approval gate: `_pending_approvals` dict, lock, `request_tool_approval`, `resolve_tool_approval` |
 | `streaming.py` | Typed OpenAI streaming event generator; SSE serialization helpers |
 | `mcp_service.py` | MCP config, tool discovery, tool invocation; re-exports `_build_server_params` for use by the pool |
-| `mcp_session_pool.py` | `McpSessionPool` class: worker coroutine, session lifecycle, retry logic for persistent cross-turn reuse |
+| `mcp_session_pool.py` | `McpSessionPool` class: worker coroutine and session lifecycle for persistent cross-turn reuse |
 | `mcp_adapters.py` | Wraps MCP commands for Docker `exec`; never infers host mounts from arguments |
 | `container_service.py` | Docker container lifecycle: create, start, stop, idle reaping, workspace management |
-| `workspace_service.py` | Safe file operations inside the conversation workspace; path traversal protection |
+| `container_files.py`, `sandbox_files.py` | File panel transport and container-only workspace file operations |
+| `builtin_tools.py`, `sandbox_tools.py` | Built-in tool contracts and container-only Read/Write/Edit workers |
+| `sandbox_runtime.py` | Shared runtime serialization, bounded Docker I/O, cancellation |
 | `store.py` | Filesystem persistence for conversations, folders, and images; cached conversation index |
 
 ### Chat Turn Flow
@@ -440,13 +443,13 @@ A single chat turn in `chat_turn_service.py`:
 
 1. Build an OpenAI client from server-side config.
 2. Read `~/.lumen/memory.md` and inject its contents into the system message.
-3. Pre-mount MCP server volumes and ensure the chat or folder sandbox is running.
+3. Resolve the chat or Folder runtime; tools start its sandbox when needed. MCP paths never create host mounts.
 4. Stream model output via `streaming.py`; accumulate text and tool calls.
 5. For each tool call: request approval (unless auto-approved), invoke via the persistent `McpSessionPool` (reused across turns in the active runtime), append the tool result to message history.
 6. Loop until the model finishes without further tool calls.
 7. Emit `assistant_done` and optionally a generated `title` event.
 
-Partial output is saved during streaming by `TurnRecorder` so that cancelled or interrupted turns are not lost.
+Partial output is saved at most once per 0.75 seconds by `TurnRecorder`, with forced saves at tool boundaries and completion. Cancellation and model errors preserve partial output. One API client is reused and closed for each turn; conversation JSON is stored as compact UTF-8.
 
 ### Frontend
 
@@ -501,7 +504,7 @@ Tests are fully isolated: `conftest.py` redirects filesystem paths to `tmp_path`
 |---|---|
 | `test_app_config.py` | Config load/save, env overrides, public config, atomic persistence |
 | `test_store.py` | SHA-256 image naming, conversation/folder CRUD, shared runtimes, cached index, concurrency |
-| `test_workspace_service.py` | Path traversal rejection, preview limits, upload collision handling |
+| `test_sandbox_files.py` | Actual container worker path checks, configured limits, symlink/special-file rejection, upload collisions, host transport |
 | `test_chat_turn_service.py` | Tool approval, title extraction, `TurnRecorder` throttle/finalize |
 | `test_streaming.py` | Event ordering, tool delta accumulation, parallel tools, cancellation |
 | `test_mcp_service.py` | Config cache, malformed config, `McpSessionPool` same-task cleanup |
@@ -535,7 +538,7 @@ git checkout -b feature/your-change
 ### Codebase Guidelines
 
 - Keep Flask route handlers thin — business logic lives in service modules.
-- Keep workspace path safety checks in `workspace_service.py`; never weaken traversal restrictions.
+- Keep file panel path safety checks in `sandbox_files.py`; never follow container-created workspace paths on the host.
 - Keep persistent data access inside `store.py` where possible.
 - Do not send API keys in chat or model request bodies — use `app_config.py` and `/api/settings`.
 - Avoid introducing a frontend build step unless the project intentionally adopts one.
@@ -583,15 +586,15 @@ Every chat has four server-provided tools, even with no MCP servers configured:
 
 Relative paths start at `/workspace`; absolute paths are **container paths**. Text reads return at most 200 lines/32 KiB; directory reads list two levels and skip dotfiles and `node_modules`. PDF reads default to one page and allow up to five; notebooks default to 20 cells and never execute code. Images and PDF page renders require a vision-capable model. Write/Edit accept at most 1 MiB; use Bash for larger transformations.
 
-Tools run automatically. Bash uses a fresh shell each time: files and installed packages persist in the container, while shell variables and directory changes do not. There are no managed background jobs. Stop/timeout may stop the shared container to terminate every descendant, interrupting other activity in that Folder. Workspace files survive container recreation; installed packages in the container layer do not.
+Built-in tools run automatically. Bash uses a fresh shell each time: files and installed packages persist in the container, while shell variables and directory changes do not. There are no managed background jobs. Stop/timeout may stop the shared container to terminate every descendant, interrupting other activity in that Folder. Workspace files survive container recreation; installed packages in the container layer do not.
 
 ### Isolation and sharing
 
-Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace and shared `/memory.md` only. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. A Folder/Project host-directory picker is not part of this change.
+Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace and shared `/memory.md` only. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. Arbitrary host-directory mounting is not implemented. Any future explicit directory sharing must belong to a Folder/Project; MCP configuration must never infer host mounts.
 
 Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
 
-The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Downloads are bounded to 50 MiB. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
+The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Smaller upload limits are supported. Large transfers use bounded JSON/base64 transport and temporarily consume more memory than the raw file size. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
 
 After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `read`, `write`, and `edit` are reserved; rename conflicting MCP tools.
 

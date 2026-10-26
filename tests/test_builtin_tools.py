@@ -170,9 +170,9 @@ def test_unexpected_mount_rejected(monkeypatch, tmp_path):
     mounts = [{'Type': 'bind', 'RW': True, 'Destination': '/workspace', 'Source': str(tmp_path)},
               {'Type': 'bind', 'RW': True, 'Destination': '/host', 'Source': '/'}]
     monkeypatch.setattr(container_service, '_run', lambda args: SimpleNamespace(returncode=0, stdout=json.dumps(mounts)))
-    assert not container_service._mounts_match('test', tmp_path)
+    assert not container_service._mounts_match(mounts, tmp_path)
     mounts.pop()
-    assert container_service._mounts_match('test', tmp_path)
+    assert container_service._mounts_match(mounts, tmp_path)
 
 
 def test_native_schemas_injected_without_mcp(tmp_lumen, monkeypatch):
@@ -251,3 +251,33 @@ def test_nested_runtime_operations_stay_active():
                 pass
         assert sandbox_runtime.is_active('nested')
     assert not sandbox_runtime.is_active('nested')
+
+
+def test_idle_reaper_cannot_stop_an_active_runtime(monkeypatch):
+    stopped = Mock()
+    monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {'container_idle_timeout': 1})
+    monkeypatch.setattr(container_service, 'get_status', lambda cid: 'running')
+    monkeypatch.setattr(container_service, 'stop_container_process', stopped)
+    entered, release = threading.Event(), threading.Event()
+    def active():
+        with sandbox_runtime.runtime_operation('busy'):
+            entered.set()
+            release.wait(2)
+    thread = threading.Thread(target=active)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        container_service._last_used['busy'] = 0
+        container_service._reap_once()
+        stopped.assert_not_called()
+    finally:
+        release.set()
+        thread.join(2)
+
+
+def test_runtime_locks_are_reclaimed():
+    import gc
+    with sandbox_runtime.runtime_operation('temporary-lock'):
+        assert 'temporary-lock' in sandbox_runtime._LOCKS
+    gc.collect()
+    assert 'temporary-lock' not in sandbox_runtime._LOCKS

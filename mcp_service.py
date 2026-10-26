@@ -15,9 +15,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from mcp_adapters import apply_workspace_process_options, extract_host_mounts
+from mcp_adapters import apply_workspace_process_options
 from fs_utils import atomic_replace
-from docker_path_utils import parse_volume_source
 from mcp_session_pool import McpSessionPool
 
 _MCP_CONFIG_DIR = Path.home() / ".lumen"
@@ -129,25 +128,6 @@ def save_config(config: dict) -> None:
 
 def find_server(server_name: str) -> dict | None:
     return load_config().get("mcpServers", {}).get(server_name)
-
-
-def collect_all_extra_volumes(server_names: list[str]) -> list[str]:
-    """Return the union of host mount volumes needed by all given MCP servers.
-
-    Called once at turn start so the container is created with every required
-    volume upfront, preventing recreation mid-turn when the model switches
-    between servers that reference different host paths.
-    """
-    servers = load_config().get("mcpServers", {})
-    seen: set[str] = set()
-    volumes: list[str] = []
-    for name in server_names:
-        for spec in extract_host_mounts(servers.get(name, {})):
-            src = parse_volume_source(spec)
-            if src not in seen:
-                seen.add(src)
-                volumes.append(spec)
-    return volumes
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

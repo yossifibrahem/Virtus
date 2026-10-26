@@ -520,12 +520,7 @@ class TestMcpSessionPool:
 
         assert attempts["count"] == 1
 
-    def test_stale_session_retry_succeeds_on_second_attempt(self, monkeypatch):
-        """
-        If a cached session raises on call_tool (simulating a dead docker exec
-        process), _invoke must drop the entry, open a fresh session, and retry.
-        The caller should receive the successful result from the second attempt.
-        """
+    def test_failed_call_is_not_replayed_and_next_call_reopens_session(self, monkeypatch):
         import sys
         import types
         from types import SimpleNamespace
@@ -595,10 +590,13 @@ class TestMcpSessionPool:
         monkeypatch.setattr(mcp_service, "_build_server_params", lambda name, cfg, conv_id="": {})
 
         with mcp_service.McpSessionPool(conv_id="conv-1") as pool:
+            with pytest.raises(OSError, match="broken pipe"):
+                pool.invoke_tool("srv", {}, "tool", {})
+            assert attempt["count"] == 1
             result = pool.invoke_tool("srv", {}, "tool", {})
 
         assert result == "ok"
-        assert attempt["count"] == 2, "expected exactly two call_tool attempts"
+        assert attempt["count"] == 2
         assert len(sessions_created) == 2, "expected a fresh session to be opened after the stale one"
 
 
@@ -718,3 +716,16 @@ class TestPersistentPool:
             f"expected session opened exactly once across two turns, got {open_counts['srv']}"
         )
         mcp_service.close_persistent_pool("conv-1")
+
+
+def test_failed_initialization_closes_partial_session(monkeypatch):
+    import sys
+    stdio, sessions = TestMcpSessionPool()._install_fake_mcp(monkeypatch)
+    async def fail(self):
+        raise RuntimeError('initialization failed')
+    monkeypatch.setattr(sys.modules['mcp'].ClientSession, 'initialize', fail)
+    with mcp_service.McpSessionPool(conv_id='chat') as pool:
+        with pytest.raises(RuntimeError, match='initialization failed'):
+            pool.invoke_tool('server', {}, 'tool', {})
+        assert not pool._sessions
+    assert stdio[0].exited == sessions[0].exited == 1

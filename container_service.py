@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import threading
+import weakref
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +31,7 @@ DOCKER_SHUTDOWN_TIMEOUT_SECONDS = 5
 
 ContainerStatus = Literal["running", "stopped", "missing"]
 
-_CONTAINER_LOCKS: dict[str, threading.Lock] = {}
+_CONTAINER_LOCKS = weakref.WeakValueDictionary()
 _CONTAINER_LOCKS_GUARD = threading.Lock()
 
 # Last-activity timestamps for idle reaping (conv_id → monotonic seconds).
@@ -57,7 +58,10 @@ def container_name(conv_id: str) -> str:
 def _container_lock(conv_id: str) -> threading.Lock:
     key = _safe_id(conv_id)
     with _CONTAINER_LOCKS_GUARD:
-        return _CONTAINER_LOCKS.setdefault(key, threading.Lock())
+        lock = _CONTAINER_LOCKS.get(key)
+        if lock is None:
+            lock = _CONTAINER_LOCKS[key] = threading.Lock()
+        return lock
 
 
 def _workspace(conv_id: str) -> Path:
@@ -93,52 +97,23 @@ def _invalidate_mcp_pool(conv_id: str) -> None:
 _volume_source = parse_volume_source
 
 
-def _get_mounted_sources(name: str) -> set[str]:
-    result = _run([
-        "docker", "inspect",
-        "--format", "{{range .Mounts}}{{.Source}}\n{{end}}",
-        name,
-    ])
-    if result.returncode != 0:
-        return set()
-    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+def _inspect_container(name: str) -> dict | None:
+    result = _run(["docker", "inspect", "--format", "{{json .}}", name])
+    if result.returncode:
+        return None
+    info = json.loads(result.stdout)
+    if not isinstance(info, dict):
+        raise RuntimeError(f"Invalid container metadata for {name}")
+    return info
 
 
-def _mounts_match(name: str, workspace: Path) -> bool:
-    result = _run(["docker", "inspect", "--format", "{{json .Mounts}}", name])
-    try:
-        mounts = json.loads(result.stdout)
-        expected = {"/workspace": host_path_to_docker_src(str(workspace))}
-        memory_spec = _memory_volume_spec()
-        if memory_spec:
-            expected[memory_service.CONTAINER_PATH] = _volume_source(memory_spec)
-        actual = {m["Destination"]: m["Source"] for m in mounts if m.get("Type") == "bind" and m.get("RW")}
-        return result.returncode == 0 and len(mounts) == len(expected) and actual == expected
-    except (ValueError, KeyError, TypeError):
-        return False
-
-
-def _get_container_image_marker(name: str) -> str:
-    result = _run([
-        "docker", "inspect",
-        "--format", f'{{{{index .Config.Labels "{build_info.CONTAINER_BUILD_LABEL}"}}}}',
-        name,
-    ])
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
-def _get_container_identity_marker(name: str) -> str:
-    result = _run([
-        "docker", "inspect",
-        "--format", f'{{{{index .Config.Labels "{build_info.CONTAINER_IDENTITY_LABEL}"}}}}',
-        name,
-    ])
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
-def _get_container_image_id(name: str) -> str:
-    result = _run(["docker", "inspect", "--format", "{{.Image}}", name])
-    return result.stdout.strip() if result.returncode == 0 else ""
+def _mounts_match(mounts: list[dict], workspace: Path) -> bool:
+    expected = {"/workspace": host_path_to_docker_src(str(workspace))}
+    memory_spec = _memory_volume_spec()
+    if memory_spec:
+        expected[memory_service.CONTAINER_PATH] = _volume_source(memory_spec)
+    actual = {m["Destination"]: m["Source"] for m in mounts if m.get("Type") == "bind" and m.get("RW")}
+    return len(mounts) == len(expected) and actual == expected
 
 
 def _get_tagged_image_id(image: str) -> str:
@@ -146,14 +121,15 @@ def _get_tagged_image_id(image: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def _container_image_changed(name: str, expected_image: str) -> bool:
+def _container_image_changed(info: dict, expected_image: str) -> bool:
     expected_image = build_info.canonical_image_reference(expected_image)
+    labels = info.get("Config", {}).get("Labels") or {}
     tagged_image_id = _get_tagged_image_id(expected_image)
     return (
-        _get_container_image_marker(name) != expected_image
-        or _get_container_identity_marker(name) != build_info.sandbox_identity()
+        labels.get(build_info.CONTAINER_BUILD_LABEL) != expected_image
+        or labels.get(build_info.CONTAINER_IDENTITY_LABEL) != build_info.sandbox_identity()
         or not tagged_image_id
-        or _get_container_image_id(name) != tagged_image_id
+        or info.get("Image") != tagged_image_id
     )
 
 
@@ -166,10 +142,10 @@ def _memory_volume_spec() -> str | None:
         return None
 
 
-def _volume_args(workspace: Path, extra_volumes: list[str]) -> list[str]:
+def _volume_args(workspace: Path) -> list[str]:
     workspace_source = host_path_to_docker_src(str(workspace))
     memory_spec = _memory_volume_spec()
-    specs = [f"{workspace_source}:/workspace", *extra_volumes]
+    specs = [f"{workspace_source}:/workspace"]
     if memory_spec:
         specs.append(memory_spec)
     return [item for spec in specs for item in ("--volume", spec)]
@@ -188,24 +164,21 @@ def ensure_container(conv_id: str, extra_volumes: list[str] | None = None) -> Co
         raise ValueError("Implicit host mounts are disabled; use container paths in MCP configuration")
     _touch(conv_id)
     with _container_lock(conv_id):
-        return _ensure_container_locked(conv_id, extra_volumes or [])
+        return _ensure_container_locked(conv_id)
 
 
-def _ensure_container_locked(conv_id: str, extra_volumes: list[str]) -> ContainerInfo:
+def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
     workspace = _workspace(conv_id)
-    required_sources = {_volume_source(v) for v in extra_volumes}
 
-    status = get_status(conv_id)
-    if status in {"running", "stopped"}:
-        missing = required_sources - _get_mounted_sources(name)
+    info = _inspect_container(name)
+    if info is not None:
+        status = "running" if info["State"]["Status"] == "running" else "stopped"
         expected_image = build_info.canonical_image_reference(
             str(_adv_cfg.load_advanced_config()["sandbox_image"])
         )
-        image_changed = _container_image_changed(name, expected_image)
-        if missing or image_changed or not _mounts_match(name, workspace):
-            if missing:
-                log.info("[container] %s missing volume(s) %s; recreating", name, sorted(missing))
+        image_changed = _container_image_changed(info, expected_image)
+        if image_changed or not _mounts_match(info.get("Mounts", []), workspace):
             if image_changed:
                 log.info("[container] %s uses an outdated sandbox image; recreating", name)
             stop_container(conv_id)
@@ -216,7 +189,7 @@ def _ensure_container_locked(conv_id: str, extra_volumes: list[str]) -> Containe
         else:
             return ContainerInfo(conv_id, name, workspace, "running")
 
-    result = _run(_docker_run_command(name, workspace, extra_volumes))
+    result = _run(_docker_run_command(name, workspace))
     if result.returncode == 0:
         log.info("[container] created %s (%s)", name, result.stdout.strip()[:12])
         return ContainerInfo(conv_id, name, workspace, "running")
@@ -224,12 +197,12 @@ def _ensure_container_locked(conv_id: str, extra_volumes: list[str]) -> Containe
     # Python locks solve same-process races. This handles multi-process Flask or
     # a manual docker run that wins between inspect and create.
     if _is_name_conflict(result.stderr):
-        return _reuse_conflicting_container(conv_id, required_sources)
+        return _reuse_conflicting_container(conv_id)
 
     raise RuntimeError(f"Failed to create container {name}: {result.stderr.strip()}")
 
 
-def _docker_run_command(name: str, workspace: Path, extra_volumes: list[str]) -> list[str]:
+def _docker_run_command(name: str, workspace: Path) -> list[str]:
     cfg = _adv_cfg.load_advanced_config()
     image = build_info.canonical_image_reference(str(cfg["sandbox_image"]))
     network = str(cfg["container_network"])
@@ -241,7 +214,7 @@ def _docker_run_command(name: str, workspace: Path, extra_volumes: list[str]) ->
         "--name", name,
         "--label", f"{build_info.CONTAINER_BUILD_LABEL}={image}",
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
-        *_volume_args(workspace, extra_volumes),
+        *_volume_args(workspace),
         "--workdir", "/workspace",
         "--pids-limit", "256",
         "--memory", str(cfg["container_memory"]),
@@ -269,25 +242,22 @@ def _is_name_conflict(stderr: str) -> bool:
     return "already in use" in text or "conflict" in text
 
 
-def _reuse_conflicting_container(conv_id: str, required_sources: set[str]) -> ContainerInfo:
+def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
-    status = get_status(conv_id)
-    if status == "missing":
+    info = _inspect_container(name)
+    if info is None:
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
-    missing = required_sources - _get_mounted_sources(name)
-    if missing or not _mounts_match(name, _workspace(conv_id)):
-        raise RuntimeError(
-            f"Container {name} already exists but is missing required volume(s): {sorted(missing)}"
-        )
+    if not _mounts_match(info.get("Mounts", []), _workspace(conv_id)):
+        raise RuntimeError(f"Container {name} already exists with unexpected mounts")
     expected_image = build_info.canonical_image_reference(
         str(_adv_cfg.load_advanced_config()["sandbox_image"])
     )
-    if _container_image_changed(name, expected_image):
+    if _container_image_changed(info, expected_image):
         raise RuntimeError(
             f"Container {name} already exists but uses a different sandbox image"
         )
-    if status == "stopped":
+    if info["State"]["Status"] != "running":
         _start_existing(name)
     log.info("[container] reused concurrently-created %s", name)
     return ContainerInfo(conv_id, name, _workspace(conv_id), "running")
@@ -463,25 +433,29 @@ def _reap_once() -> None:
 
     for conv_id, candidate_ts in candidates:
         import sandbox_runtime
-        if sandbox_runtime.is_active(conv_id):
+        lock = sandbox_runtime.runtime_lock(conv_id)
+        if sandbox_runtime.is_active(conv_id) or not lock.acquire(blocking=False):
             continue
-        with _last_used_lock:
-            current_ts = _last_used.get(conv_id)
-            current_now = time.monotonic()
-            if (
-                current_ts is None
-                or current_ts != candidate_ts
-                or (current_ts > 0 and current_now - current_ts <= idle_timeout)
-            ):
-                continue
+        try:
+            with _last_used_lock:
+                current_ts = _last_used.get(conv_id)
+                current_now = time.monotonic()
+                if (
+                    current_ts is None
+                    or current_ts != candidate_ts
+                    or (current_ts > 0 and current_now - current_ts <= idle_timeout)
+                ):
+                    continue
 
-        if get_status(conv_id) == "running":
-            log.info("[container] idle timeout reached for %s; stopping", conv_id)
-            stop_container_process(conv_id)
+            if get_status(conv_id) == "running":
+                log.info("[container] idle timeout reached for %s; stopping", conv_id)
+                stop_container_process(conv_id)
 
-        with _last_used_lock:
-            if _last_used.get(conv_id) == candidate_ts:
-                _last_used.pop(conv_id, None)
+            with _last_used_lock:
+                if _last_used.get(conv_id) == candidate_ts:
+                    _last_used.pop(conv_id, None)
+        finally:
+            lock.release()
 
 
 def _reap_idle_containers() -> None:

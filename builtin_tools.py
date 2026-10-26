@@ -97,7 +97,7 @@ def invoke(runtime_id, name, args, cancel=None):
                 text = encoded[:16000].decode('utf-8', 'ignore') + '\n[output truncated]\n' + encoded[-16000:].decode('utf-8', 'ignore')
             return {'text': text + f'\n[exit status {code}]'}
         code, raw, error = sandbox_runtime.docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py'],
-            json.dumps({'name': name, 'args': args}).encode(), 30, cancel)
+            json.dumps({'name': name, 'args': args}, ensure_ascii=False).encode(), 30, cancel)
         if code:
             raise ValueError('Container worker failed: ' + error.decode('utf-8', 'replace'))
         result = json.loads(raw)

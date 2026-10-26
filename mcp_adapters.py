@@ -1,15 +1,11 @@
 """MCP process launch helpers — all servers run in the per-chat Docker container."""
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 from typing import Any
 
 import container_service
-from docker_path_utils import make_volume_spec, translate_arg_for_container
-
-log = logging.getLogger(__name__)
 
 CONTAINER_WORKDIR = "/workspace"
 
@@ -21,14 +17,6 @@ class ContainerConversationRequired(RuntimeError):
 def conversation_working_directory(conversation_id: str) -> Path:
     """Return the host-side workspace mounted as /workspace in containers."""
     return container_service.conversation_workspace(conversation_id)
-
-
-def expand_config_env(env: dict | None) -> dict:
-    """Expand user-friendly paths in explicit MCP env config."""
-    return {
-        str(key): os.path.expanduser(str(value)) if isinstance(value, str) else value
-        for key, value in (env or {}).items()
-    }
 
 
 def apply_workspace_process_options(
@@ -46,10 +34,9 @@ def apply_workspace_process_options(
             f"MCP server '{server_name}' requires a conversation to be open."
         )
 
-    extra_volumes = extract_host_mounts(server_config)
-    container_service.ensure_container(conv_id, extra_volumes=extra_volumes)
+    container_service.ensure_container(conv_id)
 
-    explicit_env = expand_config_env(server_config.get("env", {}))
+    explicit_env = server_config.get("env", {})
     container_env = {
         **{str(k): str(v) for k, v in explicit_env.items()},
         "PWD": CONTAINER_WORKDIR,
@@ -67,26 +54,3 @@ def apply_workspace_process_options(
     env.clear()
     env.update(os.environ)
     params.pop("cwd", None)
-
-
-def extract_host_mounts(server_config: dict) -> list[str]:
-    """Host directories must be shared explicitly through Folder settings.
-
-    MCP arguments are container paths, never implicit host mount requests.
-    """
-    return []
-
-
-def find_project_root(path: Path) -> Path | None:
-    """Find a nearby project root without accidentally mounting /home or /."""
-    candidate = path.parent if path.is_file() else path
-    markers = {"node_modules", "package.json", "pyproject.toml", "setup.py"}
-
-    for _ in range(6):
-        if any((candidate / marker).exists() for marker in markers):
-            return candidate
-        parent = candidate.parent
-        if parent == candidate:
-            break
-        candidate = parent
-    return None

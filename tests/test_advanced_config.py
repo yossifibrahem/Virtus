@@ -30,3 +30,24 @@ def test_uses_stored_sandbox_image_verbatim(tmp_path, monkeypatch):
     path.write_text(json.dumps({"sandbox_image": "custom-sandbox:7"}))
 
     assert advanced_config.load_advanced_config()["sandbox_image"] == "custom-sandbox:7"
+
+
+def test_rejects_invalid_values_on_save(tmp_path, monkeypatch):
+    import pytest
+    _isolate(tmp_path, monkeypatch)
+    for update in [{'container_network': 'host'}, {'container_network': 'container:other'},
+                   {'container_cpus': 'nan'}, {'max_file_list_entries': -1},
+                   {'max_file_preview_bytes': True}, {'container_memory': ''}]:
+        with pytest.raises(ValueError):
+            advanced_config.save_advanced_config(update)
+
+
+def test_limits_match_worker_capabilities(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    result = advanced_config.save_advanced_config({
+        'max_upload_bytes': 200*1024*1024, 'max_file_list_entries': 10000,
+        'max_file_preview_bytes': 20*1024*1024, 'container_idle_timeout': 0})
+    assert result['max_upload_bytes'] == 50*1024*1024
+    assert result['max_file_preview_bytes'] == 4*1024*1024
+    assert result['max_file_list_entries'] == 5000
+    assert result['container_idle_timeout'] == 0

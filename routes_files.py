@@ -6,7 +6,6 @@ import re
 from flask import Blueprint, jsonify, request, send_file
 
 import store
-import workspace_service
 import container_files
 import tool_media
 
