@@ -26,7 +26,9 @@ def runtime(tmp_path, monkeypatch):
     monkeypatch.setattr(containers, '_memory_volume_spec', lambda: f'{memory}:/memory.md:rw')
     monkeypatch.setattr(advanced_config, 'load_advanced_config', lambda: {
         'sandbox_image': image, 'container_memory': '512m', 'container_cpus': '1',
-        'container_network': 'bridge', 'container_idle_timeout': 600})
+        'container_network': 'bridge', 'container_idle_timeout': 600,
+        'max_file_preview_bytes': 512*1024, 'max_file_list_entries': 500,
+        'max_upload_bytes': 50*1024*1024})
     rid = uuid.uuid4().hex
     try:
         containers.ensure_container(rid)
@@ -110,3 +112,41 @@ def test_malformed_and_oversized_document_inputs(runtime):
     assert native.invoke(runtime, 'read', {'path': 'oversized.png'})['error']
     assert native.invoke(runtime, 'read', {'path': 'pipe'})['error']
     assert native.invoke(runtime, 'read', {'path': '/workspace', 'range': '1:2'})['error']
+
+
+def test_folder_host_mounts_readonly_write_through_and_isolation(runtime, tmp_path, monkeypatch):
+    import folder_mounts
+    import store
+    monkeypatch.setattr(store, 'FOLDERS_FILE', tmp_path / 'folders.json')
+    source = tmp_path / 'host project, quoted'; source.mkdir()
+    (source / 'original.txt').write_text('host data')
+    mounts = folder_mounts.normalize_mounts([{'source': str(source)}])
+    folder = store.create_folder('Mounted project', mounts=mounts)
+    rid = f"folder_{folder['id']}"
+    target = f"/workspace/mounts/{mounts[0]['name']}"
+    try:
+        containers.ensure_container(rid)
+        assert 'host data' in native.invoke(rid, 'read', {'path': target + '/original.txt'})['text']
+        result = native.invoke(rid, 'bash', {'command': f"echo denied > '{target}/denied.txt'"})['text']
+        assert 'Read-only file system' in result
+        assert not (source / 'denied.txt').exists()
+        listing, status = container_files.operation(rid, 'list', target)
+        assert status == 200 and 'original.txt' in json.dumps(listing), listing
+        info = json.loads(docker_cli.run(['inspect', containers.container_name(runtime)]).stdout)[0]
+        assert not any(m['Source'] == str(source) for m in info['Mounts'])
+        mounts[0]['read_only'] = False
+        store.update_folder(folder['id'], mounts=mounts)
+        # ensure_container must notice the changed RO permission and recreate.
+        containers.ensure_container(rid)
+        result = native.invoke(rid, 'bash', {'command': f"echo written > '{target}/created.txt'"})['text']
+        assert 'exit status 0' in result
+        assert (source / 'created.txt').read_text() == 'written\n'
+        store.update_folder(folder['id'], mounts=[])
+        containers.ensure_container(rid)
+        result = native.invoke(rid, 'bash', {'command': f"test ! -e '{target}/original.txt'"})['text']
+        assert 'exit status 0' in result
+    finally:
+        containers.stop_container(rid)
+        containers.delete_workspace(rid)
+    assert (source / 'original.txt').read_text() == 'host data'
+    assert (source / 'created.txt').read_text() == 'written\n'

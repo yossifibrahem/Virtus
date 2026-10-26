@@ -15,11 +15,18 @@ its files even when it has no chats. Deleting or moving its last chat must prese
 that workspace. Deleting the Folder explicitly deletes its chats and workspace.
 Moving a chat switches its runtime; it does not copy files between workspaces.
 
-Sharing is explicit: uploads enter `/workspace/uploads/`. The app currently mounts
-only its managed workspace and the existing shared `/memory.md`. Arbitrary host
-directory selection is not implemented. If directory sharing is extended later,
-its ownership belongs in Folder/Project settings. MCP arguments and environment
-values are container values, never authorization to mount or execute host paths.
+Sharing is explicit: uploads enter `/workspace/uploads/`. The app mounts its
+managed workspace and shared `/memory.md`. Explicit host directory mounts belong only to Folder/Project settings, persist in `folders.json`,
+and appear at `/workspace/mounts/<name>`. They default to Docker-enforced recursive
+read-only access (`bind-recursive=readonly`, daemon Linux kernel 5.12+). Reuse checks
+verify the recursive mount policy as well as source, destination, and RW flags.
+Permission changes remove the old sandbox successfully before saving settings;
+Docker failures return an error and preserve the previous configuration. Mount
+changes require idle chats and operations and preserve the workspace and original
+host files. Host sources must exist;
+missing sources fail instead of being silently created. Native selection uses
+macOS AppleScript, Windows FolderBrowserDialog, or Linux Zenity/KDialog, with a
+manual path fallback. MCP arguments and environment values are container values, never authorization to mount or execute host paths.
 
 Docker networking defaults to `bridge`; `none` or a named Docker network may be
 configured. Host and shared-container network namespaces are rejected. Reachable
@@ -74,6 +81,7 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `container_files.py` | Host transport and upload name/size checks for the file panel |
 | `sandbox_files.py` | Container-only listing, preview, upload, download, path checks |
 | `routes_files.py` | File panel and image/media HTTP endpoints |
+| `folder_mounts.py` | Folder mount validation, runtime mount lookup, native directory chooser |
 | `routes_conversations.py`, `store.py` | Chat/Folder CRUD, runtime ownership, atomic JSON persistence |
 | `mcp_adapters.py` | Wrap explicit MCP commands and environment for `docker exec` |
 | `mcp_service.py` | MCP config, discovery, one-shot calls, persistent pool registry |

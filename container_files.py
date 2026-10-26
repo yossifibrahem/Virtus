@@ -50,9 +50,12 @@ def operation(runtime_id, action, path='', **kwargs):
 
 
 def conversation(conv_id, action, path=''):
-    if not store.load(conv_id):
+    data = store.load(conv_id)
+    if not data:
         return {'error': 'Conversation not found'}, 404
-    return operation(store.runtime_id(conv_id), action, path)
+    runtime_id = store.runtime_id(conv_id, data)
+    del data
+    return operation(runtime_id, action, path)
 
 
 def folder(folder_id, action, path=''):
@@ -62,10 +65,12 @@ def folder(folder_id, action, path=''):
 
 
 def uploads(conv_id, files):
-    if not store.load(conv_id):
+    data = store.load(conv_id)
+    if not data:
         return {'error': 'Conversation not found'}, 404
+    runtime_id = store.runtime_id(conv_id, data)
+    del data
     saved = []
-    runtime_id = store.runtime_id(conv_id)
     limit = file_limits()['max_upload_bytes']
     for item in files:
         if not item or not item.filename:

@@ -51,6 +51,7 @@ def _conversation_summary(path: Path) -> dict | None:
             "id":                path.stem,
             "title":             data.get("title", "Untitled"),
             "folder_id":         data.get("folder_id"),
+            "active_stream_id":  data.get("active_stream_id"),
             "updated_at":        data.get("updated_at") or data.get("created_at"),
             "working_directory": str(conversation_working_directory(runtime_id(path.stem, data))),
         }
@@ -83,6 +84,7 @@ def _update_index_for(conv_id: str, data: dict) -> None:
             "id": conv_id,
             "title": data.get("title", "Untitled"),
             "folder_id": data.get("folder_id"),
+            "active_stream_id": data.get("active_stream_id"),
             "updated_at": data.get("updated_at") or data.get("created_at"),
             "working_directory": str(conversation_working_directory(runtime_id(conv_id, data))),
         }
@@ -163,18 +165,19 @@ def _write_folders(folders: list[dict]) -> None:
 
 def list_folders() -> list[dict]:
     with _folders_lock:
-        return list(_read_folders())
+        return _read_folders()
 
 
 def get_folder(folder_id: str) -> dict | None:
     return next((folder for folder in list_folders() if folder.get("id") == folder_id), None)
 
 
-def create_folder(name: str = "New Folder", system_prompt: str = "") -> dict:
+def create_folder(name: str = "New Folder", system_prompt: str = "", mounts: list | None = None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     folder = {
         "id": str(uuid.uuid4()),
         "name": name or "New Folder",
+        "mounts": mounts or [],
         "system_prompt": system_prompt or "",
         "created_at": now,
         "updated_at": now,
@@ -190,6 +193,7 @@ def update_folder(
     folder_id: str,
     name: str | None = None,
     system_prompt: str | None = None,
+    mounts: list | None = None,
 ) -> dict | None:
     with _folders_lock:
         folders = _read_folders()
@@ -200,6 +204,8 @@ def update_folder(
             folder["name"] = name or "Untitled Folder"
         if system_prompt is not None:
             folder["system_prompt"] = system_prompt
+        if mounts is not None:
+            folder["mounts"] = mounts
         folder["updated_at"] = datetime.now(timezone.utc).isoformat()
         _write_folders(folders)
         return dict(folder)

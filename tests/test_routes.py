@@ -829,3 +829,15 @@ def test_delete_all_includes_empty_folders_and_removes_shared_runtime_once(clien
     assert {call.args[0] for call in stop.call_args_list} == expected
     assert stop.call_count == remove.call_count == 2
     assert not store.list_all() and not store.list_folders()
+
+
+def test_conversation_and_workspace_routes_read_history_once(client, monkeypatch):
+    import container_files
+    import container_service
+    conv = store.create()
+    monkeypatch.setattr(container_service, 'get_status', lambda rid: 'running')
+    monkeypatch.setattr(container_files, 'operation', lambda *args, **kwargs: ({'entries': []}, 200))
+    for suffix in ['', '/container', '/files']:
+        with patch.object(store, 'load', wraps=store.load) as load:
+            assert client.get(f"/api/conversations/{conv['id']}{suffix}").status_code == 200
+            assert load.call_count == 1

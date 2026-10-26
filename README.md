@@ -11,7 +11,7 @@ Lumen is distributed as an installable desktop application for normal users whil
 - **Desktop experience:** small macOS menu-bar and Windows tray applications run Lumen locally and open the same chat UI in the user's default browser.
 - **User prerequisite:** Docker Desktop is the only external runtime users install. Python, Node.js, npm, Git, and the Lumen source tree are included or handled internally.
 - **Sandbox installation:** the app bundles `Dockerfile.sandbox`. After explicit confirmation on first run, Docker pulls `ubuntu:24.04`, installs the sandbox runtimes and packages, and creates the local `lumen-sandbox:latest` image.
-- **Execution and sharing:** model commands run inside Docker. Standalone chats have separate workspaces; chats in a Folder/Project share one. File sharing is explicit, and network access defaults to Docker bridge networking. The current UI supports uploads; arbitrary host-directory mounting is not implemented and belongs only in Folder/Project settings if added later.
+- **Execution and sharing:** model commands run inside Docker. Standalone chats have separate workspaces; chats in a Folder/Project share one. File sharing is explicit, and network access defaults to Docker bridge networking. Share files through uploads or explicit host-directory mounts in Folder/Project settings. Mounted directories default to read-only; users can enable writes.
 - **MCP boundary:** user-configured servers run only inside Lumen's containers. No MCP server is bundled or automatically registered; configure servers through settings or `mcp.json`.
 - **Distribution:** desktop artifacts are an Apple Silicon macOS 14+ DMG and a portable Windows x64 `onedir` ZIP. The Windows package must remain intact; the executable is not a standalone distribution.
 - **Data ownership:** chats, settings, memory, and workspaces remain under `~/.lumen/`; replacing or uninstalling the app does not remove them.
@@ -58,6 +58,7 @@ Lumen AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser UI
 
 - Group related conversations into folders and open a folder home with its chats and shared files
 - Create, rename, delete, and search folders; move existing conversations into or out of a folder
+- Mount host directories during creation or from **Folder settings**, with a read-only toggle for each directory
 - Add folder-level instructions that apply to every chat in the folder
 - Chats in a folder keep separate message histories while sharing one Docker sandbox and workspace
 
@@ -334,7 +335,7 @@ All runtime data is stored outside the repo under `~/.lumen/`:
 ├── advanced_config.json   # Container and file-handling settings (written by the UI)
 ├── mcp.json               # MCP server configuration
 ├── memory.md              # Persistent cross-chat memory; mounted at /memory.md in every container
-├── folders.json           # Folder names, IDs, and folder-level instructions
+├── folders.json           # Folder names, IDs, instructions, and explicit directory mounts
 ├── conversations/         # One JSON file per conversation
 ├── containers/            # Workspace directories for standalone chats and shared folders
 └── images/                # Uploaded images keyed by SHA-256 hash
@@ -381,11 +382,12 @@ Model-facing tool names use the MCP tool name directly. The matching MCP server 
 
 ### Organizing Chats with Folders
 
-1. Click **New folder** in the sidebar and give the folder a name.
+1. Click **New folder** in the sidebar and give the folder a name. Optionally use **Browse…** to select host directories, or enter an absolute host path and click **Add path**. Each directory defaults to **Read only**; turn it off to let the LLM modify the original host files.
 2. Open the folder to create chats, browse its shared workspace, or add folder-level instructions.
 3. Use a conversation's menu to move an existing chat into a folder or back to **Recent**.
+4. Open the Folder menu → **Folder settings** to add/remove directories or change permissions later. Stop active chats before changing mounts. The sandbox restarts on its next use; workspace files persist, but packages installed into its container layer need reinstalling.
 
-Each chat retains its own message history, but chats in the same folder use one shared Docker container and `/workspace`. Folder instructions are used in place of the global system prompt for chats in that folder. The folder retains its files when its last chat is deleted or moved out. Moving a chat switches workspaces without copying files. Deleting a folder permanently deletes its chats, shared container, and workspace files.
+Each chat retains its own message history, but chats in the same folder use one shared Docker container and `/workspace`. Folder instructions are used in place of the global system prompt for chats in that folder. The folder retains its files when its last chat is deleted or moved out. Moving a chat switches workspaces without copying files. Deleting a folder permanently deletes its chats, shared container, and managed workspace files. Mounted host directories are kept. Shared directories appear at `/workspace/mounts/<directory-name>` for all chats and the file panel. Docker Desktop must have permission to access the selected host paths. Browse opens a native chooser on the machine running Lumen (macOS/Windows; Linux requires Zenity or KDialog).
 
 ### Uploading Files
 
@@ -591,7 +593,7 @@ Built-in tools run automatically. Bash uses a fresh shell each time: files and i
 
 ### Isolation and sharing
 
-Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace and shared `/memory.md` only. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. Arbitrary host-directory mounting is not implemented. Any future explicit directory sharing must belong to a Folder/Project; MCP configuration must never infer host mounts.
+Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace, shared `/memory.md`, and any host directories explicitly selected in Folder settings. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. Explicit directory sharing belongs only to a Folder/Project; standalone chats and MCP configuration cannot add host mounts. Read-only permissions are enforced recursively by Docker bind mounts. This requires a Docker Engine with `bind-recursive=readonly` support and a daemon Linux kernel of 5.12 or later (including the Linux VM used by Docker Desktop). Unsupported engines fail rather than falling back to writable submounts.
 
 Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
 

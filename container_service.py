@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import csv
+import io
 import json
 import os
 import re
@@ -17,6 +19,7 @@ from typing import Mapping, Literal
 import advanced_config as _adv_cfg
 import build_info
 import docker_cli
+import folder_mounts
 import memory_service
 from docker_path_utils import host_path_to_docker_src, parse_volume_source
 
@@ -107,13 +110,25 @@ def _inspect_container(name: str) -> dict | None:
     return info
 
 
-def _mounts_match(mounts: list[dict], workspace: Path) -> bool:
-    expected = {"/workspace": host_path_to_docker_src(str(workspace))}
+def _mounts_match(mounts: list[dict], workspace: Path, shared: list[dict] | None = None) -> bool:
+    expected = {"/workspace": (host_path_to_docker_src(str(workspace)), True)}
     memory_spec = _memory_volume_spec()
     if memory_spec:
-        expected[memory_service.CONTAINER_PATH] = _volume_source(memory_spec)
-    actual = {m["Destination"]: m["Source"] for m in mounts if m.get("Type") == "bind" and m.get("RW")}
+        expected[memory_service.CONTAINER_PATH] = (_volume_source(memory_spec), True)
+    for mount in shared or []:
+        expected[f"/workspace/mounts/{mount['name']}"] = (host_path_to_docker_src(mount["source"]), not mount["read_only"])
+    actual = {m["Destination"]: (m["Source"], m.get("RW")) for m in mounts if m.get("Type") == "bind"}
     return len(mounts) == len(expected) and actual == expected
+
+
+def _shared_mount_policy_matches(info: dict, shared: list[dict]) -> bool:
+    readonly = {
+        mount.get("Target") for mount in info.get("HostConfig", {}).get("Mounts") or []
+        if mount.get("ReadOnly") is True
+        and (mount.get("BindOptions") or {}).get("ReadOnlyForceRecursive") is True
+    }
+    return all(f"/workspace/mounts/{mount['name']}" in readonly
+               for mount in shared if mount["read_only"])
 
 
 def _get_tagged_image_id(image: str) -> str:
@@ -142,13 +157,23 @@ def _memory_volume_spec() -> str | None:
         return None
 
 
-def _volume_args(workspace: Path) -> list[str]:
+def _volume_args(workspace: Path, shared: list[dict] | None = None) -> list[str]:
     workspace_source = host_path_to_docker_src(str(workspace))
     memory_spec = _memory_volume_spec()
     specs = [f"{workspace_source}:/workspace"]
     if memory_spec:
         specs.append(memory_spec)
-    return [item for spec in specs for item in ("--volume", spec)]
+    args = [item for spec in specs for item in ("--volume", spec)]
+    for mount in shared or []:
+        # Docker --mount uses CSV fields; quote paths containing commas/quotes.
+        output = io.StringIO()
+        fields = ["type=bind", f"source={host_path_to_docker_src(mount['source'])}",
+                  f"target=/workspace/mounts/{mount['name']}", "bind-propagation=rprivate"]
+        if mount['read_only']:
+            fields.extend(['readonly', 'bind-recursive=readonly'])
+        csv.writer(output, lineterminator='\n').writerow(fields)
+        args.extend(['--mount', output.getvalue()[:-1]])
+    return args
 
 
 def get_status(conv_id: str) -> ContainerStatus:
@@ -170,26 +195,26 @@ def ensure_container(conv_id: str, extra_volumes: list[str] | None = None) -> Co
 def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
     workspace = _workspace(conv_id)
+    shared = folder_mounts.runtime_mounts(conv_id)
 
     info = _inspect_container(name)
     if info is not None:
-        status = "running" if info["State"]["Status"] == "running" else "stopped"
         expected_image = build_info.canonical_image_reference(
             str(_adv_cfg.load_advanced_config()["sandbox_image"])
         )
         image_changed = _container_image_changed(info, expected_image)
-        if image_changed or not _mounts_match(info.get("Mounts", []), workspace):
+        if (image_changed or not _mounts_match(info.get("Mounts", []), workspace, shared)
+                or not _shared_mount_policy_matches(info, shared)):
             if image_changed:
                 log.info("[container] %s uses an outdated sandbox image; recreating", name)
             stop_container(conv_id)
-            status = "missing"
-        elif status == "stopped":
+        elif info["State"]["Status"] != "running":
             _start_existing(name)
             return ContainerInfo(conv_id, name, workspace, "running")
         else:
             return ContainerInfo(conv_id, name, workspace, "running")
 
-    result = _run(_docker_run_command(name, workspace))
+    result = _run(_docker_run_command(name, workspace, shared))
     if result.returncode == 0:
         log.info("[container] created %s (%s)", name, result.stdout.strip()[:12])
         return ContainerInfo(conv_id, name, workspace, "running")
@@ -202,7 +227,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     raise RuntimeError(f"Failed to create container {name}: {result.stderr.strip()}")
 
 
-def _docker_run_command(name: str, workspace: Path) -> list[str]:
+def _docker_run_command(name: str, workspace: Path, shared: list[dict] | None = None) -> list[str]:
     cfg = _adv_cfg.load_advanced_config()
     image = build_info.canonical_image_reference(str(cfg["sandbox_image"]))
     network = str(cfg["container_network"])
@@ -214,7 +239,7 @@ def _docker_run_command(name: str, workspace: Path) -> list[str]:
         "--name", name,
         "--label", f"{build_info.CONTAINER_BUILD_LABEL}={image}",
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
-        *_volume_args(workspace),
+        *_volume_args(workspace, shared),
         "--workdir", "/workspace",
         "--pids-limit", "256",
         "--memory", str(cfg["container_memory"]),
@@ -248,7 +273,9 @@ def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
     if info is None:
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
-    if not _mounts_match(info.get("Mounts", []), _workspace(conv_id)):
+    shared = folder_mounts.runtime_mounts(conv_id)
+    if (not _mounts_match(info.get("Mounts", []), _workspace(conv_id), shared)
+            or not _shared_mount_policy_matches(info, shared)):
         raise RuntimeError(f"Container {name} already exists with unexpected mounts")
     expected_image = build_info.canonical_image_reference(
         str(_adv_cfg.load_advanced_config()["sandbox_image"])
@@ -277,15 +304,13 @@ def stop_container_process(conv_id: str) -> None:
     _invalidate_mcp_pool(conv_id)
 
 
-def stop_container(conv_id: str) -> None:
+def stop_container(conv_id: str, *, strict: bool = False) -> None:
     name = container_name(conv_id)
-    if get_status(conv_id) == "missing":
-        return
     result = _run(["docker", "rm", "-f", name])
-    if result.returncode != 0:
+    if result.returncode and "no such container" not in result.stderr.lower():
+        if strict:
+            raise RuntimeError(f"Could not remove sandbox {name}: {result.stderr.strip()}")
         log.warning("[container] could not remove %s: %s", name, result.stderr.strip())
-    else:
-        log.info("[container] removed %s", name)
     # Invalidate any cached MCP sessions — they point at dead docker-exec
     # processes after the container is gone.
     _invalidate_mcp_pool(conv_id)
