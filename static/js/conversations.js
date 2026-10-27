@@ -8,7 +8,7 @@ import { toggleSidebar, openModal, closeModal } from './ui.js';
 import { ICONS } from './icons.js';
 import { escapeHtml } from './format.js';
 import { refreshFilePanel, resetFilePanel } from './file_panel.js';
-import { activityVersion, workingIndicator, syncConversationActivity } from './conversation_activity.js';
+import { activityVersion, workingTitleAttributes, syncConversationActivity } from './conversation_activity.js';
 
 let navigationId = 0;
 let folders = [];
@@ -97,10 +97,9 @@ function renderConversationSearchResults() {
       <div class="folder-home-chat search-result" data-conv-id="${escapeHtml(conv.id)}">
         <button class="folder-home-chat-open search-result-open" type="button">
           <span class="search-result-copy">
-            <span class="folder-home-chat-title">${escapeHtml(conv.title || 'Untitled')}</span>
+            <span class="folder-home-chat-title" ${workingTitleAttributes(conv.id)}>${escapeHtml(conv.title || 'Untitled')}</span>
             ${folderName ? `<span class="search-result-folder">${escapeHtml(folderName)}</span>` : ''}
           </span>
-          ${workingIndicator(conv.id)}
           <time>${escapeHtml(formatSearchDate(conv.updated_at))}</time>
         </button>
       </div>`;
@@ -138,8 +137,7 @@ function _buildFolderGroup(folder) {
     <div class="folder-header">
       <button class="folder-open" type="button" aria-label="Open ${escapeHtml(folder.name || 'Untitled Folder')}">
         <span class="folder-icon">${ICONS.folder}</span>
-        <span class="folder-name">${escapeHtml(folder.name || 'Untitled Folder')}</span>
-        ${workingIndicator(conversations.filter(conv => conv.folder_id === folder.id).map(conv => conv.id))}
+        <span class="folder-name" ${workingTitleAttributes(conversations.filter(conv => conv.folder_id === folder.id).map(conv => conv.id))}>${escapeHtml(folder.name || 'Untitled Folder')}</span>
       </button>
       <div class="folder-controls">
         <div class="folder-menu-wrap">
@@ -197,8 +195,7 @@ function _buildConvItem(conv) {
 
   item.innerHTML = `
     <button class="conv-open" type="button" title="${escapeHtml(title)}"${conv.id === state.convId ? ' aria-current="page"' : ''}>
-      <span class="conv-title">${escapeHtml(title)}</span>
-      ${workingIndicator(conv.id)}
+      <span class="conv-title" ${workingTitleAttributes(conv.id)}>${escapeHtml(title)}</span>
     </button>
     <div class="conv-menu-wrap">
       <button class="conv-menu-btn" type="button" title="Conversation options" aria-label="Conversation options" aria-expanded="false">

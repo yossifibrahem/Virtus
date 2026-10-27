@@ -8,16 +8,18 @@ let serverWorking = new Set();
 let pollTimer = null;
 const isWorking = id => activeTurns.has(id) || serverWorking.has(id);
 
-export function workingIndicator(ids) {
+export function workingTitleAttributes(ids) {
   const convIds = Array.isArray(ids) ? ids : [ids];
-  return `<span class="conv-working" data-working-conversations="${escapeHtml(convIds.join(' '))}" role="img" aria-label="Assistant working" title="Assistant working"${convIds.some(isWorking) ? '' : ' hidden'}></span>`;
+  const working = convIds.some(isWorking);
+  return `data-working-conversations="${escapeHtml(convIds.join(' '))}" aria-busy="${working}"`;
 }
 
 function refreshIndicators(ids) {
   const selector = [...ids].map(id => `[data-working-conversations~="${CSS.escape(id)}"]`).join(',');
   if (!selector) return;
   document.querySelectorAll(selector).forEach(indicator => {
-    indicator.hidden = !indicator.dataset.workingConversations.split(' ').some(isWorking);
+    const working = String(indicator.dataset.workingConversations.split(' ').some(isWorking));
+    if (indicator.getAttribute('aria-busy') !== working) indicator.setAttribute('aria-busy', working);
   });
 }
 
@@ -35,10 +37,14 @@ export function syncConversationActivity(conversations, version = activityVersio
   if (!Array.isArray(conversations) || version !== activityVersion) return;
   ++activityVersion;
   const previous = serverWorking;
-  serverWorking = new Set(conversations
-    .filter(conv => conv.active_stream_id && !activeTurns.has(conv.id))
-    .map(conv => conv.id));
-  refreshIndicators(new Set([...previous, ...serverWorking]));
+  serverWorking = new Set();
+  for (const conv of conversations) {
+    if (conv.active_stream_id && !activeTurns.has(conv.id)) {
+      serverWorking.add(conv.id);
+      previous.add(conv.id);
+    }
+  }
+  refreshIndicators(previous);
   scheduleActivityRefresh();
 }
 

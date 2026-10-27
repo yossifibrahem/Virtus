@@ -45,8 +45,14 @@ def test_conversation_activity_survives_navigation_and_clears_background_turns()
 import assert from 'node:assert/strict';
 import {api} from './static/js/api.js';
 import * as activity from './static/js/conversation_activity.js';
-const {activeTurns, updateConversationActivity:update, syncConversationActivity:sync, workingIndicator} = activity;
-const indicator = ids => ({dataset:{workingConversations:ids},hidden:true});
+const {activeTurns, updateConversationActivity:update, syncConversationActivity:sync, workingTitleAttributes} = activity;
+let writes = 0;
+const indicator = ids => ({
+  dataset:{workingConversations:ids}, 'aria-busy':'false',
+  getAttribute(name){return this[name];},
+  setAttribute(name,value){this[name]=value; writes++;},
+});
+const isWorking = el => el['aria-busy'] === 'true';
 const a = indicator('a'), b = indicator('b'), folder = indicator('a b');
 let indicators = [a, b, folder];
 globalThis.CSS = {escape:s=>s};
@@ -60,31 +66,31 @@ const start = id => {activeTurns.set(id, {}); update(id);};
 const finish = (id, disconnected=false) => {activeTurns.delete(id); update(id, disconnected);};
 const initialVersion = activity.activityVersion;
 start('a');
-assert(!a.hidden);
-assert(b.hidden);
-assert(!folder.hidden);
-assert(!workingIndicator('a').includes(' hidden'));
+assert(isWorking(a));
+assert(!isWorking(b));
+assert(isWorking(folder));
+assert(workingTitleAttributes('a').includes('aria-busy="true"'));
 const rebuiltA = indicator('a');
 indicators = [rebuiltA, b, folder];
 sync([{id:'a'}], initialVersion);
-assert(!workingIndicator('a').includes(' hidden'));
+assert(workingTitleAttributes('a').includes('aria-busy="true"'));
 start('b');
 const staleVersion = activity.activityVersion;
 finish('a');
-assert(rebuiltA.hidden);
-assert(!b.hidden, 'Background completion must not clear another running chat');
-assert(!folder.hidden);
+assert(!isWorking(rebuiltA));
+assert(isWorking(b), 'Background completion must not clear another running chat');
+assert(isWorking(folder));
 sync([{id:'a',active_stream_id:'old-stream'}], staleVersion);
-assert(rebuiltA.hidden, 'A stale response cannot revive a completed turn');
+assert(!isWorking(rebuiltA), 'A stale response cannot revive a completed turn');
 finish('b');
 for (let i=0; i<1000; i++) {start(`chat-${i}`); finish(`chat-${i}`);}
 assert.equal(activeTurns.size, 0);
 assert.equal(timers.length, 0, 'Local streams never need status polling');
-assert(folder.hidden);
+assert(!isWorking(folder));
 
 // Server-only turns poll compact status; attaching a consumer stops requests.
 sync([{id:'a',active_stream_id:'server-stream'}]);
-assert(!rebuiltA.hidden);
+assert(isWorking(rebuiltA));
 start('a');
 sync([{id:'a',active_stream_id:'server-stream'}]);
 api.get = async () => {throw new Error('Local consumer should prevent polling');};
@@ -93,21 +99,23 @@ assert.equal(timers.length, 0);
 
 // A disconnected consumer hands off to polling instead of reporting completion.
 finish('a', true);
-assert(!rebuiltA.hidden);
+assert(isWorking(rebuiltA));
 api.get = async url => {
   assert.equal(url, '/api/conversations/activity');
   return [{id:'a',active_stream_id:'server-stream'}];
 };
+const writesBeforePoll = writes;
 await timers.shift()();
-assert(!rebuiltA.hidden);
+assert(isWorking(rebuiltA));
+assert.equal(writes, writesBeforePoll, 'Unchanged activity must not rewrite DOM attributes');
 api.get = async () => {throw new Error('Temporary network failure');};
 await timers.shift()();
-assert(!rebuiltA.hidden);
+assert(isWorking(rebuiltA));
 assert.equal(timers.length, 1);
 api.get = async () => [];
 await timers.shift()();
-assert(rebuiltA.hidden);
-assert(folder.hidden);
+assert(!isWorking(rebuiltA));
+assert(!isWorking(folder));
 assert.equal(timers.length, 0);
 
 // Completion while a poll is in flight invalidates that older response.
@@ -118,11 +126,11 @@ const polling = timers.shift()();
 start('a'); finish('a');
 resolvePoll([{id:'a',active_stream_id:'server-stream'}]);
 await polling;
-assert(rebuiltA.hidden);
+assert(!isWorking(rebuiltA));
 assert.equal(timers.length, 0);
-assert(workingIndicator('a').includes('aria-label="Assistant working"'));
+assert(workingTitleAttributes('a').includes('aria-busy="false"'));
+assert.equal(rebuiltA['aria-busy'], 'false');
 ''')
-
 
 
 def test_chat_approvals_survive_navigation_without_blocking_or_cross_chat_cancellation():
@@ -475,7 +483,7 @@ const dependencies={
   './renderer.js':{clearMessages:()=>rendered.push('empty'),renderAllMessages:log=>rendered.push(log[0].content)},
   './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}}, './icons.js':{ICONS:{}},
   './format.js':{escapeHtml:s=>s}, './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
-  './conversation_activity.js':{activityVersion:0,workingIndicator:()=>'',syncConversationActivity(){}},
+  './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
 };
 const module=new vm.SourceTextModule(readFileSync('static/js/conversations.js','utf8'));
 await module.link(specifier=>new vm.SyntheticModule(Object.keys(dependencies[specifier]),function(){
@@ -569,7 +577,7 @@ const modules = {
   './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}},
   './icons.js':{ICONS:{}}, './format.js':{escapeHtml:value=>value},
   './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
-  './conversation_activity.js':{activityVersion:0,workingIndicator:()=>'',syncConversationActivity(){}},
+  './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
 };
 const context=vm.createContext({document,requestAnimationFrame(){},console});
 const source=readFileSync('static/js/conversations.js','utf8')+
