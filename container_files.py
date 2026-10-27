@@ -30,10 +30,14 @@ def operation(runtime_id, action, path='', **kwargs):
     try:
         limits = file_limits()
         # JSON can escape each source byte as six ASCII bytes.
-        response_limit = 70*1024*1024 if action == 'download' else max(
+        binary = action in ('download', 'pdf')
+        response_limit = MAX_UPLOAD + 4096 if binary else max(
             1024*1024, 6*limits['max_file_preview_bytes'] + 4096)
         if action == 'list':
             response_limit = max(response_limit, limits['max_file_list_entries'] * 20000)
+        if action == 'preview':
+            # Up to five bounded JPEGs from the View worker, plus extracted text.
+            response_limit = max(response_limit, 16 * 1024 * 1024)
         with sandbox_runtime.runtime_operation(runtime_id):
             code, raw, error = sandbox_runtime.docker_operation(runtime_id,
                 ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
@@ -41,27 +45,35 @@ def operation(runtime_id, action, path='', **kwargs):
                 timeout=60, limit=response_limit)
         if code:
             raise ValueError('Container file operation failed')
-        result = json.loads(raw)
+        header, separator, data = raw.partition(b'\n') if binary else (raw, None, None)
+        if binary and not separator:
+            raise ValueError('Invalid binary response')
+        result = json.loads(header)
         if not isinstance(result, dict):
             raise ValueError('Invalid file response')
-        return result, result.pop('status', 200)
+        status = result.pop('status', 200)
+        if binary and status in (200, 206) and 'error' not in result:
+            if result.pop('length', None) != len(data):
+                raise ValueError('Incomplete file response')
+            result['data'] = data
+        return result, status
     except Exception as exc:
         return {'error': str(exc)[:1000]}, 400
 
 
-def conversation(conv_id, action, path=''):
+def conversation(conv_id, action, path='', **kwargs):
     data = store.load(conv_id)
     if not data:
         return {'error': 'Conversation not found'}, 404
     runtime_id = store.runtime_id(conv_id, data)
     del data
-    return operation(runtime_id, action, path)
+    return operation(runtime_id, action, path, **kwargs)
 
 
-def folder(folder_id, action, path=''):
+def folder(folder_id, action, path='', **kwargs):
     if not store.get_folder(folder_id):
         return {'error': 'Folder not found'}, 404
-    return operation('folder_' + folder_id, action, path)
+    return operation('folder_' + folder_id, action, path, **kwargs)
 
 
 def uploads(conv_id, files):
@@ -93,13 +105,38 @@ def download_response(result, status):
     if status != 200:
         return jsonify(result), status
     try:
-        encoded = result['data']
-        if not isinstance(encoded, str) or len(encoded) > 70*1024*1024:
-            raise ValueError('Invalid download')
-        data = base64.b64decode(encoded, validate=True)
-        if len(data) > 50*1024*1024:
+        data = result['data']
+        if not isinstance(data, bytes) or len(data) > MAX_UPLOAD:
             raise ValueError('Download too large')
         name = str(result['name']).replace('\\', '/').split('/')[-1]
         return send_file(io.BytesIO(data), as_attachment=True, download_name=name)
     except (KeyError, ValueError):
         return jsonify({'error': 'Invalid download response'}), 400
+
+
+def pdf_response(result, status):
+    from flask import Response, jsonify
+    if status not in (200, 206, 304, 416):
+        return jsonify(result), status
+    try:
+        total = int(result['total'])
+        if not 5 <= total <= 20 * 1024 * 1024:
+            raise ValueError('Invalid PDF size')
+        headers = {'Accept-Ranges': 'bytes', 'ETag': result['etag'],
+                   'Cache-Control': 'private, no-cache', 'X-Frame-Options': 'SAMEORIGIN',
+                   'X-Content-Type-Options': 'nosniff'}
+        if status == 416:
+            headers['Content-Range'] = f'bytes */{total}'
+        data = b''
+        if status in (200, 206):
+            data = result['data']
+            start, end = int(result['start']), int(result['end'])
+            if not 0 <= start <= end < total or len(data) != end - start + 1:
+                raise ValueError('Invalid PDF range')
+            if status == 206:
+                headers['Content-Range'] = f'bytes {start}-{end}/{total}'
+        response = Response(data, status=status, mimetype='application/pdf', headers=headers)
+        response.headers.set('Content-Disposition', 'inline', filename=result['name'])
+        return response
+    except (KeyError, ValueError, TypeError):
+        return jsonify({'error': 'Invalid PDF response'}), 400

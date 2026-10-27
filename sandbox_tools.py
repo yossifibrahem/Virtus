@@ -108,7 +108,8 @@ def view(path, range_value=None):
                 scale = min(1.5, 1600 / max(page.rect.width, page.rect.height, 1))
                 pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                 images.append(image_block(pix.tobytes('png')))
-            return {'text': bounded('\n'.join(texts) + f'\n[{len(doc)} pages total]'), 'images': images}
+            return {'text': bounded('\n'.join(texts) + f'\n[{len(doc)} pages total]'), 'images': images,
+                    'start': start, 'end': min(end, len(doc)), 'total': len(doc)}
     if suffix == '.ipynb':
         start, end = selection(range_value, 20, 200)
         notebook = json.loads(read_bytes(path, MEDIA_LIMIT))
@@ -126,7 +127,8 @@ def view(path, range_value=None):
                 texts.append(bounded(''.join(output.get('text', data.get('text/plain', '')))))
                 if 'image/png' in data and len(images) < 5:
                     images.append(image_block(base64.b64decode(''.join(data['image/png']), validate=True)))
-        return {'text': bounded('\n'.join(texts) + f'\n[{len(cells)} cells total]'), 'images': images}
+        return {'text': bounded('\n'.join(texts) + f'\n[{len(cells)} cells total]'), 'images': images,
+                'start': start, 'end': min(end, len(cells)), 'total': len(cells)}
     start, end = selection(range_value, 200, 200)
     lines, used = [], 0
     with regular(path) as f:

@@ -391,7 +391,7 @@ Each chat retains its own message history, but chats in the same folder use one 
 
 ### Uploading Files
 
-Open the workspace panel, upload a file, and it will appear under `/workspace/uploads/` inside the active sandbox. Expand directories in the file tree, preview text files in the browser, or download workspace files up to 50 MiB directly. When you are working in a folder, every chat in that folder sees the same files.
+Open the workspace panel, upload a file, and it will appear under `/workspace/uploads/` inside the active sandbox. Expand directories in the file tree, preview files in the browser, or download workspace files up to 50 MiB directly. Previews support text, rendered Markdown and HTML, images (PNG, JPEG, GIF, WebP, BMP, TIFF), PDFs, and Jupyter notebooks. PDFs show the complete document in an app-styled continuous preview, with pages rendered near the viewport; notebooks show twenty cells with saved text and image outputs, without executing code. Previous/Next controls navigate longer notebooks. PDF previews show only rendered pages. Notebook previews also offer a text view and Copy for the displayed batch. When you are working in a folder, every chat in that folder sees the same files.
 
 ### Using MCP Tools
 
@@ -476,6 +476,7 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 | `renderer_actions.js` | Copy/edit/regenerate buttons and branch arrows in message footers |
 | `mcp.js` | MCP config UI, tool loading, enable/auto-approve toggles |
 | `file_panel.js` | Workspace browser, preview, and download |
+| `pdf_preview.js` | App-styled continuous PDF preview with visible-page canvas rendering |
 | `source_view.js` | Shared numbered source rendering for file previews and native View results |
 | `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
 | `settings.js` | API and chat settings UI |
@@ -597,7 +598,7 @@ Standalone chats have separate workspaces. Chats in a Folder share a runtime and
 
 Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
 
-The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; the file panel’s Copy and Download actions retain the full loaded file content. Smaller upload limits are supported. Large transfers use bounded JSON/base64 transport and temporarily consume more memory than the raw file size. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
+The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Text preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Visual previews use a 20 MiB input limit. Images and notebook outputs reuse the View worker’s 1600-pixel visual bounds and bounded text; PDFs display the original file without text extraction. Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; Copy retains the loaded text and Download saves the original file. Smaller upload limits are supported. Unchanged previews reuse their loaded content after a file-version check, avoiding repeated reads, image conversion, and notebook parsing. Downloads and PDF ranges transfer raw bytes after a small JSON header; uploads and visual preview payloads use bounded JSON/base64 transport. Transfers remain buffered and bounded by the file size limits. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
 
 After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
 

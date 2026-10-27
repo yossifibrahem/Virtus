@@ -264,6 +264,43 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   border-radius: 4px;
 }
 
+.file-preview-visual { width: 100%; min-width: 0; }
+.file-preview-pdf { width: 100%; min-width: 0; }
+.pdf-preview-status { padding: 24px 12px; text-align: center; color: var(--text3); font-size: .74rem; }
+.pdf-preview-page { margin: 0 0 18px; }
+.pdf-preview-sheet {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+}
+.pdf-preview-sheet canvas { display: block; width: 100%; height: auto; }
+.pdf-preview-page figcaption {
+  padding: 7px 0 0;
+  color: var(--text3);
+  font-family: var(--font-mono);
+  font-size: .6rem;
+  text-align: center;
+}
+.file-preview-visual figure { margin: 0 0 16px; }
+.file-preview-visual img { display: block; width: 100%; height: auto; border-radius: 4px; }
+.file-preview-visual figcaption { text-align: center; color: var(--text3); font-size: .7rem; padding-top: 6px; }
+.file-preview-navigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text2);
+  font-size: .7rem;
+}
+.file-preview-navigation span { flex: 1; }
+.file-preview-navigation button { padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; }
+.file-preview-navigation button:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ─── Render / source toggle button ───────────────────────────────────────── */
 #btn-toggle-render {
   color: var(--text3);

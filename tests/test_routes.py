@@ -356,7 +356,10 @@ class TestWorkspaceFileRoutes:
                 result = {'error': 'File not found', 'status': 404}
             except ValueError as exc:
                 result = {'error': str(exc), 'status': 400}
-            return 0, json.dumps(result).encode(), b''
+            import io
+            output = io.BytesIO()
+            sandbox_files.write_result(result, output)
+            return 0, output.getvalue(), b''
         monkeypatch.setattr(sandbox_runtime, 'docker_operation', transport)
 
     def _make_workspace(self, tmp_lumen) -> tuple[str, Path]:
@@ -393,6 +396,9 @@ class TestWorkspaceFileRoutes:
         )
         assert resp.status_code == 200
         assert resp.json["content"] == "x = 42"
+        cached = client.get(f"/api/conversations/{conv_id}/files/content",
+                            query_string={"path": "/workspace/script.py", "version": resp.json["version"]})
+        assert cached.json == {"unchanged": True}
 
     def test_file_download_returns_attachment(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)
@@ -403,6 +409,58 @@ class TestWorkspaceFileRoutes:
         )
         assert resp.status_code == 200
         assert b"download me" in resp.data
+
+    @pytest.mark.parametrize('scope', ['conversation', 'folder'])
+    def test_pdf_preview_serves_complete_inline_file(self, client, tmp_lumen, scope):
+        if scope == 'conversation':
+            identifier, root = self._make_workspace(tmp_lumen)
+            base = f'/api/conversations/{identifier}'
+        else:
+            identifier, root = self._make_folder_workspace(tmp_lumen)
+            base = f'/api/folders/{identifier}'
+        raw = b'%PDF-1.7\ncomplete PDF bytes'
+        (root / 'report.pdf').write_bytes(raw)
+        preview = client.get(f'{base}/files/content', query_string={'path': 'report.pdf'})
+        assert preview.json['preview_kind'] == 'pdf'
+        assert preview.json['content'] is None and 'images' not in preview.json
+        response = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'})
+        assert response.status_code == 200 and response.data == raw
+        assert response.mimetype == 'application/pdf'
+        assert response.headers['Content-Disposition'].startswith('inline;')
+        assert response.headers['X-Content-Type-Options'] == 'nosniff'
+        assert response.headers['X-Frame-Options'] == 'SAMEORIGIN'
+        partial = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+                             headers={'Range': 'bytes=5-10'})
+        assert partial.status_code == 206 and partial.data == raw[5:11]
+        assert partial.headers['Accept-Ranges'] == 'bytes'
+        assert partial.headers['Content-Range'] == f'bytes 5-10/{len(raw)}'
+        cached = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+                            headers={'If-None-Match': response.headers['ETag']})
+        assert cached.status_code == 304 and cached.data == b''
+        invalid = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+                             headers={'Range': 'bytes=1000-'})
+        assert invalid.status_code == 416
+        assert invalid.headers['Content-Range'] == f'bytes */{len(raw)}'
+        (root / 'fake.pdf').write_text('<script>alert(1)</script>')
+        assert client.get(f'{base}/files/pdf', query_string={'path': 'fake.pdf'}).status_code == 400
+        assert client.get(f'{base}/files/pdf', query_string={'path': '../escape.pdf'}).status_code == 400
+
+    @pytest.mark.parametrize('scope', ['conversation', 'folder'])
+    def test_notebook_preview_range_reaches_shared_renderer(self, client, tmp_lumen, scope):
+        import json
+        if scope == 'conversation':
+            identifier, root = self._make_workspace(tmp_lumen)
+            base = f'/api/conversations/{identifier}'
+        else:
+            identifier, root = self._make_folder_workspace(tmp_lumen)
+            base = f'/api/folders/{identifier}'
+        (root / 'book.ipynb').write_text(json.dumps({'cells': [
+            {'cell_type': 'code', 'source': [str(n)]} for n in range(25)
+        ]}))
+        response = client.get(f'{base}/files/content', query_string={'path': 'book.ipynb', 'range': '21:40'})
+        assert response.status_code == 200
+        assert response.json['preview_kind'] == 'notebook'
+        assert (response.json['start'], response.json['end'], response.json['total']) == (21, 25, 25)
 
     def test_download_nonexistent_file_returns_404(self, client, tmp_lumen):
         conv_id, root = self._make_workspace(tmp_lumen)

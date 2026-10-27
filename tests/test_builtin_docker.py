@@ -59,7 +59,7 @@ INNER
     assert 'Hello PDF' in pdf['text'] and pdf['images']
     assert 'print(1)' in native.invoke(rid, 'view', {'path': 'book.ipynb'})['text']
     result, status = container_files.operation(rid, 'download', '/workspace/nested/a.txt')
-    assert status == 200 and base64.b64decode(result['data']) == b'alpha\ngamma\n'
+    assert status == 200 and result['data'] == b'alpha\ngamma\n'
     result, status = container_files.operation(rid, 'upload', name='test.txt', data=base64.b64encode(b'upload').decode())
     assert status == 200
     assert 'upload' in native.invoke(rid, 'view', {'path': result['path']})['text']

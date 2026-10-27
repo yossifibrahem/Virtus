@@ -285,6 +285,8 @@ import {escapeHtml, formatBytes, fileExtension} from './static/js/format.js';
 function element() {
   const classes = new Set();
   return {textContent:'', innerHTML:'', dataset:{}, children:[], disabled:false,
+    listeners:{}, addEventListener(name, listener) { this.listeners[name] = listener; },
+    setAttribute(name, value) { this[name] = value; },
     classList:{add: (...names) => names.forEach(n => classes.add(n)),
       remove: (...names) => names.forEach(n => classes.delete(n)),
       contains: n => classes.has(n), toggle: (n, on) => on ? classes.add(n) : classes.delete(n)},
@@ -297,10 +299,15 @@ function element() {
 const els = Object.fromEntries(['panel','toggle','list','title','body','copy','download','toggleRender'].map(k => [k,element()]));
 const pending = [];
 const state = {convId:'first'};
+let disposedPdfs = 0;
 const modules = {
   './api.js':{api:{get: url => new Promise((resolve, reject) => pending.push({url,resolve,reject}))}},
   './state.js':{state, STORAGE_KEYS:{}}, './icons.js':{ICONS:{}},
   './markdown.js':{applyMarkdown(){}}, './source_view.js':{renderSource: value => value},
+  './pdf_preview.js':{mountPdfPreview(body,url) {
+    const preview=element(); preview.className='file-preview-pdf'; preview.url=url;
+    body.appendChild(preview); return () => disposedPdfs++;
+  }},
   './ui.js':{showToast(){}}, './storage.js':{storage:{}},
   './format.js':{escapeHtml,formatBytes,fileExtension},
 };
@@ -354,6 +361,136 @@ pending[6].reject(new Error('Connection lost'));
 await broken;
 assert(els.body.innerHTML.includes('Connection lost'));
 assert.equal(els.download.disabled,true);
+const pdf = ui.loadFilePreview('/workspace/report.pdf');
+const pdfData = {name:'report.pdf',path:'/workspace/report.pdf',previewable:true,
+  preview_kind:'pdf',content:null,modified:10,size:20,version:'pdf-v1'};
+pending[7].resolve(pdfData);
+await pdf;
+const visual = els.body.children[0];
+assert.equal(visual.className,'file-preview-pdf');
+assert.equal(visual.url,'/api/conversations/third/files/pdf?path=%2Fworkspace%2Freport.pdf');
+assert.equal(visual.children.length,0);
+assert.equal(els.copy.disabled,true);
+assert.equal(els.toggleRender.hidden,true);
+els.body.querySelector = () => visual;
+const refreshPdf = ui.loadFilePreview('/workspace/report.pdf');
+assert(pending[8].url.includes('version=pdf-v1'));
+pending[8].resolve({unchanged:true});
+await refreshPdf;
+assert.equal(els.body.children[0],visual, 'Unchanged PDF must keep its viewer and scroll position');
+const changedPdf = ui.loadFilePreview('/workspace/report.pdf');
+pending[9].resolve({...pdfData,modified:11});
+await changedPdf;
+assert.notEqual(els.body.children[0],visual, 'Changed PDF must reload');
+assert.equal(disposedPdfs,1,'Changed PDFs release their worker and canvases');
+const image = ui.loadFilePreview('/workspace/image.png');
+pending[10].resolve({name:'image.png',path:'/workspace/image.png',previewable:true,version:'image-v1',
+  preview_kind:'image',content:null,images:[{mime:'image/jpeg',data:'/9j/'}, {mime:'text/html',data:'bad'}]});
+await image;
+assert.equal(disposedPdfs,2,'Switching files releases the PDF renderer');
+assert.equal(els.body.children[0].children.length,1);
+assert.equal(els.copy.disabled,true);
+assert.equal(els.toggleRender.hidden,true);
+const picture = els.body.children[0];
+const refreshImage = ui.loadFilePreview('/workspace/image.png');
+assert(pending[11].url.includes('version=image-v1'));
+pending[11].resolve({unchanged:true});
+await refreshImage;
+assert.equal(els.body.children[0],picture,'Unchanged images must not be recreated');
+const text = ui.loadFilePreview('/workspace/notes.py');
+pending[12].resolve({...file('notes.py'),version:'text-v1'});
+await text;
+const source = els.body.children[0];
+const refreshText = ui.loadFilePreview('/workspace/notes.py');
+assert(pending[13].url.includes('version=text-v1'));
+pending[13].resolve({unchanged:true});
+await refreshText;
+assert.equal(els.body.children[0],source,'Unchanged text must not be highlighted again');
+assert.equal(els.copy.disabled,false);
+''')
+
+
+def test_pdf_preview_renders_visible_pages_and_releases_resources():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+class Element {
+  children=[]; style={}; clientWidth=400;
+  setAttribute(name,value) { this[name]=value; }
+  appendChild(child) { child.parent=this; this.children.push(child); }
+  append(...children) { children.forEach(child=>this.appendChild(child)); }
+  remove() { this.parent.children=this.parent.children.filter(child=>child!==this); }
+  getContext() { return {}; }
+}
+globalThis.window={document:{createElement:()=>new Element()},devicePixelRatio:3};
+let intersection,resize,destroyed=0,renders=0,mode='normal',options;
+globalThis.IntersectionObserver=class {
+  constructor(callback,config) { this.callback=callback; this.config=config; intersection=this; }
+  observe() {} disconnect() { this.disconnected=true; }
+};
+globalThis.ResizeObserver=class {
+  constructor(callback) { this.callback=callback; resize=this; }
+  observe() {} disconnect() { this.disconnected=true; }
+};
+const requested=[];
+const pdf={numPages:12, async getPage(number) {
+  requested.push(number);
+  return {getViewport:({scale})=>({width:600*scale,height:800*scale}),cleanup(){},
+    render() { renders++; return {promise:Promise.resolve(),cancel(){}}; }};
+}};
+const library=new vm.SyntheticModule(['getDocument','GlobalWorkerOptions'],function() {
+  this.setExport('GlobalWorkerOptions',{});
+  this.setExport('getDocument',config=>{
+    options=config;
+    return {promise:mode==='password' ? Promise.reject({name:'PasswordException'}) : Promise.resolve(pdf),
+      destroy(){destroyed++; return Promise.resolve();}};
+  });
+});
+await library.link(()=>{}); await library.evaluate();
+const module=new vm.SourceTextModule(readFileSync('static/js/pdf_preview.js','utf8'),{
+  initializeImportMeta(meta) { meta.url='file:///app/static/js/pdf_preview.js'; },
+  importModuleDynamically:()=>library,
+});
+await module.link(()=>{}); await module.evaluate();
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+const container=new Element();
+const dispose=module.namespace.mountPdfPreview(container,'/example.pdf','Example');
+await settle();
+const root=container.children[0];
+assert.equal(root.children.length,12,'All pages must remain reachable in one scroll');
+assert.deepEqual(requested,[1],'Loading must not decode every page');
+assert.equal(renders,0);
+assert.equal(options.disableAutoFetch,true);
+assert.equal(options.disableStream,true);
+assert.equal(intersection.config.root,container);
+const first=root.children[0],last=root.children[11];
+intersection.callback([{target:first,isIntersecting:true}]);
+await settle();
+const canvas=first.children[0].children[0];
+assert(canvas.width<=800,'Pixel density must be capped');
+assert(canvas.width*canvas.height<=2000000+2000);
+intersection.callback([{target:first,isIntersecting:false},{target:last,isIntersecting:true}]);
+await settle();
+assert.equal(canvas.width,0,'Offscreen canvases must release their backing storage');
+assert.equal(first.children[0].children.length,0);
+assert(last.children[0].children[0].width>0);
+assert.equal(renders,2);
+assert.deepEqual(requested,[1,1,12]);
+last.children[0].clientWidth=300;
+resize.callback(); await settle();
+assert.equal(renders,3,'Panel resizing must update visible pages');
+dispose();
+assert.equal(last.children[0].children.length,0);
+assert.equal(destroyed,1);
+assert(intersection.disconnected && resize.disconnected);
+mode='password';
+const locked=new Element();
+const closeLocked=module.namespace.mountPdfPreview(locked,'/locked.pdf','Locked');
+await settle();
+assert.equal(locked.children[0].children[0].role,'alert');
+assert(locked.children[0].children[0].textContent.includes('password'));
+closeLocked();
 ''')
 
 

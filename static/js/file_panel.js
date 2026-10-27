@@ -6,6 +6,7 @@ import { ICONS } from './icons.js';
 
 import { applyMarkdown } from './markdown.js';
 import { renderSource } from './source_view.js';
+import { mountPdfPreview } from './pdf_preview.js';
 import { showToast } from './ui.js';
 import { storage } from './storage.js';
 import { escapeHtml, formatBytes, fileExtension as ext } from './format.js';
@@ -25,6 +26,7 @@ let panelWidth = DEFAULT_PANEL_WIDTH;
 let treeRenderId = 0;
 let listRequestId = 0;
 let previewRequestId = 0;
+let disposePdf = null;
 const expandedPaths = new Set([WORKSPACE_ROOT]);
 
 // Resolved once in initFilePanel — these elements are stable for the page lifetime.
@@ -88,6 +90,10 @@ function setPanelOpen(open, { persist = true } = {}) {
   els.toggle?.setAttribute('aria-expanded', String(open));
   if (!open && els.panel?.contains(document.activeElement)) els.toggle?.focus();
   if (els.panel) els.panel.inert = !open;
+  if (!open && currentFileData?.preview_kind === 'pdf') {
+    clearPreview();
+    currentFileData = null;
+  }
 
   if (open) {
     refreshFilePanel({ keepPreview: Boolean(selectedPath) }).catch(() => {});
@@ -100,10 +106,10 @@ function setPreviewOpen(open) {
   if (changed && isOpen) els.back?.focus();
 }
 
-function updateToggleButton(name, mode) {
+function updateToggleButton(name, mode, visual = false) {
   if (!els.toggleRender) return;
 
-  if (!isRenderable(name)) {
+  if (!isRenderable(name) && !visual) {
     els.toggleRender.hidden = true;
     return;
   }
@@ -111,8 +117,8 @@ function updateToggleButton(name, mode) {
   els.toggleRender.hidden = false;
   if (mode === 'render') {
     els.toggleRender.innerHTML = ICONS.eyeShow;
-    els.toggleRender.title = 'View source';
-    els.toggleRender.setAttribute('aria-label', 'View source');
+    els.toggleRender.title = visual ? 'View text' : 'View source';
+    els.toggleRender.setAttribute('aria-label', els.toggleRender.title);
     els.toggleRender.classList.add('active');
   } else {
     els.toggleRender.innerHTML = ICONS.eyeHide;
@@ -167,9 +173,24 @@ document.addEventListener('click', function(e) {
   return doc.documentElement.outerHTML;
 }
 
-function renderContent(data, mode) {
+function clearPreview() {
+  disposePdf?.();
+  disposePdf = null;
   els.body.replaceChildren();
+}
+
+function renderContent(data, mode) {
+  clearPreview();
   const content = data.content || '';
+  if (data.preview_kind === 'pdf') {
+    disposePdf = mountPdfPreview(els.body,
+      `${workspaceApiBase()}/files/pdf?path=${encodeURIComponent(data.path)}`, data.name);
+    return;
+  }
+  if (data.preview_kind && mode === 'render') {
+    renderVisualPreview(data);
+    return;
+  }
   if (isHtml(data.name) && mode === 'render') {
     const iframe = document.createElement('iframe');
     iframe.className = 'file-preview-iframe';
@@ -192,6 +213,51 @@ function renderContent(data, mode) {
   }
 }
 
+function renderVisualPreview(data) {
+  const preview = document.createElement('div');
+  preview.className = 'file-preview-visual';
+  els.body.appendChild(preview);
+  if (data.preview_kind === 'notebook' && data.total != null) {
+    const navigation = document.createElement('div');
+    navigation.className = 'file-preview-navigation';
+    const step = 20;
+    const unit = 'Cells';
+    const label = document.createElement('span');
+    label.textContent = data.total ? `${unit} ${data.start}–${data.end} of ${data.total}` : 'Empty notebook';
+    navigation.appendChild(label);
+    for (const [title, start, disabled] of [
+      ['Previous', Math.max(1, data.start - step), data.start <= 1],
+      ['Next', data.end + 1, data.end >= data.total],
+    ]) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = title;
+      button.disabled = disabled;
+      button.addEventListener('click', () => {
+        loadFilePreview(data.path, `${start}:${start + step - 1}`).catch(() => {});
+      });
+      navigation.appendChild(button);
+    }
+    preview.appendChild(navigation);
+  }
+  // The server rasterizes visuals with the same bounded renderer as View.
+  for (const image of data.images || []) {
+    if (image.mime !== 'image/jpeg' || !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) continue;
+    const figure = document.createElement('figure');
+    const img = document.createElement('img');
+    img.src = `data:image/jpeg;base64,${image.data}`;
+    img.alt = data.name;
+    img.loading = 'lazy';
+    figure.appendChild(img);
+    preview.appendChild(figure);
+  }
+  if (data.preview_kind === 'notebook') {
+    const cells = document.createElement('div');
+    cells.innerHTML = renderSource(data.content || '', { filename: data.name });
+    preview.appendChild(cells);
+  }
+}
+
 
 function resetPreview() {
   previewRequestId++;
@@ -200,7 +266,7 @@ function resetPreview() {
   currentFileData = null;
   renderMode = 'render';
   els.title.textContent = 'Preview';
-  els.body.innerHTML = '';
+  clearPreview();
   els.copy.disabled = true;
   els.download.disabled = true;
   els.download.removeAttribute('data-path');
@@ -387,24 +453,29 @@ async function loadFileList() {
   return true;
 }
 
-async function loadFilePreview(path) {
+async function loadFilePreview(path, range = '') {
   const apiBase = workspaceApiBase();
   if (!apiBase || !path) return;
   const requestId = ++previewRequestId;
+  const previous = selectedPath === path && currentFileData?.previewRange === range ? currentFileData : null;
   selectedPath = path;
-  currentFileData = null;
+  currentFileData = previous;
   els.toggleRender.hidden = true;
   els.title.textContent = displayNameForPath(path);
   setPreviewOpen(true);
 
-  els.body.innerHTML = '<div class="file-panel-empty" role="status">Loading preview…</div>';
+  if (!previous) {
+    clearPreview();
+    els.body.innerHTML = '<div class="file-panel-empty" role="status">Loading preview…</div>';
+  }
   els.copy.disabled = true;
   els.download.disabled = true;
   els.download.removeAttribute('data-path');
 
-  const data = await api.get(`${apiBase}/files/content?path=${encodeURIComponent(path)}`)
+  const payload = await api.get(`${apiBase}/files/content?path=${encodeURIComponent(path)}${range ? `&range=${encodeURIComponent(range)}` : ''}${previous?.version ? `&version=${encodeURIComponent(previous.version)}` : ''}`)
     .catch(error => ({ error: error.message || 'Could not load file' }));
   if (requestId !== previewRequestId || apiBase !== workspaceApiBase()) return false;
+  const data = payload.unchanged && previous ? previous : payload;
   if (data.error) {
     if (isMissingWorkspacePath(data.error)) {
       closePreview();
@@ -425,17 +496,20 @@ async function loadFilePreview(path) {
   if (!data.previewable) {
     els.body.innerHTML = `
       <div class="file-panel-empty">
-        This file cannot be previewed as text.<br />
+        ${escapeHtml(data.preview_error || 'Preview is unavailable for this file type or size.')}<br />
         <span>Use Download to save it.</span>
       </div>`;
     return true;
   }
 
-  els.copy.disabled = false;
+  els.copy.disabled = typeof data.content !== 'string';
 
   currentFileData = data;
-  updateToggleButton(data.name, renderMode);
-  renderContent(data, renderMode);
+  data.previewRange = range;
+  // Images and PDFs only have a visual preview.
+  if (['image', 'pdf'].includes(data.preview_kind)) renderMode = 'render';
+  updateToggleButton(data.name, renderMode, data.preview_kind === 'notebook');
+  if (data !== previous) renderContent(data, renderMode);
   return true;
 }
 
@@ -478,11 +552,12 @@ export async function refreshFilePanel({ keepPreview = true } = {}) {
   if (!els.panel || !isOpen) return;
 
   const path = keepPreview ? selectedPath : null;
+  const range = currentFileData?.previewRange || '';
   const requestId = previewRequestId;
   try {
     await loadFileList();
     if (path && requestId === previewRequestId && els.panel.classList.contains('preview-open')) {
-      await loadFilePreview(path);
+      await loadFilePreview(path, range);
     }
   } catch (err) {
     console.warn('Could not refresh workspace files', err);
@@ -537,7 +612,7 @@ export function initFilePanel() {
   els.toggleRender?.addEventListener('click', () => {
     if (!currentFileData) return;
     renderMode = renderMode === 'render' ? 'code' : 'render';
-    updateToggleButton(currentFileData.name, renderMode);
+    updateToggleButton(currentFileData.name, renderMode, currentFileData.preview_kind === 'notebook');
     renderContent(currentFileData, renderMode);
   });
 

@@ -41,20 +41,6 @@ def conversation_files(conv_id: str):
     return _json_result(container_files.uploads(conv_id, files))
 
 
-@blueprint.route("/api/conversations/<conv_id>/files/content", methods=["GET"])
-def get_conversation_file_content(conv_id: str):
-    if err := _bad_conv_id(conv_id):
-        return err
-    return _json_result(container_files.conversation(conv_id, "preview", request.args.get("path", "")))
-
-
-@blueprint.route("/api/conversations/<conv_id>/files/download", methods=["GET"])
-def download_conversation_file(conv_id: str):
-    if err := _bad_conv_id(conv_id):
-        return err
-    return container_files.download_response(*container_files.conversation(conv_id, "download", request.args.get("path", "")))
-
-
 @blueprint.route("/api/folders/<folder_id>/files", methods=["GET"])
 def folder_files(folder_id: str):
     if err := _bad_conv_id(folder_id):
@@ -62,18 +48,23 @@ def folder_files(folder_id: str):
     return _json_result(container_files.folder(folder_id, "list", request.args.get("path", "")))
 
 
-@blueprint.route("/api/folders/<folder_id>/files/content", methods=["GET"])
-def get_folder_file_content(folder_id: str):
-    if err := _bad_conv_id(folder_id):
+@blueprint.route("/api/conversations/<workspace_id>/files/<action>", defaults={"scope": "conversation"})
+@blueprint.route("/api/folders/<workspace_id>/files/<action>", defaults={"scope": "folder"})
+def workspace_file(scope, workspace_id, action):
+    if err := _bad_conv_id(workspace_id):
         return err
-    return _json_result(container_files.folder(folder_id, "preview", request.args.get("path", "")))
-
-
-@blueprint.route("/api/folders/<folder_id>/files/download", methods=["GET"])
-def download_folder_file(folder_id: str):
-    if err := _bad_conv_id(folder_id):
-        return err
-    return container_files.download_response(*container_files.folder(folder_id, "download", request.args.get("path", "")))
+    operation = container_files.conversation if scope == "conversation" else container_files.folder
+    path = request.args.get("path", "")
+    if action == "content":
+        return _json_result(operation(workspace_id, "preview", path,
+            range=request.args.get("range"), version=request.args.get("version")))
+    if action == "download":
+        return container_files.download_response(*operation(workspace_id, "download", path))
+    if action == "pdf":
+        return container_files.pdf_response(*operation(workspace_id, "pdf", path,
+            byte_range=request.headers.get("Range"), if_range=request.headers.get("If-Range"),
+            if_none_match=request.headers.get("If-None-Match")))
+    return jsonify({"error": "Not found"}), 404
 
 
 @blueprint.route("/api/images", methods=["POST"])
