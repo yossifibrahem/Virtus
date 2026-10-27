@@ -115,7 +115,6 @@ def test_folder_deletion_preserves_host_files(client, tmp_path):
 
 
 def test_docker_mount_csv_and_reuse_match_includes_permissions(tmp_path, monkeypatch):
-    monkeypatch.setattr(containers, '_memory_volume_spec', lambda: None)
     source = tmp_path / 'commas, and "quotes"'; source.mkdir()
     mounts = folder_mounts.normalize_mounts([{'source': str(source)}])
     args = containers._volume_args(tmp_path, mounts)

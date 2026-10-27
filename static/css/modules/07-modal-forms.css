@@ -163,12 +163,26 @@
 .memory-editor { margin-top: 10px; }
 .memory-editor summary { width: fit-content; color: var(--text2); font-size: .78rem; cursor: pointer; }
 .memory-editor summary:hover { color: var(--text); }
-.memory-editor .field { margin: 16px 0 12px; }
-.memory-editor textarea { min-height: 132px; font-family: var(--font-roman); line-height: 1.6; }
-.memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.memory-clear { margin-left: auto; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--text3); font-size: .73rem; cursor: pointer; }
-.memory-clear[data-armed] { color: var(--red); }
-.memory-clear:hover { color: var(--red); }
+.memory-block-editor { min-width: 0; margin: 14px 0 0; padding: 0; border: 0; }
+.memory-blocks { padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.memory-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.memory-row + .memory-row { border-top: 1px solid var(--border); }
+.memory-text { flex: 1; min-width: 0; margin: 0; color: var(--text); font-size: .82rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-row-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.memory-icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--text3); cursor: pointer; }
+.memory-icon svg { width: 16px; height: 16px; }
+.memory-icon:hover { color: var(--text); background: var(--surface2); }
+.memory-icon.memory-delete:hover { color: var(--red); }
+.memory-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.memory-icon:disabled { opacity: .35; cursor: default; }
+.memory-entry-editor.field { width: 100%; min-width: 0; margin: 0; }
+.memory-entry-editor.field textarea { display: block; margin: 0; font-family: var(--font-roman); line-height: 1.55; resize: none; overflow: hidden; }
+.memory-edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
+.memory-empty { margin: 0; padding: 24px 0; color: var(--text3); font-size: .8rem; text-align: center; }
+.memory-block-editor:disabled { opacity: .5; }
+.memory-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+.memory-clear { padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--text3); font-size: .73rem; cursor: pointer; }
+.memory-clear[data-armed], .memory-clear:hover { color: var(--red); }
 .memory-clear:disabled { opacity: .5; cursor: not-allowed; }
 .field input:disabled, .field select:disabled, .field textarea:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 420px) {

@@ -204,26 +204,11 @@ class TestVolumeArgs:
         with pytest.raises(ValueError, match="Implicit host mounts"):
             container_service.ensure_container("chat", ["/host:/host:ro"])
 
-    def test_legacy_memory_hook_cannot_expose_canonical_memory(self, tmp_path, monkeypatch):
-        import docker_path_utils
-
-        monkeypatch.setattr(
-            container_service,
-            "_memory_volume_spec",
-            lambda: "/host/memory.md:/memory.md:rw",
-        )
-        result = container_service._volume_args(tmp_path)
-        assert result == [
-            "--volume",
-            f"{docker_path_utils.host_path_to_docker_src(str(tmp_path))}:/workspace",
-        ]
-
     def test_windows_workspace_source_uses_forward_slashes(self, monkeypatch):
         import docker_path_utils
         from pathlib import PureWindowsPath
 
         monkeypatch.setattr(docker_path_utils.sys, "platform", "win32")
-        monkeypatch.setattr(container_service, "_memory_volume_spec", lambda: None)
 
         result = container_service._volume_args(
             PureWindowsPath(r"C:\Users\User\.lumen\containers\abc"),
@@ -237,7 +222,6 @@ class TestVolumeArgs:
 
 class TestContainerImageIdentity:
     def test_run_command_labels_container_with_configured_image(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(container_service, "_memory_volume_spec", lambda: None)
         monkeypatch.setattr(container_service.build_info, "sandbox_identity", lambda: "sandbox-digest")
         monkeypatch.setattr(container_service._adv_cfg, "load_advanced_config", lambda: {
             "sandbox_image": "registry.example/lumen:1.2.3",
@@ -256,7 +240,6 @@ class TestContainerImageIdentity:
     @pytest.mark.parametrize('change', ['image_tag', 'image_id', 'identity', 'mount', None])
     def test_existing_container_validation_uses_two_docker_calls(self, tmp_path, monkeypatch, change):
         monkeypatch.setattr(container_service, '_workspace', lambda cid: tmp_path)
-        monkeypatch.setattr(container_service, '_memory_volume_spec', lambda: None)
         monkeypatch.setattr(container_service.build_info, 'sandbox_identity', lambda: 'identity')
         monkeypatch.setattr(container_service.build_info, 'APP_VERSION', '99.0.0-desktop-only')
         monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {

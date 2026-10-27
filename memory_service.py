@@ -1,6 +1,7 @@
 """App-owned, bounded global memory with optimistic revisions and atomic writes.
 
-Existing ~/.lumen/memory.md is retained in place. No container receives this path.
+Memory is stored as a JSON object in ~/.lumen/memory.json.
+No container receives this path.
 The local application is single-process; one lock serializes all chats and UI edits.
 """
 from __future__ import annotations
@@ -12,9 +13,10 @@ import uuid
 from pathlib import Path
 from fs_utils import atomic_replace
 
-MEMORY_FILE = Path.home() / '.lumen' / 'memory.md'
-CONTAINER_PATH = '/memory.md'  # legacy destination; never mounted
+MEMORY_FILE = Path.home() / '.lumen' / 'memory.json'
 LIMIT = 32768
+# JSON escapes can use six bytes per content byte, plus object/formatting overhead.
+FILE_LIMIT = LIMIT * 6 + 1024
 _LOCK = threading.RLock()
 
 
@@ -49,12 +51,19 @@ def set_enabled(value):
 
 def _raw():
     try:
-        # Bound legacy content reads. Refuse overwrites of oversized legacy data;
-        # preserve the original so the user can recover it outside the app.
         with MEMORY_FILE.open('rb') as source:
-            return source.read(LIMIT + 1)
+            raw = source.read(FILE_LIMIT + 1)
     except FileNotFoundError:
         return b''
+    if len(raw) > FILE_LIMIT:
+        raise ValueError('Memory JSON file is too large')
+    try:
+        data = json.loads(raw)
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError('Memory file must contain valid JSON') from exc
+    if not isinstance(data, dict) or not isinstance(data.get('content'), str):
+        raise ValueError('Memory JSON must be an object with a string content field')
+    return data['content'].encode('utf-8')
 
 
 def snapshot():
@@ -84,9 +93,9 @@ def update(content, revision, *, require_enabled=False):
         if revision != state['revision']:
             raise Conflict('Memory changed; reload the current content and revision before editing')
         if state['oversized'] and content == '':
-            shutil.copyfile(MEMORY_FILE, MEMORY_FILE.with_suffix('.legacy.md'))
+            shutil.copyfile(MEMORY_FILE, MEMORY_FILE.with_suffix('.oversized.json'))
         elif state['oversized']:
-            raise ValueError('Legacy memory exceeds 32 KiB; preserve/reduce the original file before editing in the app')
+            raise ValueError('Memory exceeds 32 KiB; preserve/reduce the original file before editing in the app')
         history = MEMORY_FILE.with_suffix('.history.json')
         try:
             with history.open('rb') as source:
@@ -99,33 +108,12 @@ def update(content, revision, *, require_enabled=False):
         versions = [v for v in versions[-7:] if isinstance(v, dict) and len(str(v)) <= LIMIT * 2]
         versions.append({'revision': state['revision'], 'content': state['content']})
         _atomic(history, json.dumps(versions, ensure_ascii=False))
-        _atomic(MEMORY_FILE, content)
+        _atomic(MEMORY_FILE, json.dumps({'content': content}, ensure_ascii=False, indent=2))
         return snapshot()
 
 
 def ensure_file():
     with _LOCK:
         if not MEMORY_FILE.exists():
-            _atomic(MEMORY_FILE, '')
+            _atomic(MEMORY_FILE, json.dumps({'content': ''}, indent=2))
     return MEMORY_FILE
-
-
-_ISOLATED = set()
-
-def isolate_legacy_file():
-    """Detach legacy Docker bind inodes before serving any model requests.
-
-    Atomic replacement preserves all bytes, including oversized legacy files.
-    Old containers can only write their detached inode until compatibility reset.
-    """
-    with _LOCK:
-        if MEMORY_FILE in _ISOLATED:
-            return
-        if MEMORY_FILE.exists():
-            tmp = MEMORY_FILE.with_name(MEMORY_FILE.name + '.tmp-' + uuid.uuid4().hex)
-            try:
-                shutil.copyfile(MEMORY_FILE, tmp)
-                atomic_replace(tmp, MEMORY_FILE)
-            finally:
-                tmp.unlink(missing_ok=True)
-        _ISOLATED.add(MEMORY_FILE)

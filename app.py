@@ -39,8 +39,6 @@ SHUTDOWN_CLEANUP_SECONDS = 10
 
 
 def create_app() -> Flask:
-    import memory_service
-    memory_service.isolate_legacy_file()
     startup_status = runtime_requirements.check_requirements()
     _log_startup_requirement_status(startup_status)
     assets_root = build_info.resource_root()

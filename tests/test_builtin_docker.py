@@ -18,10 +18,8 @@ pytestmark = pytest.mark.skipif(os.getenv('LUMEN_RUN_DOCKER_TESTS') != '1', reas
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
     image = os.getenv('LUMEN_TEST_SANDBOX_IMAGE', 'lumen-sandbox:builtins-test')
-    memory = tmp_path / 'memory.md'; memory.write_text('Memory\n')
     monkeypatch.setattr(containers, 'CONTAINERS_ROOT', tmp_path / 'workspaces')
     monkeypatch.setattr(containers, 'CONTAINER_PREFIX', 'lumen-integration-')
-    monkeypatch.setattr(containers, '_memory_volume_spec', lambda: f'{memory}:/memory.md:rw')
     monkeypatch.setattr(advanced_config, 'load_advanced_config', lambda: {
         'sandbox_image': image, 'container_memory': '512m', 'container_cpus': '1',
         'container_network': 'bridge', 'container_idle_timeout': 600,
@@ -40,8 +38,6 @@ def test_native_tools_media_files_and_isolation(runtime, tmp_path):
     assert 'Wrote' in native.invoke(rid, 'write', {'path': 'nested/a.txt', 'content': 'alpha\nbeta\n'})['text']
     assert 'beta' in native.invoke(rid, 'view', {'path': 'nested/a.txt', 'range': '2:2'})['text']
     native.invoke(rid, 'edit', {'path': 'nested/a.txt', 'old_text': 'beta', 'new_text': 'gamma'})
-    native.invoke(rid, 'write', {'path': '/memory.md', 'content': 'Container-only memory'})
-    assert (tmp_path / 'memory.md').read_text() == 'Memory\n'
     assert 'gamma' in native.invoke(rid, 'bash', {'command': 'cat nested/a.txt'})['text']
     script = """python - <<'INNER'
 from PIL import Image

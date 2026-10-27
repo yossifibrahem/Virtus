@@ -50,10 +50,10 @@ Lumen AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser UI
 
 **Persistent memory**
 
-- The model remembers facts across all conversations via `~/.lumen/memory.md`
+- The model remembers facts across all conversations via `~/.lumen/memory.json`
 - Enabled by default, optional global memory stays outside Docker. The built-in `update_memory` tool saves concise facts using revision checks and atomic writes.
 - Container settings let you inspect, edit, clear, and disable memory. Disabling preserves it, stops context injection and removes its tool on subsequent model requests; chat history already containing facts remains.
-- Memory is limited to 32 KiB, with eight recoverable prior versions in `memory.history.json`. Existing content is preserved. Legacy container memory mounts cause a one-time compatibility reset on next use: workspace files remain, installed packages reset. Memory toggles never reset computers.
+- Memory is limited to 32 KiB, with eight recoverable prior versions in `memory.history.json`. Memory is stored as a JSON object with a string `content` field. Memory toggles never reset computers.
 - Memory contents are injected into the system prompt at the start of every turn
 
 **Folders**
@@ -319,7 +319,7 @@ All runtime data is stored outside the repo under `~/.lumen/`:
 ├── config.json            # Server-side API provider config
 ├── advanced_config.json   # Container and file-handling settings (written by the UI)
 ├── mcp.json               # MCP server configuration
-├── memory.md              # App-managed cross-chat memory, never mounted into containers
+├── memory.json              # App-managed cross-chat memory, never mounted into containers
 ├── folders.json           # Folder names, IDs, instructions, and explicit directory mounts
 ├── conversations/         # One JSON file per conversation
 ├── containers/            # Workspace directories for standalone chats and shared folders

@@ -168,7 +168,6 @@ def test_media_conversation_scoping_and_order(tmp_lumen):
 
 def test_unexpected_mount_rejected(monkeypatch, tmp_path):
     from types import SimpleNamespace
-    monkeypatch.setattr(container_service, '_memory_volume_spec', lambda: None)
     mounts = [{'Type': 'bind', 'RW': True, 'Destination': '/workspace', 'Source': str(tmp_path)},
               {'Type': 'bind', 'RW': True, 'Destination': '/host', 'Source': '/'}]
     monkeypatch.setattr(container_service, '_run', lambda args: SimpleNamespace(returncode=0, stdout=json.dumps(mounts)))
@@ -235,13 +234,13 @@ def test_forged_worker_media_is_rejected(monkeypatch):
 
 def test_shared_memory_read_is_bounded(tmp_path, monkeypatch):
     import memory_service
-    path = tmp_path / 'memory.md'
+    path = tmp_path / 'memory.json'
     with path.open('wb') as f:
         f.write(b'x' * 32768)
         f.truncate(100000000)
     monkeypatch.setattr(memory_service, 'MEMORY_FILE', path)
-    assert len(memory_service.read()) < 33000
-    assert 'truncated' in memory_service.read()
+    with pytest.raises(ValueError, match='too large'):
+        memory_service.read()
 
 
 def test_nested_runtime_operations_stay_active():

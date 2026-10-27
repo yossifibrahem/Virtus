@@ -88,7 +88,7 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `mcp_session_pool.py` | Persistent stdio connections on a dedicated async worker |
 | `tool_approval.py` | Pending MCP approval requests and cancellation |
 | `tool_media.py` | Conversation-scoped tool images and model request expansion |
-| `memory_service.py` | Optional app-owned memory, atomic revisions, bounded history and legacy bind detachment |
+| `memory_service.py` | Optional app-owned memory, atomic revisions, bounded history |
 | `storage_safeguards.py` | Workspace accounting, host/Docker low-space checks |
 | `title_service.py` | Optional title generation |
 | `app_config.py`, `advanced_config.py` | API credentials and runtime/file settings |
@@ -226,7 +226,7 @@ failed session is discarded and a later request can open a fresh connection.
 ## Storage, configuration, and releases
 
 User state is under `~/.lumen/`: conversations, folders, images, workspaces,
-`config.json`, `advanced_config.json`, `mcp.json`, and `memory.md`. File paths can
+`config.json`, `advanced_config.json`, `mcp.json`, and `memory.json`. File paths can
 be overridden by the environment variables documented in README. API keys remain
 server-side; browser settings and model request bodies do not carry them.
 Configuration precedence is environment, saved JSON, then defaults. The advanced
@@ -259,14 +259,11 @@ Folder instructions replace the global custom prompt only inside a Folder, and t
 sentence appears only there. Each turn captures its Folder identity and custom instructions before
 asynchronous work so navigating to another chat cannot change its context.
 
-Memory defaults enabled. `memory_service` owns `~/.lumen/memory.md`, with SHA-256 content revisions,
+Memory defaults enabled. `memory_service` owns `~/.lumen/memory.json`, with SHA-256 content revisions,
 a process-wide lock, atomic replacement, a 32 KiB limit and eight prior versions in
 `memory.history.json`. `/api/memory` supports inspection, version-checked edits/clears and a
-persisted boolean in `memory.settings.json`. Oversized legacy content is preserved; explicit
-clear backs it up as `memory.legacy.md`. At startup atomic inode replacement detaches any old
-writable Docker bind from canonical memory without changing its bytes. Reuse validation then
-requires a one-time legacy sandbox reset, retaining workspace data but resetting installed
-packages. Toggling memory never changes mounts or container identity.
+persisted boolean in `memory.settings.json`. The JSON store contains a string `content` field. Oversized content is preserved; explicit
+clear backs it up as `memory.oversized.json`. Toggling memory never changes mounts or container identity.
 
 `update_memory` is reserved against MCP collisions, validates arguments and rechecks enablement
 at invocation. Its schema explains concise stable facts; the app policy has no memory-maintenance

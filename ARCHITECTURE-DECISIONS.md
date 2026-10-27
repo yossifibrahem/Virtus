@@ -150,7 +150,7 @@ Likely touchpoints: `container_service.py`, `sandbox_runtime.py`,
 ### Final decision
 
 Keep LLM-maintained global memory across chats for stable user facts such as name
-and preferences. A small Markdown store is sufficient; no vector database or
+and preferences. A small JSON store is sufficient; no vector database or
 external memory service is requested.
 
 Replace unrestricted shared-file writes with an application-managed built-in memory
@@ -162,8 +162,8 @@ neither remembered context nor a memory tool to subsequent model requests.
 
 ### Canonical store and update tool
 
-- Keep the canonical memory under application control, with migration/preservation
-  of existing `~/.lumen/memory.md` content.
+- Keep the canonical memory under application control in `~/.lumen/memory.json`,
+  as a JSON object with a string `content` field.
 - Provide a server-owned built-in tool such as `update_memory`. Its schema describes
   remembering stable user facts/preferences, correcting outdated facts, and keeping
   entries concise. It should not encourage saving whole histories or transient
@@ -212,12 +212,6 @@ tool. A read-only mount is unnecessary when the full bounded memory is injected.
 This allows memory toggles and updates without changing Folder mounts, recreating
 the computer, or resetting packages. Adding a global runtime mount to enable memory
 and removing it to disable memory would reintroduce the rejected persistence issue.
-
-Legacy containers currently have a writable `/memory.md` mount. Include an explicit
-migration so they cannot continue to modify the canonical store through Bash after
-the new behavior is in effect. A documented one-time sandbox compatibility reset is
-acceptable under the accepted environment-upgrade limit; retain workspace data and
-explain the package reset. Do not reset containers on every memory toggle.
 
 Folder-specific memory was discussed as a possible distinction, but a second memory
 system is not required in this implementation. Global cross-chat user memory is the
@@ -328,7 +322,7 @@ Suggested order (an implementation choice):
 
 1. Freeze Folder mount editing and add the destructive-move warning.
 2. Remove network configuration/overrides and update the corresponding docs.
-3. Implement optional host-managed memory, including legacy-mount migration.
+3. Implement optional host-managed memory, with a JSON store.
 4. Complete runtime configuration reconciliation, accounting for the new mount set.
 5. Add disk/turn/replay safeguards and update remaining documentation.
 
@@ -359,13 +353,13 @@ and report actual results. Live Docker isolation was not verified in that review
 
 After implementation, update `README.md` and `devs.md` to describe implemented
 behavior, remove contradictory instructions (particularly editable Folder mounts,
-writable `/memory.md`, and network settings), and update this document's status.
+writable memory mounts, and network settings), and update this document's status.
 
 
 ## 10. Implementation verification (2026-10-27)
 
 Implemented immutable Folder mounts, the destructive-move warning, Docker-managed
-networking, optional revision-checked app-owned memory with legacy bind detachment,
+networking, optional revision-checked app-owned memory with JSON storage,
 effective runtime validation, disk monitoring, cancellable turn/tool budgets, bounded
 output/replay and corresponding settings/documentation. Memory defaults enabled.
 

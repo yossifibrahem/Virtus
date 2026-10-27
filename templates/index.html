@@ -402,16 +402,14 @@
             </label>
           </div>
           <details class="memory-editor">
-            <summary>View and edit memory</summary>
-            <div class="field">
-              <label for="memory-content">Saved memory</label>
-              <textarea id="memory-content" rows="6" spellcheck="false" aria-describedby="memory-note" disabled></textarea>
-              <p class="field-note" id="memory-note">Turning memory off keeps these facts saved. Clearing memory does not remove it from past chats.</p>
-            </div>
-            <div class="memory-actions">
-              <button type="button" id="memory-save" class="btn-secondary" disabled>Save memory</button>
-              <button type="button" id="memory-clear" class="memory-clear" disabled>Clear memory</button>
-            </div>
+            <summary>Manage memory</summary>
+            <fieldset id="memory-block-editor" class="memory-block-editor" disabled aria-label="Saved memory">
+              <div id="memory-blocks" class="memory-blocks" aria-live="polite"></div>
+              <div class="memory-actions">
+                <button type="button" id="memory-add" class="btn-secondary">Add memory</button>
+                <button type="button" id="memory-clear" class="memory-clear" disabled>Clear all</button>
+              </div>
+            </fieldset>
           </details>
         </section>
 

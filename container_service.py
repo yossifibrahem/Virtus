@@ -161,7 +161,7 @@ def _runtime_matches(info, workspace, shared):
     """Single effective specification for normal reuse and conflict recovery.
 
     Networking is intentionally excluded: Docker owns network attachments.
-    Missing security metadata fails closed, including legacy memory mounts.
+    Missing security metadata fails closed.
     """
     spec = _runtime_spec()
     host = info.get('HostConfig') or {}
@@ -208,11 +208,6 @@ def _container_image_changed(info: dict, expected_image: str) -> bool:
         or not tagged_image_id
         or info.get("Image") != tagged_image_id
     )
-
-
-def _memory_volume_spec() -> None:
-    """Legacy hook: canonical memory is never exposed to containers."""
-    return None
 
 
 def _volume_args(workspace: Path, shared: list[dict] | None = None) -> list[str]:

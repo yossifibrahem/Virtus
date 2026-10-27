@@ -31,7 +31,7 @@ SCHEMAS = [
 ]
 
 MEMORY_SCHEMA = schema('update_memory',
-    'Remember stable user facts and preferences across chats, correct outdated facts, and keep concise Markdown entries. Do not store histories, secrets, transient tasks or command state. Replace the bounded store using its current revision from remembered context or a conflict response. A stale revision is rejected: merge with returned current content before retrying.',
+    'Remember stable user facts and preferences across chats, correct outdated facts, and keep concise entries. Do not store histories, secrets, transient tasks or command state. Replace the bounded store using its current revision from remembered context or a conflict response. A stale revision is rejected: merge with returned current content before retrying.',
     {'content': {'type': 'string', 'maxLength': 32768},
      'revision': {'type': 'string', 'minLength': 64, 'maxLength': 64}}, ['content', 'revision'])
 SCHEMAS.append(MEMORY_SCHEMA)

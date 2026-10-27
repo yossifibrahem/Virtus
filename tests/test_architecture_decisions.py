@@ -35,6 +35,29 @@ def test_memory_concurrent_writes_have_one_winner():
     assert json.loads(memory.MEMORY_FILE.with_suffix('.history.json').read_text())[0]['content'] == ''
 
 
+def test_memory_json_round_trip_and_initialization():
+    path = memory.ensure_file()
+    assert path.name == 'memory.json'
+    assert json.loads(path.read_text()) == {'content': ''}
+    content = '- Prefers Arabic: العربية\n- Quotes: "hello"\n' + '\x00' * 100
+    state = memory.update(content, memory.snapshot()['revision'])
+    assert json.loads(path.read_text()) == {'content': content}
+    assert memory.snapshot()['content'] == content
+    assert memory.snapshot()['revision'] == state['revision']
+    maximum = '\x00' * memory.LIMIT
+    memory.update(maximum, state['revision'])
+    assert memory.snapshot()['content'] == maximum
+
+
+@pytest.mark.parametrize('raw', ['not JSON', '{}', '[]', '{"content": null}'])
+def test_invalid_memory_json_is_not_overwritten(raw):
+    revision = memory.snapshot()['revision']
+    memory.MEMORY_FILE.write_text(raw)
+    with pytest.raises(ValueError, match='Memory'):
+        memory.update('Replacement', revision)
+    assert memory.MEMORY_FILE.read_text() == raw
+
+
 def test_memory_disable_preserves_data_rejects_tool_and_never_reads(monkeypatch):
     state = memory.update('Alice', memory.snapshot()['revision'])
     memory.set_enabled(False)
@@ -71,17 +94,6 @@ def test_memory_conflict_returns_current_data_and_rejects_host_paths():
             builtin_tools.invoke('unused', 'update_memory', args)
 
 
-def test_legacy_bind_inode_is_detached_and_bytes_preserved():
-    memory.MEMORY_FILE.write_text('Legacy name')
-    with memory.MEMORY_FILE.open('r+b') as old_bind:
-        memory.isolate_legacy_file()
-        old_bind.seek(0)
-        old_bind.write(b'Changed old')
-        old_bind.flush()
-        assert memory.MEMORY_FILE.read_text() == 'Legacy name'
-    assert '/memory.md' not in str(containers._volume_args(memory.MEMORY_FILE.parent))
-
-
 def valid_runtime(workspace):
     return {'State': {'Status': 'running'}, 'Mounts': [{'Type': 'bind', 'Source': str(workspace),
         'Destination': '/workspace', 'RW': True}],
@@ -115,14 +127,14 @@ def test_effective_configuration_rejected_in_both_reuse_paths(tmp_lumen, monkeyp
     assert removed == [(rid, True)]
 
 
-def test_network_is_ignored_and_memory_mount_is_incompatible(tmp_lumen, monkeypatch):
+def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_lumen, monkeypatch):
     workspace = containers.conversation_workspace('test')
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
     info['HostConfig']['NetworkMode'] = 'custom-docker-network'
     assert containers._runtime_matches(info, workspace, [])
     assert '--network' not in containers._docker_run_command('test', workspace)
-    info['Mounts'].append({'Type': 'bind', 'Source': str(memory.MEMORY_FILE), 'Destination': '/memory.md', 'RW': True})
+    info['Mounts'].append({'Type': 'bind', 'Source': '/host/unexpected', 'Destination': '/unexpected', 'RW': True})
     assert not containers._runtime_matches(info, workspace, [])
 
 
