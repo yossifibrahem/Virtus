@@ -6,13 +6,14 @@ Flask.  `make_streaming_response` wraps it into a Flask Response.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from io import StringIO
-import queue
+from contextlib import closing
+from functools import partial
 import threading
 from typing import Any, Generator
 
+from anyio.from_thread import start_blocking_portal
 from flask import Response, stream_with_context
 from openai import AsyncOpenAI, OpenAI
 
@@ -45,82 +46,40 @@ def _async_client(client):
 
 
 def _cancellable_chunks(client, request_kwargs, cancel_event):
-    """Bridge Flask's synchronous consumer to an owned, cancellable HTTP task.
-
-    Only the event-loop thread reads and closes the provider connection. Cancelling
-    its task interrupts a pending connect/read rather than closing a sync socket
-    from another thread. The bridge joins its worker before returning.
-    """
+    """Cancel the pending HTTP operation; the portal owns its loop and cleanup."""
     if cancel_event.is_set():
         return
-    chunks = queue.Queue(maxsize=16)
-    stopped = threading.Event()
-    finished = threading.Event()
-    errors = []
-
-    async def produce(provider):
-        stream = await provider.chat.completions.create(**request_kwargs)
-        if not request_kwargs.get('stream'):
-            chunks.put_nowait(stream)
-            return
-        async with stream:
-            async for chunk in stream:
-                while chunks.full():
-                    await asyncio.sleep(.01)
-                chunks.put_nowait(chunk)
-
-    async def interrupt(task):
-        while not cancel_event.is_set() and not stopped.is_set():
-            await asyncio.sleep(.05)
-        task.cancel()
-
-    async def run():
-        async with _async_client(client) as provider:
-            task = asyncio.create_task(produce(provider))
-            watcher = asyncio.create_task(interrupt(task))
+    with start_blocking_portal() as portal:
+        def receive(func, *args):
+            future = portal.start_task_soon(func, *args)
             try:
-                await task
-            except asyncio.CancelledError:
-                if not cancel_event.is_set() and not stopped.is_set():
-                    raise
+                while not cancel_event.is_set():
+                    try:
+                        return future.result(timeout=.05)
+                    except TimeoutError:
+                        if future.done():
+                            return future.result()  # Preserve provider timeout errors.
+                return None
             finally:
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
+                future.cancel()
 
-    def worker():
-        try:
-            asyncio.run(run())
-        except Exception as exc:
-            errors.append(exc)
-        finally:
-            finished.set()
-
-    reader = threading.Thread(target=worker, daemon=True)
-    reader.start()
-    try:
-        while True:
-            try:
-                chunk = chunks.get(timeout=.05)
-            except queue.Empty:
-                if finished.is_set():
-                    if errors and not cancel_event.is_set():
-                        raise errors[0]
-                    break
-                continue
-            if not cancel_event.is_set():
-                yield chunk
-    finally:
-        stopped.set()
-        reader.join()
+        with portal.wrap_async_context_manager(_async_client(client)) as provider:
+            response = receive(partial(provider.chat.completions.create, **request_kwargs))
+            if response is None:
+                return
+            if not request_kwargs.get('stream'):
+                yield response
+                return
+            with portal.wrap_async_context_manager(response):
+                chunks = aiter(response)
+                while (chunk := receive(anext, chunks, None)) is not None:
+                    yield chunk
 
 
 def complete_chat(client, request_kwargs, cancel_event):
-    """Run a non-streaming request (such as a title) with the same cancellation."""
-    response = _cancellable_chunks(client, request_kwargs, cancel_event)
-    try:
+    """Use the same cancellation for non-streaming requests, including titles."""
+    with closing(_cancellable_chunks(client, request_kwargs, cancel_event)) as response:
         return next(response, None)
-    finally:
-        response.close()
 
 
 def stream_chat_completion(

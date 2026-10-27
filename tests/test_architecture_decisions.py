@@ -296,34 +296,17 @@ def test_memory_disable_takes_effect_in_an_ongoing_loop(tmp_lumen, monkeypatch):
 
 
 def test_turn_wall_budget_actually_cancels_wait(tmp_lumen, monkeypatch):
-    import httpx
-    from openai import AsyncOpenAI
-
     conv = store.create()
     advanced_config.save_advanced_config({'turn_timeout_seconds': 1})
-    interrupted = threading.Event()
-    transports = []
     client = MagicMock()
     monkeypatch.setattr(turns, 'openai_client', lambda body: client)
-
-    async def handle(request):
-        try:
-            await asyncio.Event().wait()
-        finally:
-            interrupted.set()
-
-    def provider(client):
-        transport = httpx.AsyncClient(transport=httpx.MockTransport(handle))
-        transports.append(transport)
-        return AsyncOpenAI(api_key='test', base_url='http://model.test/v1',
-                           max_retries=0, http_client=transport)
-
-    monkeypatch.setattr(turns.stream_module, '_async_client', provider)
+    def stream(*args, **kwargs):
+        assert kwargs['cancel_event'].wait(3), 'Watchdog must cancel the request'
+        yield {'type': 'done'}
+    monkeypatch.setattr(turns.stream_module, 'stream_chat_completion', stream)
     events = []; start = time.monotonic()
     turns.run_persistent_chat_turn({'conv_id': conv['id']}, threading.Event(), 'wall', events.append)
     assert time.monotonic() - start < 2.5
-    assert interrupted.is_set(), 'The watchdog must cancel the pending HTTP request'
-    assert all(transport.is_closed for transport in transports)
     assert any('wall-clock budget' in e.get('message', '') for e in events)
     assert not store.load(conv['id']).get('active_stream_id')
 

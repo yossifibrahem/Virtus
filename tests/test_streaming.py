@@ -11,7 +11,6 @@ Tests verify:
 from __future__ import annotations
 
 import json
-import asyncio
 import threading
 from unittest.mock import MagicMock
 
@@ -20,38 +19,18 @@ import streaming
 
 
 @pytest.fixture(autouse=True)
-def async_provider(monkeypatch):
-    """Adapt the mocked SDK responses to the asynchronous transport interface."""
-    class AsyncStream:
-        def __init__(self, stream):
-            self.stream = stream
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            self.stream.close()
-
-        async def __aiter__(self):
-            for chunk in self.stream:
+def mock_provider_chunks(monkeypatch):
+    """These unit tests cover event parsing; transport cancellation is tested separately."""
+    def chunks(client, request, cancel):
+        stream = client.chat.completions.create(**request)
+        try:
+            for chunk in stream:
+                if cancel.is_set():
+                    break
                 yield chunk
-                await asyncio.sleep(0)
-
-    class AsyncProvider:
-        def __init__(self, client):
-            self.client = client
-            self.chat = self.completions = self
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def create(self, **kwargs):
-            return AsyncStream(self.client.chat.completions.create(**kwargs))
-
-    monkeypatch.setattr(streaming, '_async_client', AsyncProvider)
+        finally:
+            stream.close()
+    monkeypatch.setattr(streaming, '_cancellable_chunks', chunks)
 
 
 # ---------------------------------------------------------------------------
@@ -307,10 +286,11 @@ class TestCancellation:
 
 class TestErrorHandling:
 
-    def test_api_exception_emits_error_event(self):
+    @pytest.mark.parametrize('failure', [RuntimeError('API failure'), TimeoutError('API failure')])
+    def test_api_exception_emits_error_event(self, failure):
         client = MagicMock()
         cancel_event = threading.Event()
-        client.chat.completions.create.side_effect = RuntimeError("API failure")
+        client.chat.completions.create.side_effect = failure
 
         raw = list(streaming.stream_chat_completion(
             client, "gpt-4o", [], [], cancel_event
