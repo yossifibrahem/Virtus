@@ -31,7 +31,8 @@ ADVANCED_CONFIG_FILE = Path(
 _CACHE_TTL = float(os.getenv("LUMEN_CONFIG_CACHE_TTL", "5"))
 _cache: dict | None = None
 _cache_at: float = 0.0
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
+_cache_path: Path | None = None
 
 # ── Allowed keys and their types ──────────────────────────────────────────────
 
@@ -106,46 +107,33 @@ def _cast(key: str, raw) -> int | str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def load_advanced_config() -> dict:
-    """Return the merged config with env-var values taking highest precedence.
+def _read_config() -> dict:
+    try:
+        loaded = json.loads(ADVANCED_CONFIG_FILE.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            return {key: value for key, value in loaded.items() if key in _ALLOWED_KEYS}
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        pass
+    return {}
 
-    Results are cached for _CACHE_TTL seconds to avoid repeated disk reads
-    during active chat turns.  save_advanced_config() invalidates the cache.
-    """
-    global _cache, _cache_at
+
+def load_advanced_config() -> dict:
+    """Return an independent cached snapshot with environment overrides."""
+    global _cache, _cache_at, _cache_path
     now = time.monotonic()
     with _cache_lock:
-        if _cache is not None and now - _cache_at < _CACHE_TTL:
-            return _cache
-
-    # Start from hardcoded defaults.
-    data: dict = dict(_HARDCODED_DEFAULTS)
-
-    # Layer in file-based config.
-    if ADVANCED_CONFIG_FILE.exists():
-        try:
-            loaded = json.loads(ADVANCED_CONFIG_FILE.read_text())
-            if isinstance(loaded, dict):
-                for k, v in loaded.items():
-                    if k in _ALLOWED_KEYS:
-                        try:
-                            data[k] = _cast(k, v)
-                        except (ValueError, TypeError):
-                            pass
-        except (OSError, json.JSONDecodeError):
-            pass
-
-    # Env vars always win.
-    for key, raw in _ENV_LOCKED.items():
-        try:
-            data[key] = _cast(key, raw)
-        except (ValueError, TypeError):
-            pass
-
-    with _cache_lock:
-        _cache = data
-        _cache_at = time.monotonic()
-    return data
+        if _cache is None or now - _cache_at >= _CACHE_TTL or _cache_path != ADVANCED_CONFIG_FILE:
+            data = dict(_HARDCODED_DEFAULTS)
+            for layer in (_read_config(), _ENV_LOCKED):
+                for key, raw in layer.items():
+                    try:
+                        data[key] = _cast(key, raw)
+                    except (ValueError, TypeError, OverflowError):
+                        pass
+            _cache = data
+            _cache_at = time.monotonic()
+            _cache_path = ADVANCED_CONFIG_FILE
+        return dict(_cache)
 
 
 def public_advanced_config() -> dict:
@@ -171,28 +159,17 @@ def save_advanced_config(update: dict) -> dict:
     if not isinstance(update, dict):
         raise ValueError("Config update must be a JSON object")
 
-    # Load what is already on disk (never merge with cache — we want the file).
-    current: dict = {}
-    if ADVANCED_CONFIG_FILE.exists():
-        try:
-            loaded = json.loads(ADVANCED_CONFIG_FILE.read_text())
-            if isinstance(loaded, dict):
-                current = {k: v for k, v in loaded.items() if k in _ALLOWED_KEYS}
-        except (OSError, json.JSONDecodeError):
-            current = {}
+    with _cache_lock:
+        current = _read_config()
+        for key in _ALLOWED_KEYS.intersection(update).difference(_ENV_LOCKED):
+            try:
+                current[key] = _cast(key, update[key])
+            except (ValueError, TypeError, OverflowError):
+                raise ValueError(f"Invalid value for '{key}': {update[key]!r}") from None
 
-    for key in _ALLOWED_KEYS:
-        if key not in update:
-            continue
-        if key in _ENV_LOCKED:
-            continue  # env var wins; ignore UI value
-        try:
-            current[key] = _cast(key, update[key])
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid value for '{key}': {update[key]!r}")
-
-    tmp = ADVANCED_CONFIG_FILE.with_suffix(f".tmp-{uuid.uuid4().hex}")
-    tmp.write_text(json.dumps(current, indent=2))
-    atomic_replace(tmp, ADVANCED_CONFIG_FILE)
-    _invalidate_cache()
-    return public_advanced_config()
+        ADVANCED_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ADVANCED_CONFIG_FILE.with_suffix(f".tmp-{uuid.uuid4().hex}")
+        tmp.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        atomic_replace(tmp, ADVANCED_CONFIG_FILE)
+        _invalidate_cache()
+        return public_advanced_config()

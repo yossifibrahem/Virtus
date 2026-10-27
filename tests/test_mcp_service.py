@@ -729,3 +729,45 @@ def test_failed_initialization_closes_partial_session(monkeypatch):
             pool.invoke_tool('server', {}, 'tool', {})
         assert not pool._sessions
     assert stdio[0].exited == sessions[0].exited == 1
+
+
+def test_changed_server_configuration_reopens_persistent_session(monkeypatch):
+    stdio, sessions = TestMcpSessionPool()._install_fake_mcp(monkeypatch)
+    config = {"command": "python", "args": ["first.py"]}
+    with mcp_service.McpSessionPool("conversation") as pool:
+        assert pool.invoke_tool("srv", config, "tool", {"n": 1}) == "tool:1"
+        config["args"][0] = "second.py"
+        assert pool.invoke_tool("srv", config, "tool", {"n": 2}) == "tool:2"
+        assert len(sessions) == 2
+        assert sessions[0].exited == stdio[0].exited == 1
+    assert sessions[1].exited == stdio[1].exited == 1
+
+
+def test_invocation_racing_pool_close_is_rejected_before_enqueue(monkeypatch):
+    TestMcpSessionPool()._install_fake_mcp(monkeypatch)
+    pool = mcp_service.McpSessionPool("conversation")
+    pool.start()
+    monkeypatch.setattr(pool, "start", pool.close)
+    with pytest.raises(RuntimeError, match="MCP session pool is closed"):
+        pool.invoke_tool("srv", {}, "tool", {})
+
+
+def test_cancelled_queued_invocations_never_execute(monkeypatch):
+    from concurrent.futures import Future
+    calls = []
+    pool = mcp_service.McpSessionPool("conversation")
+
+    async def invoke(*args):
+        calls.append(args)
+    monkeypatch.setattr(pool, "_invoke", invoke)
+
+    async def exercise_worker():
+        worker = asyncio.create_task(pool._worker())
+        await asyncio.sleep(0)
+        abandoned = Future()
+        abandoned.cancel()
+        await pool._aqueue.put(("invoke", "srv", {}, "tool", {}, abandoned))
+        await pool._aqueue.put(("close", Future()))
+        await worker
+    asyncio.run(exercise_worker())
+    assert calls == []

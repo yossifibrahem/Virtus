@@ -13,22 +13,28 @@ def directory(conv_id):
 
 def save(conv_id, images):
     refs = []
+    root = None
     for image in images:
         raw = base64.b64decode(image['data'], validate=True)
         if len(raw) > 1024 * 1024:
             raise ValueError('Image too large')
         ref = hashlib.sha256(raw).hexdigest() + '.jpeg'
-        root = directory(conv_id)
-        root.mkdir(parents=True, exist_ok=True)
+        if root is None:
+            root = directory(conv_id)
+            root.mkdir(parents=True, exist_ok=True)
         (root / ref).write_bytes(raw)
         refs.append(ref)
     return refs
 
 
 def path(conv_id, ref):
+    return _media_path(directory(conv_id), ref)
+
+
+def _media_path(root, ref):
     if not isinstance(ref, str) or not re.fullmatch(r'[a-f0-9]{64}\.jpeg', ref):
         raise ValueError('Invalid media reference')
-    target = directory(conv_id) / ref
+    target = root / ref
     if not target.is_file():
         raise ValueError('Tool image no longer available')
     return target
@@ -37,6 +43,7 @@ def path(conv_id, ref):
 def expand(messages, conv_id):
     """Emit visual context only after ALL tool responses in a batch."""
     output, pending = [], []
+    root = None
     def flush():
         if pending:
             output.append({'role': 'user', 'content': [
@@ -51,7 +58,10 @@ def expand(messages, conv_id):
         output.append(clean)
         for ref in message.get('_tool_media', [])[:5]:
             try:
-                raw = path(conv_id, ref).read_bytes()
+                if root is None:
+                    root = directory(conv_id)
+                with _media_path(root, ref).open('rb') as source:
+                    raw = source.read(1024 * 1024 + 1)
                 if len(raw) <= 1024 * 1024:
                     pending.append({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + base64.b64encode(raw).decode()}})
             except (ValueError, OSError):

@@ -46,9 +46,11 @@ def _inject_memory(api_messages: list) -> list:
 
     messages = list(api_messages)
     if messages and messages[0].get("role") == "system":
+        content = messages[0].get("content") or ""
         messages[0] = {
             **messages[0],
-            "content": messages[0]["content"] + "\n\n" + block,
+            "content": [*content, {"type": "text", "text": block}]
+                if isinstance(content, list) else content + "\n\n" + block,
         }
     else:
         messages.insert(0, {"role": "system", "content": block})

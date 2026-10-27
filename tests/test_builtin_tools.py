@@ -281,3 +281,19 @@ def test_runtime_locks_are_reclaimed():
         assert 'temporary-lock' in sandbox_runtime._LOCKS
     gc.collect()
     assert 'temporary-lock' not in sandbox_runtime._LOCKS
+
+
+def test_tool_media_batches_read_conversation_once(tmp_lumen, monkeypatch):
+    import base64
+    from unittest.mock import patch
+
+    conversation = store.create('Images')
+    images = [{'data': base64.b64encode(b'image-' + bytes([i])).decode()} for i in range(3)]
+    with patch.object(store, 'load', wraps=store.load) as load:
+        refs = tool_media.save(conversation['id'], images)
+        assert load.call_count == 1
+    messages = [{'role': 'tool', 'content': 'images', '_tool_media': refs}]
+    with patch.object(store, 'load', wraps=store.load) as load:
+        expanded = tool_media.expand(messages, conversation['id'])
+        assert load.call_count == 1
+    assert len(expanded[-1]['content']) == 4

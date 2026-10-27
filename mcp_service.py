@@ -72,7 +72,7 @@ def _tool_input_schema(tool: Any) -> dict:
 def _write_config_file(config: dict) -> None:
     MCP_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = MCP_CONFIG_FILE.with_suffix(f".tmp-{uuid.uuid4().hex}")
-    tmp_path.write_text(json.dumps(config, indent=2))
+    tmp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     atomic_replace(tmp_path, MCP_CONFIG_FILE)
 
 
@@ -89,21 +89,18 @@ def load_config(*, refresh: bool = False) -> dict:
         ):
             return copy.deepcopy(_config_cache)
 
-    if not MCP_CONFIG_FILE.exists():
-        config = {"mcpServers": {}}
-    else:
-        try:
-            config = json.loads(MCP_CONFIG_FILE.read_text())
-        except (OSError, json.JSONDecodeError) as exc:
-            log.warning("[mcp] could not read %s: %s", MCP_CONFIG_FILE, exc)
+        if not MCP_CONFIG_FILE.exists():
             config = {"mcpServers": {}}
-
-    if not isinstance(config, dict) or not isinstance(config.get("mcpServers", {}), dict):
-        config = {"mcpServers": {}}
-    else:
-        config.setdefault("mcpServers", {})
-
-    with _config_cache_lock:
+        else:
+            try:
+                config = json.loads(MCP_CONFIG_FILE.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+                log.warning("[mcp] could not read %s: %s", MCP_CONFIG_FILE, exc)
+                config = {"mcpServers": {}}
+        if not isinstance(config, dict) or not isinstance(config.get("mcpServers", {}), dict):
+            config = {"mcpServers": {}}
+        else:
+            config.setdefault("mcpServers", {})
         _config_cache = config
         _config_cache_at = time.monotonic()
         _config_cache_path = MCP_CONFIG_FILE

@@ -1,5 +1,4 @@
 """Host transport for file-panel operations; never follows sandbox host paths."""
-import base64
 import io
 import json
 import re
@@ -26,7 +25,7 @@ def safe_upload_name(name):
     return re.sub(r'[^A-Za-z0-9._ -]+', '_', filename).strip(' ._') or 'file'
 
 
-def operation(runtime_id, action, path='', **kwargs):
+def operation(runtime_id, action, path='', *, data=None, **kwargs):
     try:
         limits = file_limits()
         # JSON can escape each source byte as six ASCII bytes.
@@ -38,10 +37,15 @@ def operation(runtime_id, action, path='', **kwargs):
         if action == 'preview':
             # Up to five bounded JPEGs from the View worker, plus extracted text.
             response_limit = max(response_limit, 16 * 1024 * 1024)
+        payload = json.dumps({'action': action, 'path': path, 'limits': limits, **kwargs}).encode()
+        if action == 'upload':
+            if not isinstance(data, bytes) or len(data) > limits['max_upload_bytes']:
+                raise ValueError('Invalid or oversized upload')
+            payload = (payload + b'\n', data)
         with sandbox_runtime.runtime_operation(runtime_id):
             code, raw, error = sandbox_runtime.docker_operation(runtime_id,
                 ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
-                json.dumps({'action': action, 'path': path, 'limits': limits, **kwargs}).encode(),
+                payload,
                 timeout=60, limit=response_limit)
         if code:
             raise ValueError('Container file operation failed')
@@ -90,10 +94,8 @@ def uploads(conv_id, files):
         data = item.stream.read(limit + 1)
         if len(data) > limit:
             return {'error': 'Upload exceeds size limit'}, 413
-        encoded = base64.b64encode(data).decode()
+        result, status = operation(runtime_id, 'upload', name=safe_upload_name(item.filename), data=data)
         del data
-        result, status = operation(runtime_id, 'upload', name=safe_upload_name(item.filename), data=encoded)
-        del encoded
         if status != 200:
             return result, status
         saved.append(result)

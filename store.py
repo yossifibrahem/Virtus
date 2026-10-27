@@ -44,17 +44,20 @@ def _read_json(path: Path):
         return json.loads(path.read_text())
 
 
+def _summary(conv_id: str, data: dict) -> dict:
+    return {
+        "id": conv_id,
+        "title": data.get("title", "Untitled"),
+        "folder_id": data.get("folder_id"),
+        "active_stream_id": data.get("active_stream_id"),
+        "updated_at": data.get("updated_at") or data.get("created_at"),
+        "working_directory": str(conversation_working_directory(runtime_id(conv_id, data))),
+    }
+
+
 def _conversation_summary(path: Path) -> dict | None:
     try:
-        data = _read_json(path)
-        return {
-            "id":                path.stem,
-            "title":             data.get("title", "Untitled"),
-            "folder_id":         data.get("folder_id"),
-            "active_stream_id":  data.get("active_stream_id"),
-            "updated_at":        data.get("updated_at") or data.get("created_at"),
-            "working_directory": str(conversation_working_directory(runtime_id(path.stem, data))),
-        }
+        return _summary(path.stem, _read_json(path))
     except Exception:
         return None
 
@@ -80,16 +83,11 @@ def _update_index_for(conv_id: str, data: dict) -> None:
     with _index_lock:
         if _index is None:
             return
-        summary = {
-            "id": conv_id,
-            "title": data.get("title", "Untitled"),
-            "folder_id": data.get("folder_id"),
-            "active_stream_id": data.get("active_stream_id"),
-            "updated_at": data.get("updated_at") or data.get("created_at"),
-            "working_directory": str(conversation_working_directory(runtime_id(conv_id, data))),
-        }
-        _index = [item for item in _index if item.get("id") != conv_id]
-        _index.insert(0, summary)
+        for index, item in enumerate(_index):
+            if item.get("id") == conv_id:
+                del _index[index]
+                break
+        _index.insert(0, _summary(conv_id, data))
 
 
 def _remove_index_entry(conv_id: str) -> None:
@@ -231,15 +229,10 @@ def list_all() -> list[dict]:
     """Return cached conversation summaries sorted by most-recently modified."""
     global _index
     with _index_lock:
-        if _index is not None:
-            return list(_index)
-
-    summaries = _build_index_summaries()
-
-    with _index_lock:
+        # A save must not publish its update between the scan and cache assignment.
         if _index is None:
-            _index = summaries
-        return list(_index or [])
+            _index = _build_index_summaries()
+        return [dict(item) for item in _index]
 
 
 def load(conv_id: str) -> dict | None:
@@ -264,12 +257,13 @@ def save(conv_id: str, data: dict) -> dict:
 
 
 def delete(conv_id: str) -> bool:
-    path = _path(conv_id)
-    if path.exists():
+    with _index_lock:
+        path = _path(conv_id)
+        if not path.exists():
+            return False
         path.unlink()
         _remove_index_entry(conv_id)
         return True
-    return False
 
 
 def create(title: str = "New Conversation", folder_id: str | None = None) -> dict:

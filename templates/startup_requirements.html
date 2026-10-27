@@ -204,7 +204,8 @@ function processBuildEvent(block) {
 
   const payload = JSON.parse(dataLines.join('\n'));
   if (eventType === 'log') {
-    details.textContent += (payload.line || '') + '\n';
+    details.appendChild(document.createTextNode(String(payload.line || '').slice(-8192) + '\n'));
+    while (details.childNodes.length > 50) details.firstChild.remove();
     details.scrollTop = details.scrollHeight;
     return false;
   }

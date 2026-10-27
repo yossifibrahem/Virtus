@@ -51,6 +51,11 @@ function refreshImagePreviewBar() {
 
       wrap.setAttribute('aria-busy', 'true');
       entry.uploadPromise.then(result => {
+        // Release the base64 preview once the server URL is available.
+        if (result?.url) {
+          entry.previewUrl = result.url;
+          wrap.querySelector('img').src = result.url;
+        }
         wrap.classList.remove('is-uploading');
         wrap.classList.toggle('is-error', !result);
         wrap.setAttribute('aria-busy', 'false');

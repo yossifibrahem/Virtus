@@ -122,6 +122,7 @@ function startInlineEdit(row, logIndex, currentText, currentContent = null, bran
   cancelBtn.addEventListener('click', cancelEdit);
 
   textarea.addEventListener('keydown', e => {
+    if (e.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveBtn.click(); }
     if (e.key === 'Escape') cancelEdit();
   });

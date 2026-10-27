@@ -56,6 +56,7 @@ const deps = {
     turn.displayLog = [...turn.displayLog, {type: 'message', role: 'assistant', content: 'Completed answer'}];
     await persist(turn);
     sync(turn);
+    if (visible(turn)) state.isStreaming=false;
   },
 };
 const modules = {
@@ -103,6 +104,47 @@ if (destination !== 'same') {
   assert.deepEqual(state.displayLog, reloaded.displayLog);
   assert.equal(branchSyncs, 2);
 }
+
+// Composer ownership starts synchronously, before attachment reads and creating
+// a new conversation. Fast duplicate sends cannot create a second chat.
+state.isStreaming=false;state.convId=null;state.messages=[];state.displayLog=[];
+let finishCreation;let creations=0;
+deps.createNewConversation=()=>{
+ creations++;return new Promise(resolve=>finishCreation=()=>{state.convId='created';resolve({id:'created'});});
+};
+const firstSend=module.namespace.sendMessage('Only once',deps);
+assert(state.isStreaming);
+await module.namespace.sendMessage('Duplicate',deps);
+assert.equal(creations,1);
+finishCreation();await firstSend;
+assert.deepEqual(saved.get('created').messages.map(message=>message.content),['Only once','Completed answer']);
+assert.equal(state.isStreaming,false);
+
+// The assistant releases its composer before the final branch save. A newer
+// turn that starts while that save is pending must retain its busy state.
+state.convId='late-save';state.isStreaming=false;state.messages=[];state.displayLog=[];
+let savedFinal,releaseFinal;let writes=0;
+const finalSaveStarted=new Promise(resolve=>savedFinal=resolve);
+deps.persistTurnConversation=async turn=>{
+ await persist(turn);
+ if(++writes===2){savedFinal();await new Promise(resolve=>releaseFinal=resolve);}
+};
+const saving=module.namespace.sendMessage('Late save',deps);
+await finalSaveStarted;
+assert.equal(state.isStreaming,false);
+state.isStreaming=true;
+releaseFinal();await saving;
+assert.equal(state.isStreaming,true,'An older final save must not release a newer turn composer');
+
+// A failed save releases the composer even though the assistant never starts.
+state.convId='created';state.isStreaming=false;
+deps.persistTurnConversation=async()=>{throw new Error('Storage unavailable');};
+await assert.rejects(module.namespace.sendMessage('Still editable',deps),/Storage unavailable/);
+assert.equal(state.isStreaming,false);
+state.convId=null;
+deps.createNewConversation=async()=>{throw new Error('Creation failed');};
+await assert.rejects(module.namespace.sendMessage('Retry creation',deps),/Creation failed/);
+assert.equal(state.isStreaming,false);
 '''
     result = subprocess.run(
         [node, "--experimental-vm-modules", "--input-type=module", "-e", script, destination],

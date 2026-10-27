@@ -331,3 +331,17 @@ class TestErrorHandling:
         names = {e["name"] for e in starts}
         assert "bash" in names
         assert "write_file" in names
+
+
+def test_fragmented_tool_arguments_are_preserved_for_parallel_calls():
+    chunks = [
+        _make_chunk(tool_calls=[_tool_call_chunk(0, "one", "write", '{"content":"')]),
+        _make_chunk(tool_calls=[_tool_call_chunk(1, "two", "view", '{"path":"')]),
+        *[_make_chunk(tool_calls=[_tool_call_chunk(0, "", "", "مرحبا")]) for _ in range(100)],
+        _make_chunk(tool_calls=[_tool_call_chunk(1, "", "", '/workspace"}')]),
+        _make_chunk(tool_calls=[_tool_call_chunk(0, "", "", '"}')]),
+        _make_chunk(finish_reason="tool_calls"),
+    ]
+    calls = next(event["calls"] for event in _run_stream(chunks) if event["type"] == "tool_calls")
+    assert json.loads(calls[0]["function"]["arguments"]) == {"content": "مرحبا" * 100}
+    assert json.loads(calls[1]["function"]["arguments"]) == {"path": "/workspace"}

@@ -65,6 +65,7 @@ function createStreamContext(turn, streamId = '') {
     reasoningFinalized: false,
     reasoningBodyEl:    null,
     contentEl:          null,
+    renderFrame:        null,
     turn,
     toolStartNames:     [],
     toolStrips:         [],
@@ -77,11 +78,36 @@ function createStreamContext(turn, streamId = '') {
     cancelled:          false,
     isVisible:          () => isTurnVisible(turn),
     getContentEl:       () => {
-      if (!ctx.contentEl && isTurnVisible(turn)) ctx.contentEl = createStreamingMessage();
+      if (!isTurnVisible(turn)) return null;
+      if (!ctx.contentEl) ctx.contentEl = createStreamingMessage();
       return ctx.contentEl;
     },
   };
   return ctx;
+}
+
+function cancelPendingRender(ctx) {
+  if (ctx?.renderFrame == null) return;
+  cancelAnimationFrame(ctx.renderFrame);
+  ctx.renderFrame = null;
+}
+
+function releaseTurnUI(ctx) {
+  cancelPendingRender(ctx);
+  ctx.disposeApproval?.();
+  ctx.contentEl = ctx.reasoningBodyEl = null;
+  ctx.toolStrips.fill(null);
+}
+
+function scheduleStreamingMarkdown(ctx) {
+  if (ctx.renderFrame !== null) return;
+  ctx.renderFrame = requestAnimationFrame(() => {
+    ctx.renderFrame = null;
+    if (ctx.isVisible() && ctx.contentEl) {
+      applyMarkdown(ctx.contentEl, ctx.accText);
+      scrollToBottom();
+    }
+  });
 }
 
 function activeTurnBaseLog(displayLog = []) {
@@ -97,7 +123,7 @@ function reattachRuntime(runtime) {
   if (!runtime || !isTurnVisible(runtime.turn)) return false;
 
   const { turn, ctx } = runtime;
-  ctx.disposeApproval?.();
+  releaseTurnUI(ctx);
   syncVisibleTurn(turn);
   renderAllMessages(turn.displayLog);
 
@@ -212,6 +238,9 @@ async function attachServerStream(convId, streamId, data = {}) {
 
 document.addEventListener('chat:conversation-opened', async event => {
   const { convId, data } = event.detail || {};
+  for (const { turn, ctx } of activeTurns.values()) {
+    if (!isTurnVisible(turn)) releaseTurnUI(ctx);
+  }
   if (data?.active_stream_id) {
     const attached = await attachServerStream(convId, data.active_stream_id, data);
     if (!attached && state.convId === convId) {
@@ -271,6 +300,7 @@ async function persistTurnConversation(turn) {
 function finishAssistantTurn(turn = null, ctx = null) {
   const isCurrent = !turn?.convId || !ctx || isCurrentStreamContext(turn, ctx);
 
+  cancelPendingRender(ctx);
   ctx?.disposeApproval?.();
   if (turn?.convId && isCurrent) {
     activeTurns.delete(turn.convId);
@@ -321,6 +351,7 @@ function syncFinalAssistantFooter(turn, ctx) {
 
 function finalizeAssistantAnswer(ctx, messages = null, displayLog = null) {
   if (!ctx?.turn) return;
+  cancelPendingRender(ctx);
 
   if (Array.isArray(messages)) ctx.turn.messages = messages;
   if (Array.isArray(displayLog)) ctx.turn.displayLog = displayLog;
@@ -349,7 +380,7 @@ function finalizeAssistantAnswer(ctx, messages = null, displayLog = null) {
 }
 
 async function runAssistantTurnAndPersist(turn) {
-  setStreaming(true);
+  if (isTurnVisible(turn)) setStreaming(true);
   let ctx = null;
 
   try {
@@ -397,6 +428,7 @@ export async function sendMessage(userText) {
 // ── SSE helpers ───────────────────────────────────────────────────────────────
 
 function stripForToolEvent(ctx, evt) {
+  if (!ctx.isVisible()) return null;
   // Tools execute serially; approvals and running events belong to the next result.
   const stripIndex = ctx.toolResultIndex;
   let strip = ctx.toolStrips[stripIndex];
@@ -425,7 +457,7 @@ async function processSSEEvent(evt, ctx) {
   if (evt.type === 'reasoning') {
     ctx.accReasoning += evt.content;
     if (!ctx.reasoningBodyEl && ctx.isVisible()) ctx.reasoningBodyEl = createThinkingBlock();
-    if (ctx.reasoningBodyEl) updateThinkingBlock(ctx.reasoningBodyEl, ctx.accReasoning);
+    if (ctx.reasoningBodyEl && ctx.isVisible()) updateThinkingBlock(ctx.reasoningBodyEl, ctx.accReasoning);
 
   } else if (evt.type === 'text') {
     if (ctx.reasoningBodyEl) {
@@ -435,10 +467,7 @@ async function processSSEEvent(evt, ctx) {
     ctx.reasoningFinalized = true;
     ctx.accText += evt.content;
     const el = ctx.getContentEl();
-    if (el) {
-      applyMarkdown(el, ctx.accText);
-      scrollToBottom();
-    }
+    if (el) scheduleStreamingMarkdown(ctx);
 
   } else if (evt.type === 'tool_start') {
     // Keep indices aligned even when the user is viewing another chat.
@@ -457,6 +486,7 @@ async function processSSEEvent(evt, ctx) {
     if (strip) toolStripSetRunning(strip, evt.args || {});
 
   } else if (evt.type === 'tool_result') {
+    cancelPendingRender(ctx);
     ctx.disposeApproval?.();
     ctx.pendingApproval = null;
     if (ctx.reasoningBodyEl) {
@@ -491,6 +521,7 @@ async function processSSEEvent(evt, ctx) {
     if (ctx.turn) applyTurnTitle(ctx.turn, evt.title || ctx.turn.title);
 
   } else if (evt.type === 'error') {
+    cancelPendingRender(ctx);
     const el = ctx.getContentEl();
     if (el) el.innerHTML = `<span class="inline-error">Error: ${escapeHtml(evt.message)}</span>`;
     ctx.failed = true; // Keep reading the authoritative partial history.
@@ -509,7 +540,7 @@ async function runChatLoop(turn) {
 
   activeTurns.set(turn.convId, { turn, ctx, streamId });
   updateConversationActivity(turn.convId);
-  state.streamId = streamId;
+  if (isTurnVisible(turn)) state.streamId = streamId;
 
   // A newly-started turn already has the user's message appended in-place.
   // Reattaching here would fully re-render the chat and cause the first flash

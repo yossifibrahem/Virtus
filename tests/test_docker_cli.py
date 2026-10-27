@@ -70,3 +70,10 @@ def test_windows_starts_docker_through_desktop_cli(monkeypatch):
 def test_resolve_returns_none_when_candidates_are_missing(monkeypatch):
     monkeypatch.setattr(docker_cli, "candidate_paths", lambda: ["/definitely/missing/docker"])
     assert docker_cli.resolve() is None
+
+
+def test_cli_output_handles_unicode_paths_and_non_utf8_diagnostics(monkeypatch):
+    monkeypatch.setattr(docker_cli, 'executable', lambda: sys.executable)
+    script = "import sys; sys.stdout.buffer.write('مشروع'.encode()); sys.stderr.buffer.write(b'bad\\xff')"
+    result = docker_cli.run(['-c', script])
+    assert result.returncode == 0 and result.stdout == 'مشروع' and result.stderr == 'bad\ufffd'

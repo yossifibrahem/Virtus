@@ -88,7 +88,8 @@ def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, lim
             pipe.close()
     def feed():
         try:
-            proc.stdin.write(payload)
+            for chunk in payload if isinstance(payload, tuple) else (payload,):
+                proc.stdin.write(chunk)
         except (BrokenPipeError, OSError):
             pass
         finally:

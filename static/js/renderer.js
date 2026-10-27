@@ -13,7 +13,7 @@ import { applyMarkdown } from './markdown.js';
 import { createElement } from './dom.js';
 import { initTabs } from './ui.js';
 import { ICONS } from './icons.js';
-import { escapeHtml } from './format.js';
+import { escapeHtml, formatConversationDate } from './format.js';
 import { workingTitleAttributes } from './conversation_activity.js';
 
 import { scrollToBottom as _scrollToBottom, messagesEl, createMessageRow, moveComposerToMain } from './renderer_core.js';
@@ -38,18 +38,6 @@ const SUGGESTION_CHIPS = [
   { icon: ICONS.chipBox,    label: 'Inspect',    prompt: 'Analyze this carefully:' },
   { icon: ICONS.chipHelp,   label: 'Ideas',      prompt: 'Brainstorm practical ideas for' },
 ];
-
-function formatFolderChatDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const today = new Date();
-  const sameYear = date.getFullYear() === today.getFullYear();
-  return new Intl.DateTimeFormat(undefined, sameYear
-    ? { month: 'short', day: 'numeric' }
-    : { year: 'numeric', month: 'short', day: 'numeric' }
-  ).format(date);
-}
 
 export function clearMessages({ folder = null, conversations = [] } = {}) {
   const messages = messagesEl();
@@ -83,7 +71,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
           <div class="folder-home-chat" data-conv-id="${escapeHtml(conv.id)}">
             <button class="folder-home-chat-open" type="button">
               <span class="folder-home-chat-title" ${workingTitleAttributes(conv.id)}>${escapeHtml(conv.title || 'Untitled')}</span>
-              <time>${escapeHtml(formatFolderChatDate(conv.updated_at))}</time>
+              <time>${escapeHtml(formatConversationDate(conv.updated_at))}</time>
             </button>
             <div class="conv-menu-wrap">
               <button class="conv-menu-btn" type="button" title="Conversation options" aria-label="Conversation options" aria-expanded="false">

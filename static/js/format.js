@@ -32,3 +32,18 @@ export function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+// Reuse Intl formatters when rendering Folder and search lists.
+const dateFormatters = new Map();
+export function formatConversationDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  if (!dateFormatters.has(sameYear)) {
+    dateFormatters.set(sameYear, new Intl.DateTimeFormat(undefined, {
+      ...(sameYear ? {} : { year: 'numeric' }), month: 'short', day: 'numeric',
+    }));
+  }
+  return dateFormatters.get(sameYear).format(date);
+}

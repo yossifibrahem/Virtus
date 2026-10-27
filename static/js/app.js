@@ -203,16 +203,17 @@ function bindInputEvents() {
 
   const updateSendButton = () => {
     if (!sendBtn) return;
-    sendBtn.disabled = userInput.value.trim() === '' && !hasPendingAttachments();
+    sendBtn.disabled = state.isStreaming || (userInput.value.trim() === '' && !hasPendingAttachments());
   };
 
   const submitInput = () => {
+    if (state.isStreaming) return;
     const text = userInput.value.trim();
     if (!text && !hasPendingAttachments()) return; // don't submit empty messages unless files/images are attached
     userInput.value = '';
     autoResize(userInput);
     updateCharCount();
-    sendMessage(text);
+    sendMessage(text).catch(error => showToast(error.message || 'Could not send message'));
     updateSendButton();
   };
 
@@ -220,7 +221,7 @@ function bindInputEvents() {
   userInput.addEventListener('input',   () => { autoResize(userInput); updateCharCount(); updateSendButton(); });
   document.addEventListener('chat:attachments-changed', updateSendButton);
   userInput.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' || e.isComposing) return;
     const wantsSend = state.enterToSend ? !e.shiftKey : e.shiftKey;
     if (wantsSend) { e.preventDefault(); submitInput(); }
   });

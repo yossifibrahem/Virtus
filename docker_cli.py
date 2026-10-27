@@ -99,6 +99,8 @@ def run(
         argv(args),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         cwd=cwd,
         **_windowless_process_kwargs(),
@@ -115,6 +117,8 @@ def popen(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=cwd,
         **_windowless_process_kwargs(),
     )
@@ -136,6 +140,8 @@ def start_docker_desktop() -> subprocess.CompletedProcess:
             ["/usr/bin/open", "-a", "Docker"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
         )
     if sys.platform == "win32":

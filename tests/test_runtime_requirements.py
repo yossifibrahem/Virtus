@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import io
 import subprocess
+from types import SimpleNamespace
+
+import pytest
 
 import runtime_requirements as requirements
 
@@ -360,3 +363,45 @@ def test_start_docker_desktop_reports_starting(monkeypatch):
 
     assert status.code == "docker_starting"
     assert status.action == "retry"
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_build_keeps_only_diagnostic_tail_and_reports_failed_verification(monkeypatch, returncode):
+    _configure(monkeypatch)
+    missing = requirements.RequirementStatus(False, "sandbox_image_missing", "Missing", "Install", "build", "test")
+    outdated = requirements.RequirementStatus(False, "sandbox_image_outdated", "Outdated", "Retry", "build", "test")
+    statuses = iter([missing, outdated])
+    monkeypatch.setattr(requirements, "check_requirements", lambda: next(statuses))
+    process = SimpleNamespace(
+        stdout=io.StringIO("".join(f"line {n}\n" for n in range(200))),
+        returncode=returncode, wait=lambda: returncode, poll=lambda: returncode,
+    )
+    monkeypatch.setattr(requirements.docker_cli, "popen", lambda *args, **kwargs: process)
+
+    events = list(requirements.build_sandbox_image_stream())
+
+    assert events[-1][0] == "error"
+    if returncode:
+        assert events[-1][1]["details"].splitlines() == [f"line {n}" for n in range(150, 200)]
+    else:
+        assert events[-1][1]["code"] == "sandbox_image_outdated"
+    assert process.stdout.closed
+
+
+def test_build_cleanup_failure_still_closes_output_and_releases_lock(monkeypatch):
+    _configure(monkeypatch)
+    missing = requirements.RequirementStatus(False, "sandbox_image_missing", "Missing", "Install", "build", "test")
+    monkeypatch.setattr(requirements, "check_requirements", lambda: missing)
+
+    def failed_terminate():
+        raise OSError("Docker exited during cleanup")
+
+    process = SimpleNamespace(stdout=io.StringIO("building\n"), poll=lambda: None, terminate=failed_terminate)
+    monkeypatch.setattr(requirements.docker_cli, "popen", lambda *args, **kwargs: process)
+    stream = requirements.build_sandbox_image_stream()
+    assert next(stream)[0] == "log"
+    with pytest.raises(OSError, match="during cleanup"):
+        stream.close()
+    assert process.stdout.closed
+    assert requirements._SANDBOX_BUILD_LOCK.acquire(blocking=False)
+    requirements._SANDBOX_BUILD_LOCK.release()

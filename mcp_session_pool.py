@@ -23,6 +23,7 @@ daemon=True, so process exit is never blocked.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import os
 import threading
@@ -63,10 +64,12 @@ class McpSessionPool:
         self.close()
 
     def start(self) -> None:
-        if self._thread:
-            return
-        self._thread = threading.Thread(target=self._thread_main, name="mcp-session-pool", daemon=True)
-        self._thread.start()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("MCP session pool is closed")
+            if not self._thread:
+                self._thread = threading.Thread(target=self._thread_main, name="mcp-session-pool", daemon=True)
+                self._thread.start()
         self._ready.wait()  # block until the event loop and queue are initialised
 
     def _thread_main(self) -> None:
@@ -88,6 +91,9 @@ class McpSessionPool:
             op = job[0]
             if op == "invoke":
                 _, server_name, server_config, tool_name, arguments, future = job
+                # A caller that timed out while queued must never execute later.
+                if not future.set_running_or_notify_cancel():
+                    continue
                 try:
                     result = await self._invoke(
                         server_name, server_config, tool_name, arguments
@@ -115,8 +121,11 @@ class McpSessionPool:
                 break
 
     async def _get_session(self, server_name: str, server_config: dict):
-        if server_name in self._sessions:
-            return self._sessions[server_name]["session"]
+        if entry := self._sessions.get(server_name):
+            if entry["config"] == server_config:
+                return entry["session"]
+            # Contexts are nested in opening order; unwind them in reverse order.
+            await self._close_async()
         return await self._open_session(server_name, server_config)
 
     async def _open_session(self, server_name: str, server_config: dict):
@@ -138,6 +147,7 @@ class McpSessionPool:
             await stdio_cm.__aexit__(None, None, None)
             raise
         self._sessions[server_name] = {
+            "config": copy.deepcopy(server_config),
             "session": session,
             "session_cm": session_cm,
             "stdio_cm": stdio_cm,
@@ -192,6 +202,8 @@ class McpSessionPool:
 
         future: Future = Future()
         with self._lock:
+            if self._closed:
+                raise RuntimeError("MCP session pool is closed")
             # call_soon_threadsafe is the correct way to enqueue work from a
             # sync thread onto a running asyncio event loop without blocking it.
             self._loop.call_soon_threadsafe(
@@ -216,21 +228,18 @@ class McpSessionPool:
             await self._close_one_session(server_name)
 
     def close(self, timeout: float | None = None) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        if not self._thread:
-            return
-        if self._loop is None or self._aqueue is None:
-            raise RuntimeError("MCP session pool failed to start")
-
         from concurrent.futures import Future
 
         future: Future = Future()
-        self._loop.call_soon_threadsafe(
-            self._aqueue.put_nowait,
-            ("close", future),
-        )
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            if not self._thread:
+                return
+        self._ready.wait()
+        with self._lock:
+            self._loop.call_soon_threadsafe(self._aqueue.put_nowait, ("close", future))
         wait_seconds = self.tool_timeout + 5 if timeout is None else max(0.01, timeout)
         deadline = time.monotonic() + wait_seconds
         try:

@@ -1,4 +1,4 @@
-# Lumen per-chat MCP sandbox image.
+# Lumen model computer for standalone chats and shared Folder/Project runtimes.
 #
 # First-run/developer build:
 #   docker build --build-arg LUMEN_SANDBOX_IDENTITY=<content-sha256> \

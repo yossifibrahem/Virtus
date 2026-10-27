@@ -14,6 +14,8 @@ and `/workspace`, with separate histories and Folder instructions. The Folder ow
 its files even when it has no chats. Deleting or moving its last chat must preserve
 that workspace. Deleting the Folder explicitly deletes its chats and workspace.
 Moving a chat switches its runtime; it does not copy files between workspaces.
+Deletion confirms sandbox removal before deleting owned workspaces or metadata;
+a Docker removal failure is reported while the saved data remains available.
 
 Sharing is explicit: uploads enter `/workspace/uploads/`. The app mounts its
 managed workspace and shared `/memory.md`. Explicit host directory mounts belong only to Folder/Project settings, persist in `folders.json`,
@@ -93,6 +95,8 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `app_config.py`, `advanced_config.py` | API credentials and runtime/file settings |
 | `docker_cli.py`, `docker_path_utils.py` | Docker executable resolution and platform paths |
 | `build_info.py` | Desktop version and sandbox content identity |
+| `desktop_runtime.py` | Shared desktop logging, health/port probes, complete bundled-resource validation |
+| `desktop_launcher.py`, `windows_desktop_launcher.py` | Native menu/tray, instance ownership, server lifecycle |
 
 ## Runtime lifecycle
 
@@ -111,7 +115,10 @@ Native tools, file panel operations, and MCP calls serialize through the same
 runtime lock. The idle reaper acquires that lock without waiting and rechecks the
 activity timestamp before stopping a runtime. Locks are weakly held so unused
 runtime IDs do not accumulate lock objects. Idle containers stop after the
-configured timeout (default 600 seconds); their persistent MCP pools are closed.
+configured timeout (default 600 seconds) by killing the idle container process;
+the stopped container stays available for reuse. A failed kill preserves the MCP
+pool and activity timestamp so the next reaper sweep retries. Successful stops
+close persistent MCP pools.
 Discovery uses `mcp-discovery`, which is stopped after listing tools. Empty Folder
 runtimes remain known during startup cleanup.
 
@@ -145,8 +152,10 @@ with a temporary root, replacing only the Docker transport.
 Preview and listing settings are passed in each worker request. Preview defaults
 to 512 KiB (maximum 4 MiB); listings default to 500 entries (maximum 5000). Uploads
 and downloads are limited to 50 MiB per file; smaller upload limits are supported.
-The HTTP request limit defaults to 60 MiB total. JSON/base64 transport is bounded,
-but large transfers temporarily require more memory than their raw file size.
+The HTTP request limit defaults to 60 MiB total. Uploads, downloads, and PDF
+ranges use a bounded JSON metadata header followed by raw bytes; upload headers
+and bodies are passed separately to avoid base64 and concatenation copies.
+Visual previews use bounded JSON/base64 transport. Transfers remain buffered;
 JSON response ceilings account for escaped preview text and listing metadata.
 
 ## Model turns and persistence
@@ -166,6 +175,9 @@ generation, finalization saves history before sending `assistant_done` for succe
 failure, or cancellation. The browser consumes that history before saving branches
 and keeps the composer busy until the terminal SSE marker. Conversation JSON uses
 explicit UTF-8 encoding on every platform; existing indented JSON remains readable.
+Configuration readers and writers share a lock, and callers receive independent
+cache snapshots. Conversation summary construction uses one helper; initial index
+building is serialized with index updates so concurrent saves stay visible.
 
 `routes_chat.py` stores active replay events and cancellation state in process
 memory. Keep one application worker process; use threads for concurrency.
@@ -202,8 +214,8 @@ environment values are passed literally; use absolute container paths when neede
 Persistent pools reuse stdio sessions across turns within the runtime. AnyIO
 contexts must open, initialize, invoke, and close in the same async worker task.
 Keep the queue-based worker model and close contexts in reverse order. Failed
-initialization must close partially opened resources. Failed tool transports are
-not automatically retried: a tool may already have produced side effects. The
+initialization must close partially opened resources. Pools replace sessions whose explicit command, arguments, or environment change.
+Failed tool transports are not automatically retried: a tool may already have produced side effects. The
 failed session is discarded and a later request can open a fresh connection.
 
 ## Storage, configuration, and releases
@@ -221,7 +233,10 @@ intact. See README for build commands and `WINDOWS-PACKAGING-LESSONS.md` for Win
 runtime and signing constraints. Packaging includes both container workers,
 `Dockerfile.sandbox`, and `.dockerignore`. All participate in sandbox identity;
 worker changes require rebuilding the image. Desktop-only changes do not change
-sandbox compatibility.
+sandbox compatibility. Both desktop launchers validate the complete sandbox build
+context during smoke checks. Installation retains only the last 50 diagnostic log
+lines on the server, bounded to 8 KiB per line; the setup page uses the same
+bounded log window. Cleanup always releases the build lock, including failures.
 
 Lumen is a trusted local application, not an authenticated multi-user service.
 Docker runs model processes as container root with reduced capabilities,

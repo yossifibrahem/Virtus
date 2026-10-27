@@ -290,18 +290,20 @@ def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
     return ContainerInfo(conv_id, name, _workspace(conv_id), "running")
 
 
-def stop_container_process(conv_id: str) -> None:
+def stop_container_process(conv_id: str) -> bool:
     """Stop a running container but keep it available for quick reuse."""
     name = container_name(conv_id)
     if get_status(conv_id) != "running":
-        return
-    result = _run(["docker", "stop", name])
+        return True
+    # PID 1 sleeps indefinitely; SIGTERM would only add Docker's grace delay.
+    result = _run(["docker", "kill", name])
     if result.returncode != 0:
         log.warning("[container] could not stop %s: %s", name, result.stderr.strip())
-    else:
-        log.info("[container] stopped %s", name)
+        return False
+    log.info("[container] stopped %s", name)
     # The container process is gone; any open MCP stdio sessions are dead.
     _invalidate_mcp_pool(conv_id)
+    return True
 
 
 def stop_container(conv_id: str, *, strict: bool = False) -> None:
@@ -474,7 +476,8 @@ def _reap_once() -> None:
 
             if get_status(conv_id) == "running":
                 log.info("[container] idle timeout reached for %s; stopping", conv_id)
-                stop_container_process(conv_id)
+                if stop_container_process(conv_id) is False:
+                    continue  # Keep tracking it so the next sweep retries.
 
             with _last_used_lock:
                 if _last_used.get(conv_id) == candidate_ts:

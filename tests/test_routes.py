@@ -108,7 +108,7 @@ class TestFolders:
         assert store.load(second["id"]) is None
         assert store.load(unrelated["id"]) is not None
         assert store.get_folder(folder["id"]) is None
-        stop.assert_called_once_with(f"folder_{folder['id']}")
+        stop.assert_called_once_with(f"folder_{folder['id']}", strict=True)
         delete_workspace.assert_called_once_with(f"folder_{folder['id']}")
 
 
@@ -351,7 +351,9 @@ class TestWorkspaceFileRoutes:
             root.mkdir(parents=True, exist_ok=True)
             monkeypatch.setattr(sandbox_files, 'ROOT', root)
             try:
-                result = sandbox_files.execute(json.loads(payload))
+                import io
+                stream = io.BytesIO(b''.join(payload) if isinstance(payload, tuple) else payload)
+                result = sandbox_files.execute(sandbox_files.read_request(stream))
             except FileNotFoundError:
                 result = {'error': 'File not found', 'status': 404}
             except ValueError as exc:
@@ -909,3 +911,114 @@ def test_conversation_and_workspace_routes_read_history_once(client, monkeypatch
         with patch.object(store, 'load', wraps=store.load) as load:
             assert client.get(f"/api/conversations/{conv['id']}{suffix}").status_code == 200
             assert load.call_count == 1
+
+
+@pytest.mark.parametrize("invalid", [
+    {"messages": "invalid"}, {"conversation_messages": [None]},
+    {"display_log": {}}, {"tools": [{"function": []}]},
+    {"mcp_tool_meta": [{"name": [], "server": "srv"}]},
+    {"mcp_tool_meta": [{"name": "tool", "server": "srv", "autoApprove": "false"}]},
+    {"temperature": None}, {"temperature": "NaN"}, {"title": {}},
+])
+def test_malformed_turn_rejected_before_starting_worker(client, tmp_lumen, invalid):
+    conversation = store.create("Safe")
+    with patch("routes_chat.threading.Thread") as worker:
+        response = client.post("/api/chat/stream", json={"conv_id": conversation["id"], **invalid})
+    assert response.status_code == 400
+    assert response.json["error"]
+    worker.assert_not_called()
+    assert store.load(conversation["id"]).get("active_stream_id") is None
+
+
+@pytest.mark.parametrize("folder", [False, True])
+def test_failed_container_removal_preserves_conversations_and_files(client, tmp_lumen, folder):
+    project = store.create_folder("Project") if folder else None
+    conversation = store.create("Keep", project["id"] if project else None)
+    path = f"/api/folders/{project['id']}" if project else f"/api/conversations/{conversation['id']}"
+    with patch("container_service.stop_container", side_effect=RuntimeError("Docker unavailable")), \
+         patch("container_service.delete_workspace") as remove:
+        response = client.delete(path)
+    assert response.status_code == 503
+    assert store.load(conversation["id"])
+    if project:
+        assert store.get_folder(project["id"])
+    remove.assert_not_called()
+
+
+def test_delete_all_confirms_all_containers_removed_before_removing_files(client, tmp_lumen):
+    first, second = store.create("One"), store.create("Two")
+    with patch("container_service.stop_container", side_effect=[None, RuntimeError("Docker unavailable")]), \
+         patch("container_service.delete_workspace") as remove:
+        response = client.post("/api/danger/delete-all")
+    assert response.status_code == 500
+    assert store.load(first["id"]) and store.load(second["id"])
+    remove.assert_not_called()
+
+
+def test_failed_sandbox_removal_preserves_standalone_chat_when_moving(client, tmp_lumen):
+    conversation = store.create("Standalone")
+    folder = store.create_folder("Destination")
+    workspace = Path(conversation["working_directory"])
+    source = workspace / "keep.txt"
+    source.write_text("Keep source files")
+    with patch("container_service.stop_container", side_effect=RuntimeError("Docker unavailable")) as stop, \
+         patch("container_service.delete_workspace") as remove:
+        response = client.put(f"/api/conversations/{conversation['id']}",
+                              json={"folder_id": folder["id"], "title": "Moved"})
+    assert response.status_code == 503
+    stop.assert_called_once_with(conversation["id"], strict=True)
+    remove.assert_not_called()
+    assert store.load(conversation["id"]) == conversation
+    assert source.read_text() == "Keep source files"
+
+
+def test_standalone_move_revokes_container_before_save_and_removes_files_after(client, tmp_lumen):
+    import container_service
+    conversation = store.create("Standalone")
+    folder = store.create_folder("Destination")
+    source = Path(conversation["working_directory"]) / "source-only.txt"
+    source.write_text("Source workspace")
+    original_save = store.save
+    order = []
+
+    def stop(runtime_id, *, strict):
+        assert strict is True
+        assert store.load(runtime_id).get("folder_id") is None
+        assert source.exists()
+        order.append("stop")
+
+    def save(conv_id, data):
+        assert source.exists()
+        order.append("save")
+        return original_save(conv_id, data)
+
+    def remove(runtime_id):
+        assert store.load(runtime_id)["folder_id"] == folder["id"]
+        order.append("remove")
+        original_remove(runtime_id)
+
+    original_remove = container_service.delete_workspace
+    with patch("container_service.stop_container", side_effect=stop), \
+         patch.object(store, "save", side_effect=save), \
+         patch("container_service.delete_workspace", side_effect=remove):
+        response = client.put(f"/api/conversations/{conversation['id']}", json={"folder_id": folder["id"]})
+    assert response.status_code == 200
+    assert order == ["stop", "save", "remove"]
+    assert not source.exists()
+    assert not (Path(response.json["working_directory"]) / source.name).exists()
+
+
+def test_failed_move_save_preserves_source_workspace(client, tmp_lumen):
+    conversation = store.create("Standalone")
+    folder = store.create_folder("Destination")
+    source = Path(conversation["working_directory"]) / "keep.txt"
+    source.write_text("Source workspace")
+    with patch("container_service.stop_container") as stop, \
+         patch.object(store, "save", side_effect=OSError("Disk full")), \
+         patch("container_service.delete_workspace") as remove:
+        with pytest.raises(OSError, match="Disk full"):
+            client.put(f"/api/conversations/{conversation['id']}", json={"folder_id": folder["id"]})
+    stop.assert_called_once_with(conversation["id"], strict=True)
+    remove.assert_not_called()
+    assert store.load(conversation["id"]) == conversation
+    assert source.read_text() == "Source workspace"

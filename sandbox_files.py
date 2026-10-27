@@ -1,5 +1,4 @@
 """Workspace transport, executed only inside Docker. All paths confined to /workspace."""
-import base64
 import json
 import importlib.util
 import hashlib
@@ -179,7 +178,9 @@ def execute(req):
         filename = str(req['name']).replace('\\', '/').rsplit('/', 1)[-1]
         if filename in ('', '.', '..'):
             raise ValueError('Invalid upload name')
-        data = base64.b64decode(req['data'], validate=True)
+        data = req['data']
+        if not isinstance(data, bytes):
+            raise ValueError('Invalid upload data')
         if len(data) > upload_limit:
             raise ValueError('Upload exceeds size limit')
         for n in range(1000):
@@ -205,10 +206,17 @@ def write_result(result, stream):
         stream.write(data)
 
 
+def read_request(stream):
+    # Only uploads have a binary body after their bounded JSON header.
+    req = json.loads(stream.readline(65536))
+    if req.get('action') == 'upload':
+        req['data'] = stream.read(MAX_UPLOAD + 1)
+    return req
+
+
 if __name__ == '__main__':
     try:
-        req = json.loads(sys.stdin.buffer.read(70 * 1024 * 1024))
-        write_result(execute(req), sys.stdout.buffer)
+        write_result(execute(read_request(sys.stdin.buffer)), sys.stdout.buffer)
     except FileNotFoundError:
         print(json.dumps({'error': 'File not found', 'status': 404}))
     except Exception as exc:

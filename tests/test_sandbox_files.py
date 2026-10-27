@@ -243,7 +243,7 @@ def test_special_files_do_not_block(root):
 
 
 def test_upload_collision_and_size_limit(root):
-    request = {'action': 'upload', 'name': 'report.txt', 'data': 'aGk='}
+    request = {'action': 'upload', 'name': 'report.txt', 'data': b'hi'}
     assert worker.execute(request)['path'] == '/workspace/uploads/report.txt'
     assert worker.execute(request)['path'] == '/workspace/uploads/report-1.txt'
     assert (root / 'uploads/report.txt').read_bytes() == b'hi'
@@ -255,7 +255,7 @@ def test_upload_collision_and_size_limit(root):
 def test_upload_symlink_escape(root, tmp_path):
     (root / 'uploads').symlink_to(tmp_path)
     with pytest.raises(ValueError, match='escapes'):
-        worker.execute({'action': 'upload', 'name': 'x', 'data': 'aGk='})
+        worker.execute({'action': 'upload', 'name': 'x', 'data': b'hi'})
 
 
 @pytest.mark.parametrize(('name', 'expected'), [
@@ -293,3 +293,49 @@ def test_upload_host_transport_checks_size_before_docker(tmp_lumen, monkeypatch)
     item = FileStorage(stream=io.BytesIO(b'big'), filename='file')
     assert container_files.uploads(conv['id'], [item])[1] == 413
     call.assert_not_called()
+
+
+def test_upload_binary_transport_preserves_bytes_without_full_file_encoding(root, monkeypatch):
+    raw = bytes(range(256)) * 100
+    def transport(runtime_id, argv, payload, **kwargs):
+        # The raw file stays separate from the small metadata header.
+        assert isinstance(payload, tuple) and payload[1] is raw
+        request = worker.read_request(io.BytesIO(b''.join(payload)))
+        result = worker.execute(request)
+        output = io.BytesIO()
+        worker.write_result(result, output)
+        return 0, output.getvalue(), b''
+    monkeypatch.setattr(sandbox_runtime, 'docker_operation', transport)
+    result, status = container_files.operation('binary-upload', 'upload', name='data.bin', data=raw)
+    assert status == 200 and result['size'] == len(raw)
+    assert (root / 'uploads/data.bin').read_bytes() == raw
+
+
+def test_empty_binary_upload_roundtrip(root):
+    request = worker.read_request(io.BytesIO(b'{"action":"upload","name":"empty"}\n'))
+    assert worker.execute(request)['size'] == 0
+    assert (root / 'uploads/empty').read_bytes() == b''
+
+
+def test_upload_transport_rejects_oversize_before_starting_container(monkeypatch):
+    monkeypatch.setattr(container_files, 'file_limits', lambda: {
+        'max_file_preview_bytes': 1, 'max_file_list_entries': 1, 'max_upload_bytes': 2})
+    operation = Mock()
+    monkeypatch.setattr(sandbox_runtime, 'docker_operation', operation)
+    assert container_files.operation('binary-upload', 'upload', name='large', data=b'big')[1] == 400
+    operation.assert_not_called()
+
+
+def test_worker_request_header_is_bounded():
+    with pytest.raises(ValueError):
+        worker.read_request(io.BytesIO(b'{"action":"list","path":"' + b'x' * 65536 + b'"}'))
+
+
+def test_docker_transport_writes_binary_header_and_body_without_host_shell(monkeypatch):
+    import sys
+    monkeypatch.setattr(sandbox_runtime.container_service, 'ensure_container', lambda runtime: None)
+    monkeypatch.setattr(sandbox_runtime.docker_cli, 'argv', lambda args: [
+        sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'])
+    raw = bytes(range(256)) * 100
+    code, output, errors = sandbox_runtime.docker_operation('transport-test', [], (b'header\n', raw))
+    assert code == 0 and not errors and output == b'header\n' + raw

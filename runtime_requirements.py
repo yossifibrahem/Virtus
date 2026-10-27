@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,6 +70,14 @@ def _docker_unavailable(image: str, details: str) -> RequirementStatus:
         action="retry",
         image=image,
         details=details,
+    )
+
+
+def _image_check_failed(image: str, details: str) -> RequirementStatus:
+    return RequirementStatus(
+        False, "sandbox_image_check_failed", "Lumen could not check its tools",
+        "Docker returned a temporary error while checking the sandbox. Click Retry.",
+        "retry", image, details,
     )
 
 
@@ -142,25 +151,9 @@ def check_sandbox_image() -> RequirementStatus:
             timeout=DOCKER_PROBE_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return RequirementStatus(
-            ok=False,
-            code="sandbox_image_check_failed",
-            title="Lumen could not check its tools",
-            message="Docker returned a temporary error while checking the sandbox. Click Retry.",
-            action="retry",
-            image=image,
-            details=str(exc),
-        )
+        return _image_check_failed(image, str(exc))
     if list_result.returncode != 0:
-        return RequirementStatus(
-            ok=False,
-            code="sandbox_image_check_failed",
-            title="Lumen could not check its tools",
-            message="Docker returned a temporary error while checking the sandbox. Click Retry.",
-            action="retry",
-            image=image,
-            details=(list_result.stderr or list_result.stdout).strip(),
-        )
+        return _image_check_failed(image, (list_result.stderr or list_result.stdout).strip())
     if not list_result.stdout.strip():
         return RequirementStatus(
             ok=False,
@@ -186,25 +179,9 @@ def check_sandbox_image() -> RequirementStatus:
             timeout=DOCKER_PROBE_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return RequirementStatus(
-            ok=False,
-            code="sandbox_image_check_failed",
-            title="Lumen could not inspect its tools",
-            message="Docker returned a temporary error while inspecting the sandbox. Click Retry.",
-            action="retry",
-            image=image,
-            details=str(exc),
-        )
+        return _image_check_failed(image, str(exc))
     if identity_result.returncode != 0:
-        return RequirementStatus(
-            ok=False,
-            code="sandbox_image_check_failed",
-            title="Lumen could not inspect its tools",
-            message="Docker returned a temporary error while inspecting the sandbox. Click Retry.",
-            action="retry",
-            image=image,
-            details=(identity_result.stderr or identity_result.stdout).strip(),
-        )
+        return _image_check_failed(image, (identity_result.stderr or identity_result.stdout).strip())
     try:
         expected_identity = _expected_sandbox_identity()
     except OSError as exc:
@@ -313,12 +290,12 @@ def build_sandbox_image_stream():
             ).as_dict()
             return
 
-        output_lines: list[str] = []
+        output_lines = deque(maxlen=50)
         if proc.stdout is None:
             raise RuntimeError("Docker build output stream was not created")
         for line in proc.stdout:
             line = line.rstrip("\n")
-            output_lines.append(line)
+            output_lines.append(line[-8192:])
             yield "log", {"line": line}
 
         proc.wait()
@@ -331,24 +308,29 @@ def build_sandbox_image_stream():
                 message="The sandbox image could not be built. Check the details below, then try again.",
                 action="build",
                 image=image,
-                details="\n".join(output_lines[-50:]),
+                details="\n".join(output_lines),
             ).as_dict()
             return
 
         log.info("[startup] sandbox image '%s' built successfully", image)
-        yield "done", check_requirements().as_dict()
+        status = check_requirements()
+        yield "done" if status.ok else "error", status.as_dict()
     finally:
-        if proc is not None and proc.poll() is None:
-            log.warning("[startup] sandbox installation stream ended early; terminating docker build")
-            proc.terminate()
+        try:
+            if proc is not None and proc.poll() is None:
+                log.warning("[startup] sandbox installation stream ended early; terminating docker build")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        finally:
             try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
-        if proc is not None and proc.stdout is not None:
-            proc.stdout.close()
-        _SANDBOX_BUILD_LOCK.release()
+                if proc is not None and proc.stdout is not None:
+                    proc.stdout.close()
+            finally:
+                _SANDBOX_BUILD_LOCK.release()
 
 
 def start_docker_desktop() -> RequirementStatus:

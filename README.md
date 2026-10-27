@@ -135,6 +135,11 @@ To uninstall, quit Lumen and move `Lumen AI Chat.app` to Trash. Remove `~/.lumen
 
 ## Developer Quick Start
 
+Source development requires Python 3.10+ and Docker running Linux containers.
+Normal desktop users install only Docker Desktop. Folder mounts with read-only
+access require Docker support for `bind-recursive=readonly` and a daemon kernel
+of 5.12 or later.
+
 ```bash
 # 1. Clone
 git clone https://github.com/yossifibrahem/lumen-ai-chat.git
@@ -157,7 +162,7 @@ python app.py
 
 Open **http://localhost:8080**, then open the settings panel to enter your API key, base URL, and model name.
 
-The development server binds to `127.0.0.1` with debug mode disabled by default. For deliberate LAN testing on a trusted network, set `LUMEN_HOST=0.0.0.0`, configure `LUMEN_CORS_ORIGINS`, and open `http://<your-computer-ip>:8080` from the other device.
+The development server binds to `127.0.0.1` with debug mode disabled by default. For deliberate LAN testing on a trusted network, set `LUMEN_HOST=0.0.0.0`, configure `LUMEN_ALLOWED_HOSTS` and `LUMEN_CORS_ORIGINS`, and open `http://<your-computer-ip>:8080` from the other device.
 
 > Source and desktop runs use the local `lumen-sandbox:latest` image. The desktop app contains the complete Docker build context, so first-run setup needs Docker Desktop but no host Python, Node.js, Git, or source checkout.
 
@@ -166,30 +171,6 @@ The development server binds to `127.0.0.1` with debug mode disabled by default.
 The built-in tools `bash`, `view`, `write`, and `edit` are provided by Lumen itself, with server-owned schemas and container-only execution. They work without an MCP server. Optional MCP servers provide additional tools; their code and dependencies must be available inside the container. Node.js, Python, `uv`, and `mcp-remote` are bundled for these integrations. MCP discovery returns only additional tools, while native tools are injected directly into each chat request.
 
 ## Installation
-
-### Source-development prerequisites
-
-| Requirement | Version | Notes |
-|---|---|---|
-| Python | 3.10+ | Needed only for source development; included in both desktop apps |
-| Docker | 20.10+ | Required for the model’s sandbox computer |
-| OpenAI-compatible API | — | OpenAI, Ollama, LM Studio, or a compatible proxy |
-
-### Python Dependencies
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-```
-flask>=3.0.0
-flask-cors>=4.0.0
-openai>=1.30.0
-mcp>=2.0.0,<3
-```
 
 ### Build the Sandbox Image
 
@@ -319,6 +300,8 @@ http://localhost:1234/v1     # LM Studio
 | `LUMEN_CONTAINER_IDLE_TIMEOUT` | `600` | Seconds before idle containers are stopped; `0` disables |
 | `LUMEN_MAX_CONTENT_LENGTH` | `62914560` | Flask request body cap (bytes) |
 | `LUMEN_CORS_ORIGINS` | `http://localhost:8080,...` | Comma-separated allowed origins |
+| `LUMEN_ALLOWED_HOSTS` | loopback hostnames | Additional comma-separated hostnames allowed to serve the local UI |
+| `LUMEN_DESKTOP_PORT` | `38492` | Loopback port for the desktop UI |
 | `LUMEN_MAX_FILE_PREVIEW_BYTES` | `524288` | Max bytes for in-browser text file preview |
 | `LUMEN_MAX_FILE_LIST_ENTRIES` | `500` | Max workspace directory entries returned |
 | `LUMEN_MAX_UPLOAD_BYTES` | `52428800` | Max file upload size (bytes) |
@@ -409,35 +392,41 @@ Click the stop button while a response is streaming. The server marks the stream
 
 ---
 
+## Built-in sandbox tools
+
+Every chat has four server-provided tools, even with no MCP servers configured:
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `bash` | `command`, optional `timeout` (1–600 seconds; default 120) | Combined command output and exit status, bounded to 32 KiB. |
+| `view` | `path`, optional `range` (`start:end`, inclusive and one-based) | Text lines, directory listing, image, PDF pages, or notebook cells. |
+| `write` | `path`, `content` | Creates parents and writes UTF-8 text, including empty files. |
+| `edit` | `path`, `old_text`, `new_text`, optional `replace_all` | Exact replacement; ambiguous matches fail unless explicitly replacing all. |
+
+Relative paths start at `/workspace`; absolute paths are **container paths**. Text reads return at most 200 lines/32 KiB; directory reads list two levels and skip dotfiles and `node_modules`. PDF reads default to one page and allow up to five; notebooks default to 20 cells and never execute code. Images and PDF page renders require a vision-capable model. Write/Edit accept at most 1 MiB; use Bash for larger transformations.
+
+Built-in tools run automatically. Bash uses a fresh shell each time: files and installed packages persist in the container, while shell variables and directory changes do not. There are no managed background jobs. Stop/timeout may stop the shared container to terminate every descendant, interrupting other activity in that Folder. Workspace files survive container recreation; installed packages in the container layer do not.
+
+### Isolation and sharing
+
+Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace, shared `/memory.md`, and any host directories explicitly selected in Folder settings. **MCP arguments never authorize host mounts**: install server code inside the container and use container paths. Explicit directory sharing belongs only to a Folder/Project; standalone chats and MCP configuration cannot add host mounts. Read-only permissions are enforced recursively by Docker bind mounts. This requires a Docker Engine with `bind-recursive=readonly` support and a daemon Linux kernel of 5.12 or later (including the Linux VM used by Docker Desktop). Unsupported engines fail rather than falling back to writable submounts.
+
+Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
+
+The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Text preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Visual previews use a 20 MiB input limit. Images and notebook outputs reuse the View worker’s 1600-pixel visual bounds and bounded text; PDFs display the original file without text extraction. Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; Copy retains the loaded text and Download saves the original file. Smaller upload limits are supported. Unchanged previews reuse their loaded content after a file-version check, avoiding repeated reads, image conversion, and notebook parsing. Uploads, downloads, and PDF ranges transfer raw bytes after a small JSON metadata header; visual previews use bounded JSON/base64 transport. Transfers remain buffered and bounded by the file size limits. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
+
+After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
+
+---
+
 ## Architecture
 
-### Backend
-
-| File | Responsibility |
-|---|---|
-| `app.py` | Flask app factory; startup requirement status handling; CORS; shutdown cleanup |
-| `app_config.py` | Server-side API key and provider config storage; env var overrides; safe public metadata |
-| `advanced_config.py` | Server-side container and file-handling settings; three-tier priority (env > file > defaults); UI-editable with env-lock support |
-| `runtime_requirements.py` | Docker availability and sandbox image checks; streaming build log generator |
-| `fs_utils.py` | `atomic_replace` helper for safe temp-file-replace writes; Windows retry logic |
-| `docker_path_utils.py` | Cross-platform Docker volume path conversion — translates Windows drive-letter paths to valid Linux container mount targets |
-| `routes_startup.py` | Setup screen, health probe, Docker/image requirement checks, streaming sandbox image build |
-| `routes_conversations.py` | Conversation and folder CRUD, workspace path, container status, danger-delete |
-| `routes_chat.py` | Streaming, cancel, approve, settings, advanced/container settings, model list |
-| `routes_mcp.py` | MCP config, tool discovery, direct tool calls |
-| `routes_files.py` | Workspace file listing, upload, preview, download, image storage |
-| `chat_turn_service.py` | Full chat turn orchestration: streaming, tool approval, MCP calls, persistence |
-| `title_service.py` | Auto-generated conversation title: `_SET_TITLE_TOOL` definition, text conversion, extraction, and `generate_title` |
-| `tool_approval.py` | Pending tool-approval gate: `_pending_approvals` dict, lock, `request_tool_approval`, `resolve_tool_approval` |
-| `streaming.py` | Typed OpenAI streaming event generator; SSE serialization helpers |
-| `mcp_service.py` | MCP config, tool discovery, tool invocation; re-exports `_build_server_params` for use by the pool |
-| `mcp_session_pool.py` | `McpSessionPool` class: worker coroutine and session lifecycle for persistent cross-turn reuse |
-| `mcp_adapters.py` | Wraps MCP commands for Docker `exec`; never infers host mounts from arguments |
-| `container_service.py` | Docker container lifecycle: create, start, stop, idle reaping, workspace management |
-| `container_files.py`, `sandbox_files.py` | File panel transport and container-only workspace file operations |
-| `builtin_tools.py`, `sandbox_tools.py` | Built-in tool contracts and container-only View/Write/Edit workers |
-| `sandbox_runtime.py` | Shared runtime serialization, bounded Docker I/O, cancellation |
-| `store.py` | Filesystem persistence for conversations, folders, and images; cached conversation index |
+The browser manages conversations, approvals, and file transfers through Flask.
+Flask sends provider requests and manages Docker; model commands, file tools, and
+MCP servers execute inside the selected chat or Folder/Project container.
+The file panel accesses `/workspace` through a container worker, never by following
+container-created paths on the host. See [the developer guide](devs.md#code-map)
+for the module map and runtime ownership rules.
 
 ### Chat Turn Flow
 
@@ -455,36 +444,10 @@ Partial output is saved at most once per 0.75 seconds by `TurnRecorder`, with fo
 
 ### Frontend
 
-The frontend is plain browser ES modules — no build step, no framework. `templates/index.html` imports `static/js/app.js` with `type="module"`.
-
-| Module | Responsibility |
-|---|---|
-| `state.js` | Single shared mutable state object |
-| `app.js` | Bootstrap, event binding, startup loading |
-| `chat.js`, `chat_send.js` | Turn state, send flow, SSE rendering, cancellation, and reattachment |
-| `chat_payloads.js` | Builds API message payloads including images and file context |
-| `chat_attachments.js` | Pending image and file attachment lifecycle |
-| `chat_edit.js` | Edit, resend, and regenerate helpers |
-| `chat_branches.js` | Branch snapshots and branch switching for edits/regenerations |
-| `stream_consumer.js` | SSE response reader |
-| `renderer.js` | Re-exports all public symbols from renderer sub-modules; sole import target for existing callers |
-| `renderer_core.js` | `scrollToBottom`, `stickToBottom`, `messagesEl`, `createMessageRow` |
-| `renderer_groups.js` | Block grouping, `tryGroupBlock`, `updateGroupLabel`, `attachCollapsible`, `prepareAssistantRow` |
-| `renderer_thinking.js` | `createThinkingBlock`, `updateThinkingBlock`, `finalizeThinkingBlock`, `appendThinkingBlock` |
-| `renderer_attachments.js` | `normalizeContentAttachments`, `renderAttachmentCard`, `getRawText`, `appendContentParts` |
-| `renderer_tools.js` | Tool strip states, `cancelAllToolApprovals`, `appendToolResultInline` |
-| `renderer_actions.js` | Copy/edit/regenerate buttons and branch arrows in message footers |
-| `mcp.js` | MCP config UI, tool loading, enable/auto-approve toggles |
-| `file_panel.js` | Workspace browser, preview, and download |
-| `pdf_preview.js` | App-styled continuous PDF preview with visible-page canvas rendering |
-| `source_view.js` | Shared numbered source rendering for file previews and native View results |
-| `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
-| `settings.js` | API and chat settings UI |
-| `markdown.js` | Markdown, code highlighting, KaTeX, safe workspace file links |
-| `tool_ui.js` / `native_tools/` | Shared presentation routing and dedicated Bash, View, Write, Edit views |
-| `tool_adapters/` | External MCP display adapters, including Exa |
-
-The frontend maintains two parallel histories: `state.messages` (model/API-facing) and `state.displayLog` (UI-facing). These have different structures and indices — do not conflate them. Branches for edited messages and regenerated responses are stored in `displayLog` so the visible conversation can switch paths while preserving the saved model history.
+Flask serves plain browser ES modules from `templates/` and `static/`, with no
+frontend build step. `state.messages` holds model history; `state.displayLog`
+holds rendered activity and conversation branches. They use different structures
+and indices. File previews and tool renderers share source and media components.
 
 ---
 
@@ -504,25 +467,21 @@ pytest
 
 Tests are fully isolated: `conftest.py` redirects filesystem paths to `tmp_path`, patches the runtime requirement check in the app factory, and stubs container operations. No running Docker daemon, API key, or live server is required.
 
-| Test file | What it covers |
-|---|---|
-| `test_app_config.py` | Config load/save, env overrides, public config, atomic persistence |
-| `test_store.py` | SHA-256 image naming, conversation/folder CRUD, shared runtimes, cached index, concurrency |
-| `test_sandbox_files.py` | Actual container worker path checks, configured limits, symlink/special-file rejection, upload collisions, host transport |
-| `test_chat_turn_service.py` | Tool approval, title extraction, `TurnRecorder` throttle/finalize |
-| `test_streaming.py` | Event ordering, tool delta accumulation, parallel tools, cancellation |
-| `test_mcp_service.py` | Config cache, malformed config, `McpSessionPool` same-task cleanup |
-| `test_mcp_adapters.py` | Docker exec params and rejection of implicit host mounts |
-| `test_container_service.py` | Container naming, exec argv/env, name conflicts, idle reaper |
-| `test_routes.py` | HTTP routes, folder/shared-workspace behavior, error paths, conversation update whitelist |
-| `test_tool_approval.py` | Approval gate: request/resolve lifecycle, concurrent approvals, cancel-event unblocking |
-| `test_title_service.py` | Title tool definition, message-to-text conversion, title extraction from model response |
-
 Also lint frontend modules after any JS changes:
 
 ```bash
 find static/js -name '*.js' -print0 | xargs -0 -n1 node --check
 ```
+
+Real Docker tests are opt-in:
+
+```sh
+docker build --build-arg LUMEN_SANDBOX_IDENTITY="$(python -c 'import build_info; print(build_info.sandbox_identity())')" -f Dockerfile.sandbox -t lumen-sandbox:builtins-test .
+LUMEN_RUN_DOCKER_TESTS=1 python -m pytest tests/test_builtin_docker.py
+python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
+```
+
+These tests use disposable containers and temporary workspaces; the package-install test accesses public apt/pip/npm registries.
 
 ---
 
@@ -565,9 +524,9 @@ When filing a bug, please include the OS, browser and version, whether this is a
 
 ## Known Limitations
 
-**Active stream reattach is process-local.** Cancellation events and stream replay buffers are stored in process memory (`routes_chat.py`). This works fine with the default single-worker Gunicorn config but will not work across multiple worker processes. Long-term fix: move stream state to Redis or a shared broker.
+**Active stream reattach is process-local.** Cancellation events and stream replay buffers are stored in process memory (`routes_chat.py`). This works fine with the default single-worker Gunicorn config but will not work across multiple worker processes. Run one worker process with multiple threads.
 
-**No authentication.** Lumen is local-first and not hardened for public exposure. Do not deploy it publicly without adding authentication, rate limiting, and stricter CORS.
+**Local application.** Lumen uses same-origin sessions and CSRF protection, with no multi-user login system. Run it on loopback for normal use.
 
 **No database or persistent-data upgrade layer.** Keep conversation JSON shapes stable between releases.
 
@@ -576,40 +535,3 @@ When filing a bug, please include the OS, browser and version, whether this is a
 ## License
 
 MIT — built for people who like local control, readable code, and AI tools that do not require a 14-step deployment ritual.
-
-## Built-in sandbox tools
-
-Every chat has four server-provided tools, even with no MCP servers configured:
-
-| Tool | Arguments | Result |
-| --- | --- | --- |
-| `bash` | `command`, optional `timeout` (1–600 seconds; default 120) | Combined command output and exit status, bounded to 32 KiB. |
-| `view` | `path`, optional `range` (`start:end`, inclusive and one-based) | Text lines, directory listing, image, PDF pages, or notebook cells. |
-| `write` | `path`, `content` | Creates parents and writes UTF-8 text, including empty files. |
-| `edit` | `path`, `old_text`, `new_text`, optional `replace_all` | Exact replacement; ambiguous matches fail unless explicitly replacing all. |
-
-Relative paths start at `/workspace`; absolute paths are **container paths**. Text reads return at most 200 lines/32 KiB; directory reads list two levels and skip dotfiles and `node_modules`. PDF reads default to one page and allow up to five; notebooks default to 20 cells and never execute code. Images and PDF page renders require a vision-capable model. Write/Edit accept at most 1 MiB; use Bash for larger transformations.
-
-Built-in tools run automatically. Bash uses a fresh shell each time: files and installed packages persist in the container, while shell variables and directory changes do not. There are no managed background jobs. Stop/timeout may stop the shared container to terminate every descendant, interrupting other activity in that Folder. Workspace files survive container recreation; installed packages in the container layer do not.
-
-### Isolation and sharing
-
-Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace, shared `/memory.md`, and any host directories explicitly selected in Folder settings. **MCP arguments no longer implicitly mount host files or directories**: install server code inside the container and use container paths. Explicit directory sharing belongs only to a Folder/Project; standalone chats and MCP configuration cannot add host mounts. Read-only permissions are enforced recursively by Docker bind mounts. This requires a Docker Engine with `bind-recursive=readonly` support and a daemon Linux kernel of 5.12 or later (including the Linux VM used by Docker Desktop). Unsupported engines fail rather than falling back to writable submounts.
-
-Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
-
-The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Text preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Visual previews use a 20 MiB input limit. Images and notebook outputs reuse the View worker’s 1600-pixel visual bounds and bounded text; PDFs display the original file without text extraction. Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; Copy retains the loaded text and Download saves the original file. Smaller upload limits are supported. Unchanged previews reuse their loaded content after a file-version check, avoiding repeated reads, image conversion, and notebook parsing. Downloads and PDF ranges transfer raw bytes after a small JSON header; uploads and visual preview payloads use bounded JSON/base64 transport. Transfers remain buffered and bounded by the file size limits. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
-
-After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
-
-### Verification
-
-Run `.venv312/bin/pytest` (or `python -m pytest` in your development environment). Real Docker tests are opt-in:
-
-```sh
-docker build --build-arg LUMEN_SANDBOX_IDENTITY="$(python -c 'import build_info; print(build_info.sandbox_identity())')" -f Dockerfile.sandbox -t lumen-sandbox:builtins-test .
-LUMEN_RUN_DOCKER_TESTS=1 python -m pytest tests/test_builtin_docker.py
-python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
-```
-
-These tests use disposable containers and temporary workspaces; the package-install test accesses public apt/pip/npm registries.

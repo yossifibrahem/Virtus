@@ -1,6 +1,4 @@
 """Opt-in real Docker integration: LUMEN_RUN_DOCKER_TESTS=1 pytest tests/test_builtin_docker.py."""
-import base64
-import io
 import json
 import os
 import threading
@@ -60,12 +58,12 @@ INNER
     assert 'print(1)' in native.invoke(rid, 'view', {'path': 'book.ipynb'})['text']
     result, status = container_files.operation(rid, 'download', '/workspace/nested/a.txt')
     assert status == 200 and result['data'] == b'alpha\ngamma\n'
-    result, status = container_files.operation(rid, 'upload', name='test.txt', data=base64.b64encode(b'upload').decode())
+    result, status = container_files.operation(rid, 'upload', name='test.txt', data=b'upload')
     assert status == 200
     assert 'upload' in native.invoke(rid, 'view', {'path': result['path']})['text']
     native.invoke(rid, 'bash', {'command': 'ln -s /etc /workspace/escape; rm -rf /workspace/uploads; ln -s /etc /workspace/uploads'})
     assert container_files.operation(rid, 'preview', '/workspace/escape/passwd')[1] == 400
-    assert container_files.operation(rid, 'upload', name='blocked', data='eA==')[1] == 400
+    assert container_files.operation(rid, 'upload', name='blocked', data=b'x')[1] == 400
     inspect = docker_cli.run(['inspect', containers.container_name(rid)])
     info = json.loads(inspect.stdout)[0]
     assert {m['Destination'] for m in info['Mounts']} == {'/workspace', '/memory.md'}

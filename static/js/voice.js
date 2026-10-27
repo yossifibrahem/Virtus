@@ -1,8 +1,6 @@
 // Voice input — transcribes speech into the message textarea via Web Speech API.
 // No backend required; uses SpeechRecognition (Chrome/Edge) or webkitSpeechRecognition.
 
-import { autoResize, updateCharCount } from './ui.js';
-
 let recognition  = null;
 let isRecording  = false;
 let textPrefix   = '';   // textarea content captured at recording start
@@ -43,28 +41,26 @@ export function initVoiceInput() {
         if (finalChunk && !/\s$/.test(finalChunk)) finalChunk += ' ';
         finalChunk += segment;
       } else {
-        interim = segment;
+        interim += segment;
       }
     }
 
     // Show prefix + finalised text + live interim in the textarea
     input.value = textPrefix + finalChunk + interim;
-    autoResize(input);
-    updateCharCount();
+    input.dispatchEvent(new Event('input'));
   };
 
   recognition.onend = () => {
     // Commit: strip trailing interim, keep only finalised text
     input.value = (textPrefix + finalChunk).trimEnd();
-    autoResize(input);
-    updateCharCount();
+    input.dispatchEvent(new Event('input'));
     _resetState(btn);
   };
 
   recognition.onerror = e => {
     // 'aborted' fires when we call recognition.stop() ourselves — not an error
     if (e.error !== 'aborted') console.warn('Speech recognition error:', e.error);
-    _resetState(btn);
+    // onend commits the final text before resetting the session.
   };
 
   // ── Click to toggle ────────────────────────────────────────────────────────
@@ -77,7 +73,13 @@ export function initVoiceInput() {
       textPrefix = input.value;
       if (textPrefix && !/\s$/.test(textPrefix)) textPrefix += ' ';
       finalChunk = '';
-      recognition.start();
+      isRecording = true;
+      try {
+        recognition.start();
+      } catch (error) {
+        _resetState(btn);
+        console.warn('Speech recognition could not start:', error);
+      }
     }
   });
 }

@@ -51,3 +51,26 @@ def test_limits_match_worker_capabilities(tmp_path, monkeypatch):
     assert result['max_file_preview_bytes'] == 4*1024*1024
     assert result['max_file_list_entries'] == 5000
     assert result['container_idle_timeout'] == 0
+
+
+def test_loaded_settings_cannot_mutate_cached_sandbox_limits(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    loaded = advanced_config.load_advanced_config()
+    loaded["container_network"] = "host"
+    assert advanced_config.load_advanced_config()["container_network"] == "bridge"
+
+
+def test_changed_config_path_is_not_hidden_by_cache(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    advanced_config.save_advanced_config({"container_cpus": "2"})
+    monkeypatch.setattr(advanced_config, "ADVANCED_CONFIG_FILE", tmp_path / "other" / "advanced.json")
+    assert advanced_config.load_advanced_config()["container_cpus"] == "1"
+    advanced_config.save_advanced_config({"container_cpus": "3"})
+    assert advanced_config.load_advanced_config()["container_cpus"] == "3"
+
+
+def test_invalid_environment_override_preserves_valid_saved_value(tmp_path, monkeypatch):
+    path = _isolate(tmp_path, monkeypatch)
+    path.write_text(json.dumps({"container_cpus": "2"}))
+    monkeypatch.setattr(advanced_config, "_ENV_LOCKED", {"container_cpus": "invalid"})
+    assert advanced_config.load_advanced_config()["container_cpus"] == "2"

@@ -79,3 +79,18 @@ def test_environment_variables_take_precedence(isolated_config, monkeypatch):
 def test_save_config_rejects_non_object():
     with pytest.raises(ValueError, match="JSON object"):
         app_config.save_config(["bad"])
+
+
+def test_loaded_config_cannot_mutate_cached_credentials(isolated_config):
+    app_config.save_config({"api_key": "sk-original"})
+    loaded = app_config.load_config()
+    loaded["api_key"] = "sk-changed"
+    assert app_config.load_config()["api_key"] == "sk-original"
+
+
+def test_changing_config_file_does_not_reuse_previous_cache(isolated_config, tmp_path, monkeypatch):
+    app_config.save_config({"api_key": "sk-original"})
+    monkeypatch.setattr(app_config, "CONFIG_FILE", tmp_path / "other" / "config.json")
+    assert app_config.load_config()["api_key"] == ""
+    app_config.save_config({"api_key": "sk-other"})
+    assert app_config.load_config()["api_key"] == "sk-other"

@@ -4,13 +4,14 @@ import { api }         from './api.js';
 import { state, STORAGE_KEYS } from './state.js';
 import { storage } from './storage.js';
 import { clearMessages, renderAllMessages } from './renderer.js';
-import { toggleSidebar, openModal, closeModal } from './ui.js';
+import { toggleSidebar, openModal, closeModal, showToast } from './ui.js';
 import { ICONS } from './icons.js';
-import { escapeHtml } from './format.js';
+import { escapeHtml, formatConversationDate } from './format.js';
 import { refreshFilePanel, resetFilePanel } from './file_panel.js';
 import { activityVersion, workingTitleAttributes, syncConversationActivity } from './conversation_activity.js';
 
 let navigationId = 0;
+let listLoadId = 0;
 let folders = [];
 let conversations = [];
 let pendingFolderId = null;
@@ -25,11 +26,16 @@ let folderPickerBusy = false;
 // ── Sidebar list ──────────────────────────────────────────────────────────────
 
 export async function loadConversationList() {
+  const requestId = ++listLoadId;
   const version = activityVersion;
   const [list, folderList] = await Promise.all([
     api.get('/api/conversations'),
     api.get('/api/folders'),
   ]);
+  if (requestId !== listLoadId) return;
+  if (!Array.isArray(list) || !Array.isArray(folderList)) {
+    throw new Error(list?.error || folderList?.error || 'Could not load conversations');
+  }
   conversations = list;
   folders = folderList;
   syncConversationActivity(list, version);
@@ -42,14 +48,20 @@ export async function loadConversationList() {
     return;
   }
 
+  const folderConversations = new Map(folders.map(folder => [folder.id, []]));
+  const unfiled = [];
+  for (const conv of list) {
+    if (folderConversations.has(conv.folder_id)) folderConversations.get(conv.folder_id).push(conv.id);
+    else unfiled.push(conv);
+  }
+
   if (folders.length) {
     container.appendChild(Object.assign(document.createElement('div'), {
       className: 'conv-section-label folders-section-label', textContent: 'Folders',
     }));
-    folders.forEach(folder => container.appendChild(_buildFolderGroup(folder)));
+    folders.forEach(folder => container.appendChild(_buildFolderGroup(folder, folderConversations.get(folder.id))));
   }
 
-  const unfiled = list.filter(conv => !conv.folder_id || !folders.some(folder => folder.id === conv.folder_id));
   if (unfiled.length) {
     container.appendChild(Object.assign(document.createElement('div'), {
       className: 'conv-section-label recent-section-label', textContent: 'Recent',
@@ -58,17 +70,6 @@ export async function loadConversationList() {
   }
 
   renderConversationSearchResults();
-}
-
-function formatSearchDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const sameYear = date.getFullYear() === new Date().getFullYear();
-  return new Intl.DateTimeFormat(undefined, sameYear
-    ? { month: 'short', day: 'numeric' }
-    : { year: 'numeric', month: 'short', day: 'numeric' }
-  ).format(date);
 }
 
 function renderConversationSearchResults() {
@@ -100,7 +101,7 @@ function renderConversationSearchResults() {
             <span class="folder-home-chat-title" ${workingTitleAttributes(conv.id)}>${escapeHtml(conv.title || 'Untitled')}</span>
             ${folderName ? `<span class="search-result-folder">${escapeHtml(folderName)}</span>` : ''}
           </span>
-          <time>${escapeHtml(formatSearchDate(conv.updated_at))}</time>
+          <time>${escapeHtml(formatConversationDate(conv.updated_at))}</time>
         </button>
       </div>`;
   }).join('');
@@ -129,7 +130,7 @@ export function bindConversationSearch() {
   input.addEventListener('input', renderConversationSearchResults);
 }
 
-function _buildFolderGroup(folder) {
+function _buildFolderGroup(folder, conversationIds) {
   const group = document.createElement('section');
   group.className = `folder-group${folder.id === state.folderId ? ' active' : ''}`;
   group.dataset.folderId = folder.id;
@@ -137,7 +138,7 @@ function _buildFolderGroup(folder) {
     <div class="folder-header">
       <button class="folder-open" type="button" aria-label="Open ${escapeHtml(folder.name || 'Untitled Folder')}">
         <span class="folder-icon">${ICONS.folder}</span>
-        <span class="folder-name" ${workingTitleAttributes(conversations.filter(conv => conv.folder_id === folder.id).map(conv => conv.id))}>${escapeHtml(folder.name || 'Untitled Folder')}</span>
+        <span class="folder-name" ${workingTitleAttributes(conversationIds)}>${escapeHtml(folder.name || 'Untitled Folder')}</span>
       </button>
       <div class="folder-controls">
         <div class="folder-menu-wrap">
@@ -439,10 +440,16 @@ export function startNewChat(folderId = null) {
 
 // Creates a conversation record on the server. Called by chat.js before the first send.
 export async function createNewConversation() {
+  const requestId = ++navigationId;
   const data = await api.post('/api/conversations', {
     title: 'New Conversation',
     ...(pendingFolderId ? { folder_id: pendingFolderId } : {}),
   });
+  if (data.error || !data.id) throw new Error(data.error || 'Could not create conversation');
+  if (requestId !== navigationId) {
+    await loadConversationList();
+    return data;
+  }
   pendingFolderId = null;
   state.convId     = data.id;
   state.messages   = [];
@@ -452,6 +459,7 @@ export async function createNewConversation() {
   resetFilePanel();
   refreshFilePanel();
   upsertConversationListItem(data);
+  return data;
 }
 
 export function renameConversation(convId) {
@@ -484,12 +492,24 @@ export function renameConversation(convId) {
   };
 
   function keyHandler(e) {
+    if (e.isComposing) return;
     if (e.key === 'Enter')  { submit(); }
     if (e.key === 'Escape') { input.removeEventListener('keydown', keyHandler); cleanup(); }
   }
 
   freshConfirm.addEventListener('click', submit);
   input.addEventListener('keydown', keyHandler);
+}
+
+async function applyMutation(request) {
+  try {
+    const data = await request;
+    if (data.error) throw new Error(data.error);
+    return data;
+  } catch (error) {
+    showToast(error.message || 'Could not save changes');
+    return null;
+  }
 }
 
 export function deleteConversation(convId) {
@@ -502,7 +522,7 @@ export function deleteConversation(convId) {
 
   freshConfirm.addEventListener('click', async () => {
     closeModal('delete-conv-modal');
-    await api.delete(`/api/conversations/${convId}`);
+    if (!await applyMutation(api.delete(`/api/conversations/${convId}`))) return;
     const deletingActive = state.convId === convId;
     if (deletingActive) startNewChat();
     await loadConversationList();
@@ -566,6 +586,7 @@ function openFolderEditor(folder = null) {
       renderFolderMounts();
     });
     input.addEventListener('keydown', event => {
+      if (event.isComposing) return;
       if (event.key === 'Enter') submitFolderEditor();
       if (event.key === 'Escape') closeModal('folder-modal');
     });
@@ -677,7 +698,7 @@ async function removeFolder(folder) {
       conv => conv.id === state.convId && conv.folder_id === folder.id,
     );
     const deletingActiveFolder = activeFolderId === folder.id;
-    await api.delete(`/api/folders/${folder.id}`);
+    if (!await applyMutation(api.delete(`/api/folders/${folder.id}`))) return;
     if (deletingActiveConversation || deletingActiveFolder) startNewChat();
     await loadConversationList();
   }, { once: true });
@@ -697,7 +718,8 @@ function moveConversation(conv) {
   confirm.replaceWith(freshConfirm);
   freshConfirm.addEventListener('click', async () => {
     closeModal('move-conv-modal');
-    const updated = await api.put(`/api/conversations/${conv.id}`, { folder_id: select.value || null });
+    const updated = await applyMutation(api.put(`/api/conversations/${conv.id}`, { folder_id: select.value || null }));
+    if (!updated) return;
     await loadConversationList();
     if (state.convId === conv.id) {
       updateHeaderFolder(updated.folder_id, updated.title || '');

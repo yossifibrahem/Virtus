@@ -30,16 +30,10 @@ export async function loadContainerSettings() {
 
 export async function saveContainerSettings() {
   const payload = _readControls();
-  try {
-    const data = await api.post('/api/container-settings', payload);
-    if (data?.error) {
-      throw new Error(data.error);
-    }
-    _syncUI(data);
-    refreshFilePanel({ keepPreview: true }).catch(() => {});
-  } catch (err) {
-    throw new Error(err.message || err);
-  }
+  const data = await api.post('/api/container-settings', payload);
+  if (data?.error) throw new Error(data.error);
+  _syncUI(data);
+  refreshFilePanel({ keepPreview: true }).catch(() => {});
 }
 
 // ── Key list ──────────────────────────────────────────────────────────────────
@@ -112,7 +106,7 @@ export async function deleteAllData() {
     if (data?.ok) {
       return { ok: true, deleted: data.deleted ?? 0 };
     }
-    return { ok: false, error: data?.errors?.join('; ') || 'Unknown error' };
+    return { ok: false, error: data?.error || data?.errors?.join('; ') || 'Unknown error' };
   } catch (err) {
     return { ok: false, error: err.message };
   }

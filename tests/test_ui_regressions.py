@@ -139,7 +139,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const state = {convId:'a',isStreaming:true,streamId:'stream-a'};
-const posts=[], approvals=[], results=[], running=[], activityChanges=[];
+const posts=[], approvals=[], results=[], running=[], activityChanges=[], markdown=[];
+const frames=new Map(); let nextFrame=0;
 const noop = () => {};
 const renderer = Object.fromEntries([
   'appendAssistantStatus','finalizeStreamingMessage','setStreamingMessageLogIndex',
@@ -161,7 +162,7 @@ const modules = {
   './api.js': {api:{post:async (url,body) => {posts.push({url,body});}}},
   './state.js': {state},
   './renderer.js': renderer,
-  './markdown.js': {applyMarkdown:noop},
+  './markdown.js': {applyMarkdown:(el,text)=>markdown.push(text)},
   './conversations.js': {persistConversationFor:noop,createNewConversation:noop},
   './file_panel.js': {refreshFilePanel:async () => {}},
   './format.js': {escapeHtml:value=>value},
@@ -177,9 +178,12 @@ const modules = {
     updateConversationActivity:(id,disconnected=false)=>activityChanges.push([id,disconnected]),
   },
 };
-const context=vm.createContext({document:{addEventListener:noop,getElementById:()=>null},AbortController});
+const context=vm.createContext({document:{addEventListener:noop,getElementById:()=>null},AbortController,
+ requestAnimationFrame:callback=>{frames.set(++nextFrame,callback);return nextFrame;},
+ cancelAnimationFrame:id=>frames.delete(id),
+});
 const source=readFileSync('static/js/chat.js','utf8')+
-  '\nexport {createStreamContext,processSSEEvent,reattachRuntime,activeTurns,attachServerStream};';
+  '\nexport {createStreamContext,processSSEEvent,reattachRuntime,activeTurns,attachServerStream,releaseTurnUI};';
 const module=new vm.SourceTextModule(source,{context});
 const linked=new Map();
 await module.link(specifier=>{
@@ -196,10 +200,29 @@ await module.evaluate();
 const {createStreamContext,processSSEEvent:apply,reattachRuntime,activeTurns,stopAssistantTurn}=module.namespace;
 const turn={convId:'a',messages:[],displayLog:[]};
 const ctx=createStreamContext(turn,'stream-a');
+await apply({type:'text',content:'First'},ctx);
+await apply({type:'text',content:' second'},ctx);
+assert.equal(frames.size,1,'Token bursts render Markdown only once per animation frame');
+assert.equal(markdown.length,0);
+const paint=frames.values().next().value;frames.clear();paint();
+assert.deepEqual(markdown,['First second']);
+await apply({type:'text',content:' third'},ctx);
+assert.equal(frames.size,1);
+state.convId='b';
+module.namespace.releaseTurnUI(ctx);
+assert.equal(frames.size,0,'Navigation cancels queued Markdown work and releases old DOM');
+assert.equal(ctx.contentEl,null);
+await apply({type:'text',content:' background'},ctx);
+assert.equal(frames.size,0,'Background tokens must not build detached DOM');
+state.convId='a';
+reattachRuntime({turn,ctx});
+assert.equal(markdown.at(-1),'First second third background');
+await apply({type:'text',content:' final'},ctx);
 await apply({type:'tool_start',name:'view'},ctx);
 await apply({type:'tool_start',name:'external'},ctx);
 await apply({type:'tool_running',name:'view'},ctx);
 await apply({type:'tool_result',name:'view',result:'file'},ctx);
+assert.equal(frames.size,0,'Tool boundaries cancel stale partial Markdown renders');
 await apply({type:'tool_approval_required',name:'external',call_id:'one',args:{}},ctx);
 assert.equal(approvals.length,1,'Approval must not block event consumption');
 assert.equal(approvals[0].strip,ctx.toolStrips[1],'Mixed auto/manual tools must use the matching strip');
@@ -604,7 +627,7 @@ import vm from 'node:vm';
 const pending=[];
 const state={convId:null};
 const rendered=[];
-const elements=Object.fromEntries(['chat-title-input','chat-folder-prefix','chat-title-separator'].map(id => [id,{
+const elements=Object.fromEntries(['chat-title-input','chat-folder-prefix','chat-title-separator','conv-list'].map(id => [id,{
   value:'',setAttribute(){},addEventListener(){},classList:{remove(){}},
 }]));
 globalThis.document={
@@ -618,8 +641,8 @@ const dependencies={
   './api.js':{api:{get:()=>new Promise(resolve=>pending.push(resolve))}},
   './state.js':{state,STORAGE_KEYS:{}}, './storage.js':{storage:{set(){},remove(){}}},
   './renderer.js':{clearMessages:()=>rendered.push('empty'),renderAllMessages:log=>rendered.push(log[0].content)},
-  './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}}, './icons.js':{ICONS:{}},
-  './format.js':{escapeHtml:s=>s}, './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
+  './ui.js':{toggleSidebar(){},openModal(){},closeModal(){},showToast(){}}, './icons.js':{ICONS:{}},
+  './format.js':{escapeHtml:s=>s,formatConversationDate:()=>''}, './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
   './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
 };
 const module=new vm.SourceTextModule(readFileSync('static/js/conversations.js','utf8'));
@@ -642,6 +665,16 @@ pending[2]({title:'Old',displayLog:[{content:'old content'}]});
 await old;
 assert.equal(state.convId,null);
 assert.deepEqual(rendered,['second content','empty']);
+let finishCreate;
+dependencies['./api.js'].api.post=()=>new Promise(resolve=>finishCreate=resolve);
+const creating=module.namespace.createNewConversation();
+startNewChat();
+finishCreate({id:'created-in-background'});
+await Promise.resolve();await Promise.resolve();
+pending[3]([]);pending[4]([]);
+const created=await creating;
+assert.equal(created.id,'created-in-background');
+assert.equal(state.convId,null,'A delayed new-chat response must not override a newer selection');
 ''')
 
 
@@ -711,8 +744,8 @@ const modules = {
   }}},
   './state.js':{state:{}, STORAGE_KEYS:{}}, './storage.js':{storage:{}},
   './renderer.js':{clearMessages(){},renderAllMessages(){}},
-  './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}},
-  './icons.js':{ICONS:{}}, './format.js':{escapeHtml:value=>value},
+  './ui.js':{toggleSidebar(){},openModal(){},closeModal(){},showToast(){}},
+  './icons.js':{ICONS:{}}, './format.js':{escapeHtml:value=>value,formatConversationDate:()=>''},
   './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
   './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
 };
@@ -746,4 +779,123 @@ element('folder-mount-list').handlers.change({target:{matches:()=>true,dataset:{
 assert.equal(mod.namespace.editingMounts[0].read_only,false);
 element('folder-mount-list').handlers.click({target:{closest:()=>({dataset:{mountRemove:'0'}})}});
 assert.equal(mod.namespace.editingMounts.length,0);
+''')
+
+
+def test_voice_errors_preserve_draft_and_notify_composer():
+    run_node(r'''
+import assert from 'node:assert/strict';
+const handlers={}; let recognition; let inputEvents=0;
+const button={classList:{add(){},remove(){}},addEventListener:(name,fn)=>handlers[name]=fn};
+const input={value:'Existing draft',dispatchEvent:event=>{assert.equal(event.type,'input');inputEvents++;}};
+globalThis.document={getElementById:id=>id==='mic-btn'?button:input};
+globalThis.window={SpeechRecognition:class {
+  constructor(){recognition=this;}
+  start(){this.starts=(this.starts||0)+1;}
+  stop(){this.stops=(this.stops||0)+1;}
+}};
+const warn=console.warn;console.warn=()=>{};
+const {initVoiceInput}=await import('./static/js/voice.js');
+initVoiceInput();
+handlers.click();
+handlers.click();
+assert.equal(recognition.starts,1,'A second click before onstart must not start another session');
+assert.equal(recognition.stops,1);
+recognition.onstart();
+recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:'spoken text'}],{isFinal:true})]});
+assert.equal(input.value,'Existing draft spoken text');
+recognition.onerror({error:'network'});
+recognition.onend();
+assert.equal(input.value,'Existing draft spoken text','onerror must not clear text before onend commits it');
+assert.equal(inputEvents,2,'Speech updates must run normal input validation and send-button updates');
+recognition.start=()=>{throw new Error('Cannot start');};
+handlers.click();
+assert.equal(input.value,'Existing draft spoken text');
+console.warn=warn;
+''')
+
+
+def test_composer_preserves_draft_during_streaming_and_ime_composition():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const elements=new Map();const sent=[];
+const element=id=>{
+ if(!elements.has(id))elements.set(id,{value:'',handlers:{},addEventListener(name,fn){this.handlers[name]=fn;}});
+ return elements.get(id);
+};
+const state={isStreaming:true,enterToSend:true};
+const input=element('user-input');input.value='Keep my draft';
+const noop=()=>{};
+const context=vm.createContext({state,document:{getElementById:element,addEventListener:noop},
+ hasPendingAttachments:()=>false,autoResize:noop,updateCharCount:noop,
+ sendMessage:async text=>sent.push(text),showToast:noop,stopAssistantTurn:noop,
+ initImageAttachments:noop,initVoiceInput:noop,renameConversationTitle:noop,
+ editAndResend:noop,regenerateFrom:noop,switchBranch:noop,persistConversationFor:noop,
+});
+const source=readFileSync('static/js/app.js','utf8');
+new vm.Script(source.slice(source.indexOf('function bindInputEvents()'),source.indexOf('function bindKeyboardEvents()'))+'\nbindInputEvents();').runInContext(context);
+const enter=isComposing=>input.handlers.keydown({key:'Enter',isComposing,preventDefault:noop});
+assert.equal(element('send-btn').disabled,true);
+enter(false);
+assert.equal(input.value,'Keep my draft');assert.equal(sent.length,0);
+state.isStreaming=false;
+enter(true);
+assert.equal(input.value,'Keep my draft');assert.equal(sent.length,0);
+enter(false);
+assert.equal(input.value,'');assert.deepEqual(sent,['Keep my draft']);
+''')
+
+
+def test_sidebar_ignores_stale_lists_and_preserves_state_after_mutation_failure():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const pending=[],errors=[];let renders=0;
+const list={set innerHTML(value){renders++;},get innerHTML(){return '';}};
+const state={convId:'current'};
+const document={getElementById:id=>id==='conv-list'?list:null,addEventListener(){}};
+const dependencies={
+ './api.js':{api:{get:()=>new Promise(resolve=>pending.push(resolve))}},
+ './state.js':{state,STORAGE_KEYS:{}},'./storage.js':{storage:{}},
+ './renderer.js':{clearMessages(){},renderAllMessages(){}},
+ './ui.js':{toggleSidebar(){},openModal(){},closeModal(){},showToast:error=>errors.push(error)},
+ './icons.js':{ICONS:{}},'./format.js':{escapeHtml:s=>s,formatConversationDate:()=>''},
+ './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
+ './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
+};
+const context=vm.createContext({document});
+const mod=new vm.SourceTextModule(readFileSync('static/js/conversations.js','utf8')+'\nexport {conversations,applyMutation};',{context});
+await mod.link(specifier=>new vm.SyntheticModule(Object.keys(dependencies[specifier]),function(){
+ for(const [key,value] of Object.entries(dependencies[specifier]))this.setExport(key,value);
+},{context}));
+await mod.evaluate();
+const first=mod.namespace.loadConversationList();const second=mod.namespace.loadConversationList();
+pending[2]([]);pending[3]([]);await second;
+const writes=renders;
+pending[0]([{id:'outdated'}]);pending[1]([]);await first;
+assert.equal(renders,writes);assert.equal(mod.namespace.conversations.length,0);
+assert.equal(await mod.namespace.applyMutation(Promise.resolve({error:'Folder runtime is busy'})),null);
+assert.equal(await mod.namespace.applyMutation(Promise.reject(new Error('Offline'))),null);
+assert.deepEqual(errors,['Folder runtime is busy','Offline']);
+assert.equal(state.convId,'current');
+''')
+
+
+def test_setup_build_log_retention_is_bounded_without_rewriting_history():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const details={childNodes:[],appendChild(node){
+ node.remove=()=>this.childNodes.splice(this.childNodes.indexOf(node),1);this.childNodes.push(node);
+},get firstChild(){return this.childNodes[0];}};
+const source=readFileSync('templates/startup_requirements.html','utf8');
+const context=vm.createContext({details,document:{createTextNode:text=>({text})},render(){}});
+new vm.Script(source.slice(source.indexOf('function processBuildEvent('),source.indexOf('async function buildImage()'))).runInContext(context);
+for(let index=0;index<200;index++)context.processBuildEvent('event: log\ndata: '+JSON.stringify({line:`${index}:`+'x'.repeat(20000)}));
+assert.equal(details.childNodes.length,50);
+assert(details.childNodes.every(node=>node.text.length<=8193));
 ''')

@@ -7,6 +7,7 @@ Flask.  `make_streaming_response` wraps it into a Flask Response.
 from __future__ import annotations
 
 import json
+from io import StringIO
 import threading
 from typing import Any, Generator
 
@@ -23,12 +24,12 @@ def _merge_tool_call_chunk(store: dict[int, dict], chunk) -> None:
     """Accumulate a streaming tool-call delta into *store* (keyed by chunk index)."""
     idx = chunk.index
     if idx not in store:
-        store[idx] = {"id": chunk.id or "", "function": {"name": "", "arguments": ""}}
+        store[idx] = {"id": chunk.id or "", "function": {"name": "", "arguments": StringIO()}}
     if chunk.id:
         store[idx]["id"] = chunk.id
     if chunk.function:
         store[idx]["function"]["name"]      += chunk.function.name      or ""
-        store[idx]["function"]["arguments"] += chunk.function.arguments or ""
+        store[idx]["function"]["arguments"].write(chunk.function.arguments or "")
 
 
 def stream_chat_completion(
@@ -87,7 +88,11 @@ def stream_chat_completion(
                         yield {"type": "tool_start", "name": tool_name}
 
             if chunk.choices and chunk.choices[0].finish_reason == "tool_calls":
-                yield {"type": "tool_calls", "calls": list(accumulated_tool_calls.values())}
+                yield {"type": "tool_calls", "calls": [
+                    {**call, "function": {**call["function"],
+                        "arguments": call["function"]["arguments"].getvalue()}}
+                    for call in accumulated_tool_calls.values()
+                ]}
 
         yield {"type": "done"}
 

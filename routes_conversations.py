@@ -34,6 +34,17 @@ def _bad_conv_id(conv_id: str):
     return None
 
 
+def _delete_runtime(runtime_id: str, *, remove_workspace: bool = True):
+    """Confirm Docker access is revoked before removing the owned workspace."""
+    try:
+        container_service.stop_container(runtime_id, strict=True)
+        if remove_workspace:
+            container_service.delete_workspace(runtime_id)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        return jsonify({"error": f"Could not delete the sandbox. {exc}"}), 503
+    return None
+
+
 @blueprint.route("/api/conversations", methods=["GET"])
 def list_conversations():
     return jsonify(store.list_all())
@@ -133,12 +144,12 @@ def delete_folder(folder_id: str):
     if any(c.get("active_stream_id") for c in conversations):
         return jsonify({"error": "Stop active chats before deleting this Folder"}), 409
     runtime_id = f"folder_{folder_id}"
+    if err := _delete_runtime(runtime_id):
+        return err
     conversation_ids = [c["id"] for c in conversations]
     for conversation_id in conversation_ids:
         store.delete(conversation_id)
     store.delete_folder(folder_id)
-    container_service.stop_container(runtime_id)
-    container_service.delete_workspace(runtime_id)
     return jsonify({"ok": True, "deleted_conversation_ids": conversation_ids})
 
 
@@ -200,9 +211,12 @@ def update_conversation(conv_id: str):
     data["id"] = conv_id
     new_runtime_id = store.runtime_id(conv_id, data)
     data["working_directory"] = str(container_service.conversation_workspace(new_runtime_id))
+    remove_old_runtime = old_runtime_id != new_runtime_id and old_runtime_id == conv_id
+    if remove_old_runtime:
+        if err := _delete_runtime(old_runtime_id, remove_workspace=False):
+            return err
     saved = store.save(conv_id, data)
-    if old_runtime_id != new_runtime_id and old_runtime_id == conv_id:
-        container_service.stop_container(old_runtime_id)
+    if remove_old_runtime:
         container_service.delete_workspace(old_runtime_id)
     return jsonify(saved)
 
@@ -217,10 +231,10 @@ def delete_conversation(conv_id: str):
     if data.get("active_stream_id"):
         return jsonify({"error": "Stop the active turn before deleting this chat"}), 409
     runtime_id = store.runtime_id(conv_id, data)
-    store.delete(conv_id)
     if runtime_id == conv_id:
-        container_service.stop_container(runtime_id)
-        container_service.delete_workspace(runtime_id)
+        if err := _delete_runtime(runtime_id):
+            return err
+    store.delete(conv_id)
     return jsonify({"ok": True})
 
 
@@ -236,12 +250,16 @@ def danger_delete_all():
     errors = []
     for runtime_id in runtime_ids:
         try:
-            container_service.stop_container(runtime_id)
-            container_service.delete_workspace(runtime_id)
+            container_service.stop_container(runtime_id, strict=True)
         except Exception as exc:
             errors.append(f"{runtime_id}: {exc}")
     if errors:
         return jsonify({"ok": False, "errors": errors}), 500
+    for runtime_id in runtime_ids:
+        try:
+            container_service.delete_workspace(runtime_id)
+        except OSError as exc:
+            return jsonify({"ok": False, "errors": [f"{runtime_id}: {exc}"]}), 500
     for conv in conversations:
         store.delete(conv["id"])
     for folder in folders:

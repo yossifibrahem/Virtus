@@ -3,6 +3,7 @@
 import { state, SETTINGS_DEFAULTS, STORAGE_KEYS } from './state.js';
 import { storage } from './storage.js';
 import { api }     from './api.js';
+import { escapeHtml as _escape } from './format.js';
 
 // ── Read / write ──────────────────────────────────────────────────────────────
 
@@ -186,9 +187,6 @@ function _setModelStatus(title, detail, type) {
   el.style.display = 'block';
 }
 
-function _escape(value) {
-  return String(value).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
 
 function updateModelBadge() {
   document.getElementById('model-badge-label').textContent = state.model || 'No model';

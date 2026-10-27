@@ -271,3 +271,13 @@ def test_conversations_use_utf8_even_with_windows_locale(tmp_lumen, monkeypatch)
     assert legacy['title'] == 'Café'
     store.save(conversation['id'], legacy)
     assert 'Café'.encode('utf-8') in path.read_bytes()
+
+
+def test_listed_summaries_cannot_corrupt_cached_runtime_ownership(tmp_lumen):
+    conversation = store.create("Original")
+    listed = store.list_all()
+    listed[0]["title"] = "Changed"
+    listed[0]["folder_id"] = "unrelated"
+    assert store.list_all()[0]["title"] == "Original"
+    assert store.list_all()[0]["folder_id"] is None
+    assert store.runtime_id(conversation["id"]) == conversation["id"]

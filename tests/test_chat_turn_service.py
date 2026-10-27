@@ -446,3 +446,13 @@ def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_lumen):
     assert messages[0]['content'][0] == {'type': 'image_ref', 'ref': ref}
     with pytest.raises(ValueError, match='image no longer available'):
         tool_media.expand([{'role': 'user', 'content': [{'type': 'image_ref', 'ref': 'missing'}]}], '')
+
+
+def test_memory_injection_supports_system_text_blocks(monkeypatch):
+    monkeypatch.setattr(svc.memory_service, "read", lambda: "Remember this")
+    blocks = [{"type": "text", "text": "System instructions"}]
+    original = [{"role": "system", "content": blocks}]
+    messages = svc._inject_memory(original)
+    assert messages[0]["content"] == [*blocks, {"type": "text", "text": "## Persistent Memory\nRemember this"}]
+    assert original[0]["content"] is blocks
+    assert len(blocks) == 1

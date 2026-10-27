@@ -2,11 +2,11 @@
 
 ## Current scope
 
-The bundled Node MCP server has been removed. References below to bundled tools, MCP source, TypeScript, and server lockfiles describe the historical packaging attempts only. Current packages include the Dockerfile, all MCP servers are user-configured, and sandbox identity covers `.dockerignore` and `Dockerfile.sandbox`. The former server packaging and validation requirements no longer apply.
+The bundled Node MCP server has been removed. References below to bundled tools, MCP source, TypeScript, and server lockfiles describe the historical packaging attempts only. Current packages include the Dockerfile and both Python sandbox workers (`sandbox_tools.py` and `sandbox_files.py`); sandbox identity covers these workers, `.dockerignore`, and `Dockerfile.sandbox`. All MCP servers are user-configured and execute inside the chat or Folder/Project container. Only Folder/Project settings can grant host-directory mounts; the sandbox uses Docker bridge networking by default. The former server packaging and validation requirements no longer apply.
 
 ## Purpose
 
-This document records what was learned during the first Windows desktop packaging attempt. The implementation was reverted so a new approach can begin from the stable macOS/development baseline without carrying experimental changes into the main application.
+This document records historical Windows packaging attempts and their validation. The current Windows launcher and ZIP build are implemented in `windows_desktop_launcher.py` and `packaging/build_windows.ps1`; use [README](README.md#windows-x64-installation) for current installation instructions.
 
 The intended product remains:
 

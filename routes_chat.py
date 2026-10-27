@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 import uuid
 import re
+import math
 import store
 
 from flask import Blueprint, jsonify, request, session, abort
@@ -28,6 +29,31 @@ def _body() -> dict:
     if not isinstance(body, dict):
         abort(400, description="Expected a JSON object")
     return body
+
+
+def _validate_turn(body: dict) -> None:
+    """Reject malformed request structures before starting a background worker."""
+    for key in ("messages", "conversation_messages", "display_log", "mcp_tool_meta", "tools"):
+        value = body.get(key, [])
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+            raise ValueError(f"{key} must be an array of objects")
+    for tool in body.get("tools", []):
+        if not isinstance(tool.get("function"), dict):
+            raise ValueError("Each tool must have a function object")
+    for tool in body.get("mcp_tool_meta", []):
+        if not isinstance(tool.get("name"), str) or not isinstance(tool.get("server"), str):
+            raise ValueError("MCP tool names and servers must be strings")
+        if not isinstance(tool.get("autoApprove", False), bool):
+            raise ValueError("autoApprove must be a boolean")
+    for key in ("model", "title"):
+        if key in body and not isinstance(body[key], str):
+            raise ValueError(f"{key} must be a string")
+    try:
+        temperature = float(body.get("temperature", 0.7))
+    except (TypeError, ValueError):
+        raise ValueError("temperature must be a finite number") from None
+    if not math.isfinite(temperature):
+        raise ValueError("temperature must be a finite number")
 
 
 def _stream_state(stream_id: str, conv_id: str = "") -> dict:
@@ -92,6 +118,11 @@ def chat_stream():
         return jsonify({"error": "Invalid stream id"}), 400
     if not isinstance(conv_id, str) or not re.fullmatch(r'[a-fA-F0-9-]{36}', conv_id) or not store.load(conv_id):
         return jsonify({"error": "Conversation not found"}), 404
+    if not attach_only:
+        try:
+            _validate_turn(body)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
     with _registry_lock:
         existing = _active_streams.get(stream_id)
         if existing and (existing.get("owner") != owner or existing.get("conv_id") != conv_id):
@@ -162,7 +193,9 @@ def chat_approve():
     if not state or state.get("owner") != session.get("client_id", "test"):
         return jsonify({"error": "Stream not found"}), 404
     call_id = body.get("call_id", "")
-    approved = bool(body.get("approved", False))
+    approved = body.get("approved", False)
+    if not isinstance(call_id, str) or not isinstance(approved, bool):
+        return jsonify({"error": "call_id must be a string and approved must be a boolean"}), 400
     chat_turn_service.resolve_tool_approval(stream_id, call_id, approved)
     return jsonify({"ok": True})
 

@@ -3,17 +3,13 @@ from __future__ import annotations
 
 import ctypes
 import errno
-import json
+from functools import partial
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
-import socket
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 import webbrowser
 
 import pystray
@@ -22,6 +18,7 @@ from waitress import create_server
 
 import app as lumen_app
 import build_info
+import desktop_runtime
 import runtime_requirements
 
 
@@ -42,64 +39,14 @@ _kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
 _kernel32.CloseHandle.restype = ctypes.c_bool
 
 
-def configure_logging() -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    root.handlers.clear()
-    root.addHandler(handler)
-
-
-def _health_payload(timeout: float = 1.0) -> dict | None:
-    try:
-        with urllib.request.urlopen(f"{BASE_URL}/health", timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (OSError, ValueError, urllib.error.URLError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _wait_for_health(timeout: float = 30.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        payload = _health_payload()
-        if payload and payload.get("app") == build_info.APP_ID:
-            return True
-        time.sleep(0.25)
-    return False
-
-
-def _port_available() -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            probe.bind((HOST, PORT))
-        except OSError:
-            return False
-    return True
+configure_logging = partial(desktop_runtime.configure_logging, LOG_FILE)
+_health_payload = partial(desktop_runtime.health_payload, BASE_URL)
+_wait_for_health = partial(desktop_runtime.wait_for_health, BASE_URL)
+_port_available = partial(desktop_runtime.port_available, HOST, PORT)
 
 
 def _validate_frozen_runtime() -> None:
-    """Import lazy dependencies and verify the complete Docker build context."""
-    from mcp import ClientSession, StdioServerParameters  # noqa: F401
-    from mcp.client.stdio import stdio_client  # noqa: F401
-    from openai import OpenAI  # noqa: F401
-
-    root = build_info.resource_root()
-    required = [
-        root / "templates" / "index.html",
-        root / "static" / "js" / "app.js",
-        root / "Dockerfile.sandbox",
-        root / ".dockerignore",
-    ]
-    if build_info.is_frozen():
-        required.append(WINDOWS_ICON)
-    missing = [str(path) for path in required if not path.is_file()]
-    if missing:
-        raise RuntimeError(f"Frozen application resources are missing: {', '.join(missing)}")
-    build_info.sandbox_identity(root)
+    desktop_runtime.validate_frozen_runtime(*([WINDOWS_ICON] if build_info.is_frozen() else []))
 
 
 class SingleInstance:

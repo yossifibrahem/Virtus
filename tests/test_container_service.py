@@ -473,3 +473,37 @@ class TestCleanupStaleDiscoveryContainer:
         assert removed == ["old-chat"]
         rm_calls = [args for args in calls if args[:3] == ["docker", "rm", "-f"]]
         assert rm_calls == [["docker", "rm", "-f", stale_name]]
+
+
+def test_failed_idle_stop_remains_tracked_and_retries(monkeypatch):
+    monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {'container_idle_timeout': 1})
+    monkeypatch.setattr(container_service, 'get_status', lambda cid: 'running')
+    attempts = []
+    monkeypatch.setattr(container_service, 'stop_container_process', lambda cid: attempts.append(cid) or False)
+    monkeypatch.setattr(container_service, '_last_used', {'idle-failed': 0})
+    container_service._reap_once()
+    container_service._reap_once()
+    assert attempts == ['idle-failed', 'idle-failed']
+    assert 'idle-failed' in container_service._last_used
+
+
+def test_failed_container_stop_keeps_live_mcp_sessions(monkeypatch):
+    from unittest.mock import Mock
+    monkeypatch.setattr(container_service, 'get_status', lambda cid: 'running')
+    monkeypatch.setattr(container_service, '_run', lambda args: subprocess.CompletedProcess(args, 1, '', 'daemon unavailable'))
+    invalidate = Mock()
+    monkeypatch.setattr(container_service, '_invalidate_mcp_pool', invalidate)
+    assert container_service.stop_container_process('idle-failed') is False
+    invalidate.assert_not_called()
+
+
+def test_idle_stop_kills_without_docker_sigterm_grace_delay(monkeypatch):
+    from unittest.mock import Mock
+    monkeypatch.setattr(container_service, 'get_status', lambda cid: 'running')
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, '', ''))
+    invalidate = Mock()
+    monkeypatch.setattr(container_service, '_run', run)
+    monkeypatch.setattr(container_service, '_invalidate_mcp_pool', invalidate)
+    assert container_service.stop_container_process('idle') is True
+    run.assert_called_once_with(['docker', 'kill', container_service.container_name('idle')])
+    invalidate.assert_called_once_with('idle')
