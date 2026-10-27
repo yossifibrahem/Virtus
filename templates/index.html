@@ -9,28 +9,31 @@
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
 <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
 
-<!-- Fonts -->
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
-
-<!-- Rendering libraries -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-<link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-<!-- App styles -->
-<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
-
+<!-- Keep the incomplete shell out of the first paint. No JS leaves it visible. -->
+<style>
+  html { background: var(--bg, #1f1f1e); }
+  html[data-theme="light"] { background: var(--bg, #f8f8f6); }
+  html.app-loading body { visibility: hidden; }
+</style>
 <!-- Apply saved customization before first paint to prevent flash of defaults -->
 <script>
 (function () {
+  var r = document.documentElement;
+  r.classList.add('app-loading', 'no-transition');
+
+  // Reveal a settled frame; also recover if the module fails to load or boot.
+  var reveal = function () {
+    clearTimeout(fallback);
+    r.classList.remove('app-loading');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { r.classList.remove('no-transition'); });
+    });
+  };
+  var fallback = setTimeout(reveal, 5000);
+  document.addEventListener('app:ready', reveal, { once: true });
+
   try {
     var prefs = JSON.parse(localStorage.getItem('lumen_customization') || '{}');
-    var r = document.documentElement;
 
     // Theme
     var theme = prefs.theme || 'auto';
@@ -81,7 +84,7 @@
     // Sidebar — collapse immediately when the last saved state is closed.
     // On first visit, default to open on desktop and closed on mobile.
     var sidebarSaved = localStorage.getItem('lumen_sidebar');
-    var sidebarOpen = sidebarSaved === null ? !isMobile : sidebarSaved === 'true';
+    var sidebarOpen = sidebarSaved === null ? prefs.sidebarDefaultOpen !== false : sidebarSaved === 'true';
     if (isMobile || !sidebarOpen) {
       r.classList.add('sidebar-init-closed');
     }
@@ -92,19 +95,27 @@
     var fontFamily = fontMap[savedFontFamily] ? savedFontFamily : 'geist';
     r.style.setProperty('--font-roman', fontMap[fontFamily]);
 
-    // Suppress all transitions during initial paint so nothing animates in
-    r.classList.add('no-transition');
-    document.addEventListener('DOMContentLoaded', function () {
-      // One rAF to let the browser paint the settled state, then re-enable transitions
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          r.classList.remove('no-transition');
-        });
-      });
-    });
   } catch (e) {}
 })();
 </script>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+<!-- Rendering libraries -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<link  rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+<!-- App styles -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+
+
 </head>
 <body>
 

@@ -280,32 +280,35 @@ function bindEvents() {
 // ── Boot sequence ─────────────────────────────────────────────────────────────
 
 (async () => {
-  initIcons();
-  initFilePanel();
-  initMobileKeyboardHandling();   // must run early — sets --vvh before first paint
-  bindEvents();
-  loadSettings();
-  loadCustomization();
-  const hasCachedTools = loadCachedTools();
-  await loadMemorySettings();
-  await loadConversationList();
-  await loadMcpConfig();
-  // Render a cache immediately, but always refresh it so MCP tool
-  // and config changes cannot remain hidden after an app upgrade.
-  const toolRefresh = reloadTools();
-  if (!hasCachedTools) await toolRefresh;
-
-  const lastConvId = storage.get(STORAGE_KEYS.lastConv);
-  if (lastConvId) {
-    try {
-      await openConversation(lastConvId);
-    } catch {
-      storage.remove(STORAGE_KEYS.lastConv);
-      clearMessages();
+  try {
+    initIcons();
+    initFilePanel();
+    initMobileKeyboardHandling();   // must run early — sets --vvh before first paint
+    bindEvents();
+    loadSettings();
+    loadCustomization();
+    initSidebar(state.sidebarDefaultOpen);
+    // Restore saved tools without contacting MCP servers. Discovery is manual
+    // through the Reload tools button in settings.
+    loadCachedTools();
+    await loadMemorySettings();
+    await loadConversationList();
+    await loadMcpConfig();
+    const lastConvId = storage.get(STORAGE_KEYS.lastConv);
+    if (lastConvId) {
+      try {
+        await openConversation(lastConvId);
+      } catch {
+        storage.remove(STORAGE_KEYS.lastConv);
+        clearMessages();
+      }
+    } else {
+      clearMessages(); // Show empty state when no conversation exists
     }
-  } else {
-    clearMessages(); // Show empty state when no conversation exists
+  } catch (error) {
+    console.error('Could not restore the app', error);
+    showToast('Could not restore the app. Please reload to try again.');
+  } finally {
+    document.dispatchEvent(new Event('app:ready'));
   }
-
-  initSidebar(state.sidebarDefaultOpen);
 })();

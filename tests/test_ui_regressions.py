@@ -1059,3 +1059,62 @@ assert.deepEqual(requests,['/api/conversations/original/files/delete?path=%2Fwor
 assert.equal(button.disabled,false);
 assert.equal(notices.length,0,'Navigation must not refresh or notify the wrong workspace');
 ''')
+
+
+def test_initial_paint_waits_for_restoration_and_recovers_from_boot_failure():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const template = readFileSync('templates/index.html', 'utf8');
+const inline = template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
+const app = readFileSync('static/js/app.js', 'utf8').split('// ── Boot sequence')[1].split('\n').slice(1).join('\n');
+for (const fail of [false, true]) {
+  const classes = new Set();
+  const listeners = new Map();
+  const frames = [];
+  let fallback, sidebarReady = false, restored = false, resume;
+  const pending = new Promise(resolve => resume = resolve);
+  const context = vm.createContext({
+    document: {
+      documentElement: {
+        classList: {add: (...names) => names.forEach(n => classes.add(n)), remove: n => classes.delete(n)},
+        style: {setProperty() {}}, setAttribute() {},
+      },
+      addEventListener: (name, fn) => listeners.set(name, fn),
+      dispatchEvent: event => listeners.get(event.type)?.(),
+    },
+    localStorage: {getItem: () => null},
+    window: {innerWidth: 1200, matchMedia: () => ({matches: false})},
+    requestAnimationFrame: fn => frames.push(fn),
+    setTimeout: fn => {fallback = fn; return 1;}, clearTimeout() {},
+    Event: class {constructor(type) {this.type = type;}},
+    console: {error() {}}, showToast() {},
+    state: {}, STORAGE_KEYS: {lastConv: 'last'}, storage: {get: () => 'saved'},
+    initIcons() {}, initFilePanel() {}, initMobileKeyboardHandling() {},
+    bindEvents() {}, loadSettings() {}, loadCustomization() {},
+    initSidebar: () => {sidebarReady = true;}, loadCachedTools() {},
+    loadMemorySettings: () => pending,
+    loadConversationList: async () => {if (fail) throw new Error('Offline');},
+    loadMcpConfig: async () => {},
+    openConversation: async () => {restored = true;}, clearMessages() {},
+  });
+  vm.runInContext(inline, context);
+  assert(classes.has('app-loading'));
+  const boot = vm.runInContext(app, context);
+  assert(sidebarReady, 'Sidebar must initialize before requests finish');
+  assert(classes.has('app-loading'), 'Unrestored shell must stay hidden');
+  resume();
+  await boot;
+  assert.equal(restored, !fail);
+  assert(!classes.has('app-loading'), 'Even a failed boot must reveal the UI');
+  assert(classes.has('no-transition'), 'Keep transitions off through reveal');
+  while (frames.length) frames.shift()();
+  assert(!classes.has('no-transition'));
+
+  // Missing module/network failure cannot leave the page permanently hidden.
+  vm.runInContext(inline, context);
+  fallback();
+  assert(!classes.has('app-loading'));
+}
+''')
