@@ -7,6 +7,7 @@ import re
 import time
 
 from openai import BadRequestError
+import streaming
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def _fallback_title(messages: list) -> str | None:
     return None
 
 
-def generate_title(client, body: dict, messages: list) -> str | None:
+def generate_title(client, body: dict, messages: list, cancel_event=None) -> str | None:
     """Request a small text title, with no tools or inherited chat settings.
 
     Disable reasoning where supported. An explicit rejection of that option
@@ -120,10 +121,16 @@ def generate_title(client, body: dict, messages: list) -> str | None:
         reasoning_effort="none",
     )
     deadline = time.monotonic() + TITLE_TIMEOUT_SECONDS
+
+    def create(title_client):
+        if cancel_event is None:
+            return title_client.chat.completions.create(**request)
+        return streaming.complete_chat(title_client, request, cancel_event)
+
     try:
         title_client = client.with_options(timeout=TITLE_TIMEOUT_SECONDS, max_retries=0)
         try:
-            response = title_client.chat.completions.create(**request)
+            response = create(title_client)
         except BadRequestError as exc:
             # Older/non-reasoning endpoints may reject this optional field.
             if "reasoning_effort" not in str(exc).lower():
@@ -132,7 +139,9 @@ def generate_title(client, body: dict, messages: list) -> str | None:
             if remaining <= 0:
                 raise
             request.pop("reasoning_effort")
-            response = title_client.with_options(timeout=remaining, max_retries=0).chat.completions.create(**request)
+            response = create(title_client.with_options(timeout=remaining, max_retries=0))
+        if cancel_event is not None and cancel_event.is_set():
+            return None
         if response.choices[0].finish_reason == "length":
             raise ValueError("Title generation exhausted its token budget")
         return _extract_title(response.choices[0].message)

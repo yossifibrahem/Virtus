@@ -246,12 +246,8 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     stop_reason.append('Turn wall-clock budget exhausted')
                 cancel_event.set()
             if cancel_event.is_set():
-                # Interrupt HTTP streaming/read waits, and the MCP request itself.
-                if callable(close := getattr(client, 'close', None)):
-                    try:
-                        close()
-                    except Exception:
-                        pass
+                # Provider requests and tools observe cancellation themselves.
+                # The provider's event loop owns its HTTP transport and cleanup.
                 return
 
     watcher = threading.Thread(target=watch, daemon=True)
@@ -386,7 +382,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         if assistant_completed and is_first_message and not cancel_event.is_set() \
                 and body.get("auto_generate_titles", True):
             recorder.save(display_log, force=True)
-            generated_title = title_service.generate_title(client, body, turn_messages)
+            generated_title = title_service.generate_title(client, body, turn_messages, cancel_event)
             if generated_title:
                 recorder.update_title(generated_title)
                 publish({"type": "title", "title": generated_title})

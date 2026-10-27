@@ -329,6 +329,95 @@ def test_model_error_preserves_partial_response_and_closes_client(tmp_lumen, mon
     client.close.assert_called_once()
 
 
+@pytest.mark.parametrize('blocked_operation', ['headers', 'body', 'title'])
+def test_cancel_interrupts_provider_request_and_finishes_turn(
+        tmp_lumen, monkeypatch, blocked_operation):
+    import asyncio
+    import threading
+    import httpx
+    from openai import AsyncOpenAI
+    import store
+    import routes_chat
+
+    conv = store.create()
+    cancel = threading.Event()
+    blocked = threading.Event()
+    interrupted = threading.Event()
+    partial_received = threading.Event()
+    transports = []
+
+    async def wait_for_cancel():
+        blocked.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            interrupted.set()
+
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n'
+            await wait_for_cancel()
+
+    async def handle(request):
+        if blocked_operation in {'headers', 'title'}:
+            await wait_for_cancel()
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=Body())
+
+    def provider(client):
+        transport = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        transports.append(transport)
+        return AsyncOpenAI(api_key='test', base_url='http://model.test/v1',
+                           max_retries=0, http_client=transport)
+
+    client = MagicMock()
+    client.with_options.return_value = client
+    if blocked_operation == 'title':
+        monkeypatch.setattr(svc.stream_module, 'stream_chat_completion',
+                            lambda *a, **k: iter([{'type': 'text', 'content': 'Partial'}, {'type': 'done'}]))
+    monkeypatch.setattr(svc, 'openai_client', lambda body: client)
+    monkeypatch.setattr(svc.stream_module, '_async_client', provider)
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    monkeypatch.setattr(routes_chat, '_active_streams', {})
+    monkeypatch.setattr(routes_chat, '_cancel_events', {'blocked-test': cancel})
+    state = routes_chat._stream_state('blocked-test', conv['id'])
+    original_publish = routes_chat._publish_stream_event
+
+    def publish(state, event):
+        original_publish(state, event)
+        if event['type'] == 'text':
+            partial_received.set()
+
+    monkeypatch.setattr(routes_chat, '_publish_stream_event', publish)
+    worker = threading.Thread(target=routes_chat._run_chat_turn, args=(state, {
+        'conv_id': conv['id'], 'auto_generate_titles': blocked_operation == 'title',
+        'conversation_messages': [{'role': 'user', 'content': 'Test'}],
+    }, cancel), daemon=True)
+    worker.start()
+    try:
+        assert blocked.wait(2)
+        if blocked_operation == 'body':
+            assert partial_received.wait(2)
+        cancel.set()
+        worker.join(timeout=2)
+        assert not worker.is_alive(), 'Cancellation did not finish the turn'
+        assert interrupted.is_set(), 'The pending HTTP operation must actually be cancelled'
+        assert all(transport.is_closed for transport in transports)
+        assert state['done'], 'SSE consumers must receive the terminal marker'
+        assert 'blocked-test' not in routes_chat._active_streams
+        assert 'blocked-test' not in routes_chat._cancel_events
+        saved = store.load(conv['id'])
+        assert not saved.get('active_stream_id')
+        assert not saved['streaming']
+        assert saved['displayLog'][-1]['content'] == 'Response stopped.'
+        if blocked_operation == 'body':
+            assert saved['messages'][-1]['content'] == 'Partial'
+        assert 'assistant_done' in state['events'][-1]
+        client.close.assert_called_once()
+    finally:
+        cancel.set()
+        worker.join(timeout=2)
+
+
 def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch):
     import threading
     import store

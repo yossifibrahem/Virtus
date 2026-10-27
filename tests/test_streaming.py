@@ -11,10 +11,47 @@ Tests verify:
 from __future__ import annotations
 
 import json
+import asyncio
 import threading
 from unittest.mock import MagicMock
 
+import pytest
 import streaming
+
+
+@pytest.fixture(autouse=True)
+def async_provider(monkeypatch):
+    """Adapt the mocked SDK responses to the asynchronous transport interface."""
+    class AsyncStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            self.stream.close()
+
+        async def __aiter__(self):
+            for chunk in self.stream:
+                yield chunk
+                await asyncio.sleep(0)
+
+    class AsyncProvider:
+        def __init__(self, client):
+            self.client = client
+            self.chat = self.completions = self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def create(self, **kwargs):
+            return AsyncStream(self.client.chat.completions.create(**kwargs))
+
+    monkeypatch.setattr(streaming, '_async_client', AsyncProvider)
 
 
 # ---------------------------------------------------------------------------

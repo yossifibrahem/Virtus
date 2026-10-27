@@ -330,6 +330,8 @@ def test_title_is_published_persisted_and_turn_finalized(tmp_lumen, monkeypatch,
 
     conversation = store.create()
     client = TestGenerateTitle()._make_client()
+    monkeypatch.setattr(svc.streaming, 'complete_chat',
+                        lambda client, request, cancel: client.chat.completions.create(**request))
     if mode == "fallback":
         client.chat.completions.create.side_effect = TimeoutError()
     monkeypatch.setattr(chat_turn_service, "openai_client", lambda body: client)
