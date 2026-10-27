@@ -541,7 +541,10 @@ async function processSSEEvent(evt, ctx) {
     ctx.accText = '';
     ctx.accReasoning = '';
     ctx.reasoningFinalized = false;
-    if (ctx.isVisible()) refreshFilePanel({ keepPreview: true }).catch(() => {});
+    // Only built-in tools that can change workspace files need a panel refresh.
+    if (ctx.isVisible() && ['write', 'edit', 'bash'].includes(evt.name)) {
+      refreshFilePanel({ keepPreview: true }).catch(() => {});
+    }
 
   } else if (evt.type === 'history_reload') {
     ctx.turn.historyRecoveryPending = true;
