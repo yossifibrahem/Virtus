@@ -269,7 +269,7 @@
         </button>
         <button class="modal-tab" id="tab-containers-tab" role="tab" aria-controls="tab-containers" aria-selected="false" tabindex="-1" data-tab="tab-containers">
           <span data-icon="tabContainers"></span>
-          Containers
+          Workspace
         </button>
       </nav>
       <button class="modal-close" data-close="settings-modal" aria-label="Close settings">
@@ -376,6 +376,33 @@
             </label>
           </div>
         </div>
+
+        <div class="section-sep"></div>
+
+        <section class="settings-section memory-settings" aria-labelledby="memory-heading">
+          <div class="cust-row">
+            <div class="cust-row-label">
+              <span class="cust-label" id="memory-heading">Remember across chats</span>
+              <span class="cust-hint" id="memory-description">Keep useful facts and preferences for future conversations.</span>
+            </div>
+            <label class="cust-toggle">
+              <input id="memory-enabled" type="checkbox" aria-labelledby="memory-heading" aria-describedby="memory-description" disabled>
+              <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
+            </label>
+          </div>
+          <details class="memory-editor">
+            <summary>View and edit memory</summary>
+            <div class="field">
+              <label for="memory-content">Saved memory</label>
+              <textarea id="memory-content" rows="6" spellcheck="false" aria-describedby="memory-note" disabled></textarea>
+              <p class="field-note" id="memory-note">Turning memory off keeps these facts saved. Clearing memory does not remove it from past chats.</p>
+            </div>
+            <div class="memory-actions">
+              <button type="button" id="memory-save" class="btn-secondary" disabled>Save memory</button>
+              <button type="button" id="memory-clear" class="memory-clear" disabled>Clear memory</button>
+            </div>
+          </details>
+        </section>
 
       </div>
 
@@ -546,135 +573,27 @@
       <!-- ── Containers tab ── -->
       <div id="tab-containers" class="tab-panel" role="tabpanel" aria-labelledby="tab-containers-tab">
 
-        <div class="settings-section">
-          <div class="section-title">Global memory</div>
-          <label><input id="memory-enabled" type="checkbox" checked> Remember stable facts across chats (enabled by default)</label>
-          <p class="field-note">Disabling preserves stored memory and stops supplying it or its tool on subsequent model requests. It does not erase facts already in chat history. Memory is managed by the app, outside the computer.</p>
-          <textarea id="memory-content" class="input-base" rows="8" aria-label="Global memory contents"></textarea>
-          <button type="button" id="memory-save" class="btn-secondary">Save memory</button>
-          <button type="button" id="memory-reload" class="btn-secondary">Reload memory</button>
-          <button type="button" id="memory-clear" class="btn-secondary">Clear memory…</button>
-          <p id="memory-status" role="status"></p>
-        </div>
-        <!-- Sandbox Container ─────────────────────────────────────────── -->
-        <div class="settings-section">
-          <div class="section-title">Sandbox Container</div>
-          <p class="field-note">Settings are checked against Docker before reuse. Changes apply when the shared runtime is idle. Recreating an incompatible container retains workspace files but resets installed packages. Legacy memory mounts require a one-time compatibility reset. Networking is managed directly through Docker.</p>
-
-          <div class="field">
-            <label class="adv-label-row" for="adv-sandbox_image">
-              Docker image
-              <span class="adv-env-badge" id="adv-lock-sandbox_image" hidden title="">ENV</span>
-            </label>
-            <input type="text" id="adv-sandbox_image" placeholder="lumen-sandbox" />
-            <div class="field-note">Image used for every new conversation container. Env&thinsp;var: <code>LUMEN_SANDBOX_IMAGE</code></div>
-          </div>
-
-          <div class="field-row">
-            <div class="field">
-              <label class="adv-label-row" for="adv-container_memory">
-                Memory limit
-                <span class="adv-env-badge" id="adv-lock-container_memory" hidden title="">ENV</span>
-              </label>
-              <select id="adv-container_memory">
-                <option value="128m">128 MB</option>
-                <option value="256m">256 MB</option>
-                <option value="512m">512 MB (default)</option>
-                <option value="1g">1 GB</option>
-                <option value="2g">2 GB</option>
-                <option value="4g">4 GB</option>
-              </select>
-              <div class="field-note">Env&thinsp;var: <code>LUMEN_CONTAINER_MEMORY</code></div>
-            </div>
-
-            <div class="field">
-              <label class="adv-label-row" for="adv-container_cpus">
-                CPU limit
-                <span class="adv-env-badge" id="adv-lock-container_cpus" hidden title="">ENV</span>
-              </label>
-              <input type="number" id="adv-container_cpus" min="0.1" max="16" step="0.5" placeholder="1" />
-              <div class="field-note">Fractional CPUs allowed. Env&thinsp;var: <code>LUMEN_CONTAINER_CPUS</code></div>
-            </div>
-          </div>
-
-          <div class="field-row">
-
-            <div class="field">
-              <label class="adv-label-row" for="adv-container_idle_timeout">
-                Idle timeout (seconds)
-                <span class="adv-env-badge" id="adv-lock-container_idle_timeout" hidden title="">ENV</span>
-              </label>
-              <input type="number" id="adv-container_idle_timeout" min="0" step="60" placeholder="600" />
-              <div class="field-note">Seconds before an unused container is stopped. <code>0</code>&thinsp;=&thinsp;never. Env&thinsp;var: <code>LUMEN_CONTAINER_IDLE_TIMEOUT</code></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section-sep"></div>
-
-        <div class="settings-section">
-          <div class="section-title">Execution safeguards</div>
-          <p class="field-note">Checks run before work and about every 2 seconds during execution. These are safeguards, not hard disk quotas. A limit stops work while preserving existing files and history. Shared runtime cleanup can interrupt other Folder activity.</p>
-          <div class="field"><label for="adv-turn_timeout_seconds">Maximum turn duration (seconds)<span class="adv-env-badge" id="adv-lock-turn_timeout_seconds" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-turn_timeout_seconds" value="900"></div>
-          <div class="field"><label for="adv-turn_tool_limit">Maximum tool calls per turn<span class="adv-env-badge" id="adv-lock-turn_tool_limit" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-turn_tool_limit" value="100"></div>
-          <div class="field"><label for="adv-min_free_disk_bytes">Minimum free disk space (bytes)<span class="adv-env-badge" id="adv-lock-min_free_disk_bytes" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-min_free_disk_bytes" value="536870912"></div>
-          <div class="field"><label for="adv-max_workspace_bytes">Maximum managed workspace size per runtime (bytes)<span class="adv-env-badge" id="adv-lock-max_workspace_bytes" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-max_workspace_bytes" value="10737418240"></div>
-        </div>
-        <!-- File Handling ─────────────────────────────────────────────── -->
-        <div class="settings-section">
-          <div class="section-title">File Handling</div>
-
-          <div class="field-row">
-            <div class="field">
-              <label class="adv-label-row" for="adv-max_file_preview_bytes">
-                Max inline preview size
-                <span class="adv-env-badge" id="adv-lock-max_file_preview_bytes" hidden title="">ENV</span>
-              </label>
-              <select id="adv-max_file_preview_bytes">
-                <option value="65536">64 KB</option>
-                <option value="262144">256 KB</option>
-                <option value="524288">512 KB (default)</option>
-                <option value="1048576">1 MB</option>
-                <option value="4194304">4 MB</option>
-              </select>
-              <div class="field-note">Largest file shown inline in the workspace panel. Env&thinsp;var: <code>LUMEN_MAX_FILE_PREVIEW_BYTES</code></div>
-            </div>
-
-            <div class="field">
-              <label class="adv-label-row" for="adv-max_file_list_entries">
-                Max directory entries
-                <span class="adv-env-badge" id="adv-lock-max_file_list_entries" hidden title="">ENV</span>
-              </label>
-              <input type="number" id="adv-max_file_list_entries" min="10" max="5000" step="50" placeholder="500" />
-              <div class="field-note">Maximum entries returned per directory listing. Env&thinsp;var: <code>LUMEN_MAX_FILE_LIST_ENTRIES</code></div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="adv-label-row" for="adv-max_upload_bytes">
-              Max upload size
-              <span class="adv-env-badge" id="adv-lock-max_upload_bytes" hidden title="">ENV</span>
-            </label>
-            <select id="adv-max_upload_bytes">
-              <option value="5242880">5 MB</option>
-              <option value="10485760">10 MB</option>
-              <option value="26214400">25 MB</option>
-              <option value="52428800">50 MB (default)</option>
-            </select>
-            <div class="field-note">Per-file size cap for workspace uploads. Env&thinsp;var: <code>LUMEN_MAX_UPLOAD_BYTES</code></div>
-          </div>
-        </div>
+        <section class="workspace-overview" aria-labelledby="workspace-heading">
+          <div class="workspace-heading-icon" aria-hidden="true" data-icon="tabContainers"></div>
+          <h2 id="workspace-heading">A workspace for your chats</h2>
+          <p>Run code, work with files, and create things. Setup and resource limits are handled automatically.</p>
+          <dl class="workspace-facts">
+            <div><dt>Private by default</dt><dd>Each chat has its own workspace. Chats in a folder share one.</dd></div>
+            <div><dt>Files stay with you</dt><dd>Your workspace files are kept when the container stops.</dd></div>
+            <div><dt>Share what you need</dt><dd>Upload files in chat, or share a directory when creating a folder.</dd></div>
+          </dl>
+        </section>
 
         <div class="section-sep"></div>
 
         <!-- Danger Zone ───────────────────────────────────────────────── -->
         <div class="settings-section danger-zone">
-          <div class="section-title">Danger Zone</div>
+          <div class="section-title">Delete app data</div>
           <p class="danger-zone-desc">Permanently remove all conversations, their Docker containers, and workspace files. This cannot be undone.</p>
           <div class="danger-zone-row">
             <button id="btn-danger-delete-all" class="btn-danger">Delete all chats &amp; containers</button>
           </div>
-          <div id="danger-delete-status" class="danger-status"></div>
+          <div id="danger-delete-status" class="danger-status" role="status"></div>
         </div>
 
       </div><!-- /#tab-containers -->

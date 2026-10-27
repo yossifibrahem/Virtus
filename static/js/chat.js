@@ -509,6 +509,13 @@ async function processSSEEvent(evt, ctx) {
     if (strip) toolStripSetRunning(strip, evt.args || {});
 
   } else if (evt.type === 'tool_result') {
+    if (evt.name === 'update_memory') {
+      try {
+        if (JSON.parse(evt.result).saved === true) {
+          document.dispatchEvent(new CustomEvent('memory:updated'));
+        }
+      } catch { /* Failed memory calls do not change saved memory. */ }
+    }
     cancelPendingRender(ctx);
     ctx.disposeApproval?.();
     ctx.pendingApproval = null;

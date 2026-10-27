@@ -17,7 +17,7 @@ import { clearMessages } from './renderer.js';
 import { initIcons } from './icons.js';
 import { loadCustomization, saveCustomization, initSwatchPicker, syncCustomizationUI } from './customization.js';
 import { initFilePanel } from './file_panel.js';
-import { loadContainerSettings, saveContainerSettings, deleteAllData } from './container_settings.js';
+import { loadMemorySettings, deleteAllData } from './workspace_settings.js';
 import { switchBranch } from './chat_branches.js';
 
 // ── Event binding ─────────────────────────────────────────────────────────────
@@ -131,7 +131,6 @@ async function applyAllSettings() {
     saveCustomization();
     await saveMcpConfig();
     applyMcpToolSettings();
-    await saveContainerSettings();
 
     showToast('Settings applied');
   } catch (err) {
@@ -288,7 +287,7 @@ function bindEvents() {
   loadSettings();
   loadCustomization();
   const hasCachedTools = loadCachedTools();
-  await loadContainerSettings();
+  await loadMemorySettings();
   await loadConversationList();
   await loadMcpConfig();
   // Render a cache immediately, but always refresh it so MCP tool

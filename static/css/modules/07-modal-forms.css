@@ -149,10 +149,31 @@
 #toast { position: fixed; bottom: 80px; left: 50%; z-index: 500; padding: 8px 16px; border: 1px solid var(--border2); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); color: var(--text); font-family: var(--font-mono); font-size: .72rem; max-width: calc(100vw - 32px); text-align: center; overflow-wrap: anywhere; opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(10px); transition: opacity var(--fast), transform var(--fast); }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-/* ─── Containers tab — label row + ENV lock badge ────────────────────────── */
-.adv-label-row { display: flex; align-items: center; gap: 6px; }
-.adv-env-badge { flex-shrink: 0; padding: 1px 5px; border-radius: 3px; background: var(--surface); border: 1px solid var(--border2); color: var(--text3); font-size: .58rem; letter-spacing: .4px; text-transform: uppercase; font-family: var(--font-mono); cursor: help; }
-.field input:disabled, .field select:disabled { opacity: .5; cursor: not-allowed; }
+/* Workspace settings keep runtime details out of the form. */
+.workspace-overview { padding: 8px 4px 0; }
+.workspace-heading-icon { display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface2); color: var(--text2); }
+.workspace-heading-icon svg { width: 20px; height: 20px; }
+.workspace-overview h2 { margin: 0 0 8px; color: var(--text); font-size: 1.1rem; font-weight: 500; }
+.workspace-overview > p { margin: 0; max-width: 440px; color: var(--text3); font-size: .82rem; line-height: 1.6; }
+.workspace-facts { margin: 20px 0 0; }
+.workspace-facts > div { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); font-size: .78rem; line-height: 1.55; }
+.workspace-facts dt { color: var(--text2); font-weight: 500; }
+.workspace-facts dd { margin: 0; color: var(--text3); }
+.memory-settings .cust-row { border: 0; padding-top: 0; }
+.memory-editor { margin-top: 10px; }
+.memory-editor summary { width: fit-content; color: var(--text2); font-size: .78rem; cursor: pointer; }
+.memory-editor summary:hover { color: var(--text); }
+.memory-editor .field { margin: 16px 0 12px; }
+.memory-editor textarea { min-height: 132px; font-family: var(--font-roman); line-height: 1.6; }
+.memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.memory-clear { margin-left: auto; padding: 6px 0 6px 8px; border: 0; background: transparent; color: var(--text3); font-size: .73rem; cursor: pointer; }
+.memory-clear[data-armed] { color: var(--red); }
+.memory-clear:hover { color: var(--red); }
+.memory-clear:disabled { opacity: .5; cursor: not-allowed; }
+.field input:disabled, .field select:disabled, .field textarea:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 420px) {
+  .workspace-facts > div { grid-template-columns: 1fr; gap: 4px; }
+}
 
 /* ─── Danger Zone ─────────────────────────────────────────────────────────── */
 .danger-zone { border: 1px solid rgba(196, 78, 66, .28); border-radius: var(--radius); padding: 8px; background: rgba(196, 78, 66, .04); }
@@ -167,6 +188,7 @@
   font-family: var(--font-mono);
   min-height: 1.2em;
 }
+.danger-status:empty { display: none; }
 .danger-status.warn { color: var(--red); opacity: .85; }
 .danger-status.ok   { color: var(--green); }
 .danger-status.err  { color: var(--red); }
