@@ -100,30 +100,7 @@ def update_folder(folder_id: str):
     # including when an unchanged host directory is temporarily disconnected.
     if "mounts" not in body or body["mounts"] == previous.get("mounts", []):
         return jsonify(store.update_folder(folder_id, **changes))
-    lock = sandbox_runtime.runtime_lock(runtime_id)
-    if not lock.acquire(blocking=False):
-        return jsonify({"error": "Wait for Folder operations to finish before changing settings"}), 409
-    try:
-        try:
-            mounts = folder_mounts.normalize_mounts(body["mounts"])
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        if any(c.get("active_stream_id")
-               for c in store.folder_conversations(folder_id)):
-            return jsonify({"error": "Stop active chats before changing mounted directories"}), 409
-        # Serialize against direct ensure_container calls as well as tools.
-        # Revoke old access before reporting/persisting the new permissions.
-        with container_service._container_lock(runtime_id):
-            if store.get_folder(folder_id) is None:
-                return jsonify({"error": "Not found"}), 404
-            try:
-                container_service.stop_container(runtime_id, strict=True)
-            except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
-                return jsonify({"error": f"Mounted directories were not changed. {exc}"}), 503
-            folder = store.update_folder(folder_id, mounts=mounts, **changes)
-        return jsonify(folder)
-    finally:
-        lock.release()
+    return jsonify({"error": "Shared directories are chosen during Folder creation and cannot currently be changed"}), 409
 
 
 @blueprint.route("/api/folders/browse-directory", methods=["POST"])

@@ -11,6 +11,7 @@ from flask import Blueprint, jsonify, request, session, abort
 
 import app_config
 import advanced_config
+import memory_service
 import chat_turn_service
 import streaming as stream_module
 
@@ -63,6 +64,8 @@ def _stream_state(stream_id: str, conv_id: str = "") -> dict:
         "stream_id": stream_id,
         "conv_id": conv_id,
         "events": [],
+        "replay_bytes": 0,
+        "replay_exhausted": False,
         "approvals": {},
         "done": False,
         "started": False,
@@ -77,6 +80,25 @@ def _publish_stream_event(state: dict, payload: dict) -> None:
     # Encode once for all readers and freeze mutable turn histories for replay.
     event = stream_module.sse_event(payload)
     with state["condition"]:
+        size = len(event.encode('utf-8'))
+        if state.get('replay_bytes', 0) + size > 8 * 1024 * 1024:
+            state['replay_exhausted'] = True
+            for index in state['approvals'].values():
+                state['events'][index] = ': approval resolved\n\n'
+            state['approvals'].clear()
+            cancel = _cancel_events.get(state['stream_id'])
+            if cancel:
+                cancel.set()
+            if payload.get('type') == 'assistant_done':
+                event = stream_module.sse_event({'type': 'history_reload', 'conv_id': state['conv_id']})
+            else:
+                # One clear error; further progress is recovered from saved history.
+                if state.get('replay_notice'):
+                    return
+                state['replay_notice'] = True
+                event = stream_module.sse_event({'type': 'error', 'message': 'Stream replay budget exhausted; turn stopped. Reloading saved history.'})
+            size = len(event.encode('utf-8'))
+        state['replay_bytes'] = state.get('replay_bytes', 0) + size
         call_id = payload.get("call_id")
         if payload.get("type") == "tool_approval_required":
             state["approvals"][call_id] = len(state["events"])
@@ -237,3 +259,23 @@ def fetch_models():
         return jsonify({"models": models})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@blueprint.route('/api/memory', methods=['GET', 'PUT'])
+def global_memory():
+    try:
+        if request.method == 'PUT':
+            body = _body()
+            if set(body) - {'enabled', 'content', 'revision'}:
+                raise ValueError('Unknown memory setting')
+            if 'enabled' in body and type(body['enabled']) is not bool:
+                raise ValueError('enabled must be boolean')
+            if 'content' in body:
+                memory_service.update(body['content'], body.get('revision'))
+            if 'enabled' in body:
+                memory_service.set_enabled(body['enabled'])
+        return jsonify(memory_service.snapshot())
+    except memory_service.Conflict as exc:
+        return jsonify({'error': str(exc), **memory_service.snapshot()}), 409
+    except (ValueError, OSError) as exc:
+        return jsonify({'error': str(exc)}), 400

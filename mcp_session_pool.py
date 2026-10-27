@@ -23,13 +23,13 @@ daemon=True, so process exit is never blocked.
 from __future__ import annotations
 
 import asyncio
+import storage_safeguards
 import copy
 import logging
 import os
 import threading
 import time
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from datetime import timedelta
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class McpSessionPool:
         self._thread: threading.Thread | None = None
         self._sessions: dict[str, dict] = {}
         self._closed = False
+        self._current = None
         self._lock = threading.Lock()
 
     def __enter__(self) -> "McpSessionPool":
@@ -95,9 +96,15 @@ class McpSessionPool:
                 if not future.set_running_or_notify_cancel():
                     continue
                 try:
-                    result = await self._invoke(
-                        server_name, server_config, tool_name, arguments
-                    )
+                    # Persistent stdio sessions retain AnyIO task-group scopes
+                    # between calls. A per-call CancelScope would exit out of
+                    # nesting order. Cancel the owning asyncio task once instead.
+                    self._current = (future, asyncio.current_task())
+                    result = await self._invoke(server_name, server_config, tool_name, arguments)
+                except asyncio.CancelledError:
+                    await self._close_async()
+                    if not future.done():
+                        future.set_exception(RuntimeError('MCP call cancelled; shared runtime interrupted'))
                 except TimeoutError:
                     await self._close_one_session(server_name)
                     if not future.done():
@@ -110,6 +117,8 @@ class McpSessionPool:
                 else:
                     if not future.done():
                         future.set_result(result)
+                finally:
+                    self._current = None
             elif op == "close":
                 _, future = job
                 try:
@@ -139,7 +148,7 @@ class McpSessionPool:
         session_cm = ClientSession(
             reader,
             writer,
-            read_timeout_seconds=timedelta(seconds=self.tool_timeout),
+            read_timeout_seconds=self.tool_timeout,
         )
         try:
             session = await session_cm.__aenter__()
@@ -172,10 +181,15 @@ class McpSessionPool:
             # Drop the connection; let the caller decide whether to try again.
             await self._close_one_session(server_name)
             raise
-        return "\n".join(
-            c.text if hasattr(c, "text") else str(c)
-            for c in result.content
-        )
+        parts, remaining = [], 65536
+        for item in result.content:
+            value = item.text if hasattr(item, 'text') else str(item)
+            value = value.encode('utf-8')[:remaining].decode('utf-8', 'ignore')
+            parts.append(value)
+            remaining -= len(value.encode('utf-8')) + 1
+            if remaining <= 0:
+                break
+        return '\n'.join(parts)
 
     async def _close_one_session(self, server_name: str) -> None:
         """Tear down and remove the cached session for a single server."""
@@ -191,7 +205,7 @@ class McpSessionPool:
         except Exception:
             log.exception("[mcp] error closing stale stdio session for %r", server_name)
 
-    def invoke_tool(self, server_name: str, server_config: dict, tool_name: str, arguments: dict) -> str:
+    def invoke_tool(self, server_name: str, server_config: dict, tool_name: str, arguments: dict, cancel_event=None) -> str:
         if self._closed:
             raise RuntimeError("MCP session pool is closed")
         self.start()
@@ -213,15 +227,41 @@ class McpSessionPool:
         # Block *outside* the lock. Holding a lock while waiting on a future is a
         # deadlock risk: any code path that needs self._lock while this call is
         # in-flight (e.g. a concurrent close()) would be permanently blocked.
-        try:
-            return future.result(timeout=self.tool_timeout + 5)
-        except FutureTimeoutError as exc:
-            if future.done():
-                raise
-            future.cancel()
-            raise TimeoutError(
-                f"MCP worker did not respond within {self.tool_timeout + 5:g} seconds"
-            ) from exc
+        deadline = time.monotonic() + self.tool_timeout + 5
+        next_disk_check = time.monotonic() + 2
+        reason = None
+        while True:
+            try:
+                return future.result(timeout=.1)
+            except FutureTimeoutError:
+                if future.done():
+                    raise
+            if cancel_event is not None and cancel_event.is_set():
+                reason = 'MCP call cancelled'
+            elif time.monotonic() >= deadline:
+                reason = 'MCP worker response timeout'
+            if self.conv_id and time.monotonic() >= next_disk_check:
+                try:
+                    storage_safeguards.check(self.conv_id, docker=True)
+                except Exception as exc:
+                    reason = str(exc)
+                next_disk_check = time.monotonic() + 2
+            if reason:
+                # Cancel queued calls before they can run; cancel active work in
+                # its owning task so AnyIO context managers unwind correctly.
+                if not future.cancel():
+                    def interrupt():
+                        if self._current and self._current[0] is future:
+                            self._current[1].cancel()
+                    self._loop.call_soon_threadsafe(interrupt)
+                    import container_service
+                    if self.conv_id:
+                        container_service.stop_container_process(self.conv_id)
+                    try:
+                        future.result(timeout=6)
+                    except Exception:
+                        pass
+                raise RuntimeError(reason + '; shared runtime interrupted')
 
     async def _close_async(self) -> None:
         for server_name in reversed(list(self._sessions)):

@@ -54,18 +54,18 @@ def test_names_are_unique_and_symlinks_are_resolved(tmp_path):
     assert folder_mounts.normalize_mounts(mounts) == mounts
 
 
-def test_edit_permissions_remove_and_preserve_mounts(client, tmp_path):
+def test_mounts_are_immutable_but_metadata_is_editable(client, tmp_path):
     folder = client.post('/api/folders', json={'mounts': [{'source': str(tmp_path)}]}).json
     url = f"/api/folders/{folder['id']}"
     mount = {**folder['mounts'][0], 'read_only': False}
     with patch.object(containers, 'stop_container') as stop:
-        assert client.put(url, json={'mounts': [mount]}).json['mounts'] == [mount]
-        stop.assert_called_once_with(f"folder_{folder['id']}", strict=True)
-        stop.reset_mock()
-        assert client.put(url, json={'system_prompt': 'Instructions'}).json['mounts'] == [mount]
+        assert client.put(url, json={'mounts': [mount]}).status_code == 409
+        assert client.put(url, json={'mounts': []}).status_code == 409
+        response = client.put(url, json={'system_prompt': 'Instructions', 'mounts': folder['mounts']})
+        assert response.status_code == 200
+        assert response.json['mounts'] == folder['mounts']
+        assert response.json['system_prompt'] == 'Instructions'
         stop.assert_not_called()
-        assert client.put(url, json={'mounts': []}).json['mounts'] == []
-        stop.assert_called_once()
 
 
 def test_active_chat_blocks_mount_changes(client, tmp_path):
@@ -159,9 +159,9 @@ def test_failed_permission_revocation_does_not_save_new_settings(client, tmp_pat
     updated = [{**folder['mounts'][0], 'read_only': True}]
     with patch.object(containers, 'stop_container', side_effect=failure):
         response = client.put(f"/api/folders/{folder['id']}", json={'name': 'Unsaved', 'mounts': updated})
-    assert response.status_code == 503
+    assert response.status_code == 409
     assert store.get_folder(folder['id']) == folder
-    assert 'not changed' in response.json['error']
+    assert 'cannot currently be changed' in response.json['error']
 
 
 @pytest.mark.parametrize('stderr, raises', [('permission denied', True), ('Cannot connect to the Docker daemon', True),
@@ -225,10 +225,10 @@ def test_mount_change_uses_summary_active_state_without_reading_chat_histories(c
     store.list_all()  # Build the lightweight index before checking runtime state.
     with patch.object(store, 'load', side_effect=AssertionError('History should not be read')), \
          patch.object(containers, 'stop_container'):
-        assert client.put(f"/api/folders/{folder['id']}", json={'mounts': [{'source': str(tmp_path)}]}).status_code == 200
+        assert client.put(f"/api/folders/{folder['id']}", json={'mounts': [{'source': str(tmp_path)}]}).status_code == 409
     conv['active_stream_id'] = 'active'; store.save(conv['id'], conv)
     with patch.object(store, 'load', side_effect=AssertionError('History should not be read')):
-        assert client.put(f"/api/folders/{folder['id']}", json={'mounts': []}).status_code == 409
+        assert client.put(f"/api/folders/{folder['id']}", json={'name': 'Renamed'}).status_code == 200
     conv.pop('active_stream_id'); store.save(conv['id'], conv)
     assert not store.list_all()[0]['active_stream_id']
     store.invalidate_index()

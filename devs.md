@@ -7,7 +7,7 @@ running Flask. The browser and Flask manage chats, settings, approvals, and file
 transfers. Model commands and MCP server processes execute inside the container.
 Relative tool paths start at `/workspace`; absolute tool paths refer to the
 container filesystem. Native tools may use the rest of that filesystem, install
-packages, and access the network under Docker's normal bridge settings.
+packages, and access the network under Docker-managed settings.
 
 A standalone chat owns one runtime. Chats in a Folder/Project share one runtime
 and `/workspace`, with separate histories and Folder instructions. The Folder owns
@@ -18,21 +18,19 @@ Deletion confirms sandbox removal before deleting owned workspaces or metadata;
 a Docker removal failure is reported while the saved data remains available.
 
 Sharing is explicit: uploads enter `/workspace/uploads/`. The app mounts its
-managed workspace and shared `/memory.md`. Explicit host directory mounts belong only to Folder/Project settings, persist in `folders.json`,
-and appear at `/workspace/mounts/<name>`. They default to Docker-enforced recursive
-read-only access (`bind-recursive=readonly`, daemon Linux kernel 5.12+). Reuse checks
-verify the recursive mount policy as well as source, destination, and RW flags.
-Permission changes remove the old sandbox successfully before saving settings;
-Docker failures return an error and preserve the previous configuration. Mount
-changes require idle chats and operations and preserve the workspace and original
-host files. Host sources must exist;
+managed workspace. Host directory mounts belong only to Folder/Project creation, persist in `folders.json`,
+and appear at `/workspace/mounts/<name>`. Read-only is the default, recursively enforced
+with `bind-recursive=readonly` (daemon Linux kernel 5.12+). Read-write permits modification
+and deletion of originals. Mounts are immutable after creation, including before first use.
+Backend updates reject changes, while omitted/identical mounts allow metadata edits without
+source revalidation or container resets. Existing mounts are retained. Host sources must exist;
 missing sources fail instead of being silently created. Native selection uses
 macOS AppleScript, Windows FolderBrowserDialog, or Linux Zenity/KDialog, with a
 manual path fallback. MCP arguments and environment values are container values, never authorization to mount or execute host paths.
 
-Docker networking defaults to `bridge`; `none` or a named Docker network may be
-configured. Host and shared-container network namespaces are rejected. Reachable
-host/LAN services are still reachable through bridge networking.
+New containers receive no network flag. Docker owns networking and any manually managed
+attachments. Ignore obsolete saved network settings and environment overrides; network mode
+is excluded from runtime reconciliation. Normal internet access is expected.
 
 ## Run and verify
 
@@ -90,7 +88,8 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `mcp_session_pool.py` | Persistent stdio connections on a dedicated async worker |
 | `tool_approval.py` | Pending MCP approval requests and cancellation |
 | `tool_media.py` | Conversation-scoped tool images and model request expansion |
-| `memory_service.py` | Shared memory template and bounded prompt reads |
+| `memory_service.py` | Optional app-owned memory, atomic revisions, bounded history and legacy bind detachment |
+| `storage_safeguards.py` | Workspace accounting, host/Docker low-space checks |
 | `title_service.py` | Optional title generation |
 | `app_config.py`, `advanced_config.py` | API credentials and runtime/file settings |
 | `docker_cli.py`, `docker_path_utils.py` | Docker executable resolution and platform paths |
@@ -107,9 +106,15 @@ history, streams, and tool media.
 `ensure_container()` serializes creation per runtime. Existing container metadata
 is read with one inspect call; a second call resolves the configured image ID.
 Both labels (image reference and sandbox identity), the actual image ID, and the
-complete bind mount set must match before reuse. Old images or unexpected mounts
-cause recreation. Workspaces survive recreation; packages installed into the
+complete mount set and recursive policy must match before reuse. A shared RuntimeSpec also
+checks normalized CPU/memory/PID limits, capabilities, no-new-privileges and namespace/device
+restrictions. Mismatches require recreation under the runtime lock; active shared operations
+return a clear retry error. Removal failure aborts recreation. Network attachments are excluded. Workspaces survive recreation; packages installed into the
 container's writable layer do not.
+
+Creation explicitly requests root UID/GID and private IPC/cgroup namespaces, rather
+than relying on image or daemon defaults that may fail the reuse policy. Equivalent
+root names and numeric IDs normalize to the same accepted user.
 
 Native tools, file panel operations, and MCP calls serialize through the same
 runtime lock. The idle reaper acquires that lock without waiting and rechecks the
@@ -140,8 +145,8 @@ can stop the shared runtime. Other chats in that Folder may be interrupted.
 View returns bounded text, two-level directory listings, images, PDF pages, or
 saved notebook cells; notebooks are never executed. Write/Edit accept at most
 1 MiB of UTF-8 text. Edit requires exact matches and checks file fingerprints
-before replacing content. `/memory.md` is updated in place because it is a bind
-mount. See the tool schemas in `builtin_tools.py` for precise limits.
+before replacing content. Canonical memory is never mounted. See the tool schemas in
+`builtin_tools.py` for precise limits.
 
 The file panel is deliberately confined to `/workspace`. Its worker resolves
 paths inside Docker, rejects traversal and escaping symlinks, rejects special
@@ -160,8 +165,8 @@ JSON response ceilings account for escaped preview text and listing metadata.
 
 ## Model turns and persistence
 
-A turn owns one API client and closes it after completion or failure. It reads up
-to 32 KiB of shared memory, adds native tools, streams model output, executes tool
+A turn owns one API client and closes it after completion or failure. When enabled, each
+request reads up to 32 KiB of app-owned memory. The turn adds native tools, streams model output, executes tool
 calls, and repeats until the assistant finishes. Uploaded and tool images are
 persisted by reference and expanded server-side only when constructing the model request. Do
 not fetch/re-encode stored images in the browser or cache their base64 data there.
@@ -241,5 +246,59 @@ bounded log window. Cleanup always releases the build lock, including failures.
 Lumen is a trusted local application, not an authenticated multi-user service.
 Docker runs model processes as container root with reduced capabilities,
 no-new-privileges, CPU/memory limits, and a 256-process limit. Shared workspaces
-and memory are writable by their runtimes. There is no disk quota or network air
-gap. Keep the Docker socket and unrelated host paths out of container mounts.
+are writable by their runtimes; global memory is app-owned. Storage checks are
+best-effort safeguards, not hard quotas or a network air gap. Keep the Docker socket and unrelated host paths out of container mounts.
+
+
+## Global memory and bounded execution
+
+Memory defaults enabled. `memory_service` owns `~/.lumen/memory.md`, with SHA-256 content revisions,
+a process-wide lock, atomic replacement, a 32 KiB limit and eight prior versions in
+`memory.history.json`. `/api/memory` supports inspection, version-checked edits/clears and a
+persisted boolean in `memory.settings.json`. Oversized legacy content is preserved; explicit
+clear backs it up as `memory.legacy.md`. At startup atomic inode replacement detaches any old
+writable Docker bind from canonical memory without changing its bytes. Reuse validation then
+requires a one-time legacy sandbox reset, retaining workspace data but resetting installed
+packages. Toggling memory never changes mounts or container identity.
+
+`update_memory` is reserved against MCP collisions, validates arguments and rechecks enablement
+at invocation. Its schema explains concise stable facts; the app policy has no memory-maintenance
+paragraph. Every model request rechecks enablement and injects a fresh content/revision snapshot as
+subordinate remembered data. Disabled requests read no memory and receive no memory tool. Previously
+saved chat history can still contain facts. Conflicts return current content/revision for merging.
+
+Advanced limits: `turn_timeout_seconds=900`, `turn_tool_limit=100`, `min_free_disk_bytes=536870912`,
+`max_workspace_bytes=10737418240`; corresponding env vars are `LUMEN_` + uppercase key. Settings
+validate positive integer values. Runtime operations check storage before execution; Docker exec
+and MCP wait loops check about every two seconds. Accounting never follows workspace symlinks.
+Docker free/used storage is queried with in-container disk_usage when available, separately from
+host workspace storage. This is a safeguard, not a reliable hard quota.
+
+File-panel list/preview/download/PDF/delete operations use a request-local recovery
+context so they remain available over storage limits. Only these known worker actions
+can bypass growth checks; uploads, Bash, MCP calls and normal turns still enforce them.
+Deletion is a confirmed DELETE request, runs inside Docker using descriptor-relative
+paths, and rejects the workspace root and reserved mounts tree. Symlinks are unlinked
+or refused as parents rather than followed. The context is reset on errors and does
+not propagate to unrelated request threads.
+
+A turn watchdog cancels approval waits, HTTP streaming and MCP work at its deadline. Native command
+cleanup stops container descendants; MCP cancellation runs in its owning AnyIO task, unwinds sessions,
+and stops the shared runtime when necessary. Report shared interruption and preserve all files.
+Model output is capped at 2 MiB, batches at 128 tool calls, MCP text at 64 KiB, and replay at 8 MiB.
+Replay exhaustion stops the turn, preserves matched tool-call/result history, and sends `history_reload`
+so the UI fetches saved authoritative conversation state. Memory versions and transient logs are bounded;
+conversation histories remain user-owned persistent data.
+
+History-reload responses must contain both authoritative arrays before finalizing.
+While recovery is pending, turn saves, branch history saves, and new sends/edits are
+blocked. Reopening a successfully fetched chat permits new work, but an older turn
+retains its own pending flag until its arrays are recovered, preventing stale writes.
+
+MCP 2.x client sessions take numeric timeout seconds. Tests exercise actual SDK
+discovery, one-shot and persistent calls, cancellation and session reopening over a
+disposable local stdio server, without Docker or network services.
+
+Standalone-to-Folder moves use the existing failure-safe delete ordering, with a warning next to the
+Move confirmation. No copying is performed. Leaving a Folder or removing its last chat retains its
+workspace. Removing a Folder only deletes its owned runtime/workspace, never source host directories.

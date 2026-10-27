@@ -131,3 +131,14 @@ def make_png_b64() -> str:
     """Return a valid 1×1 PNG as a base64 string (no line breaks)."""
     import base64
     return base64.b64encode(make_png_bytes()).decode()
+
+
+@pytest.fixture(autouse=True)
+def isolate_global_settings(tmp_path, monkeypatch):
+    import memory_service
+    import advanced_config
+    import container_service
+    monkeypatch.setattr(container_service, '_last_used', {})
+    monkeypatch.setattr(memory_service, 'MEMORY_FILE', tmp_path / 'memory.md')
+    monkeypatch.setattr(advanced_config, 'ADVANCED_CONFIG_FILE', tmp_path / 'advanced_config.json')
+    advanced_config._invalidate_cache()

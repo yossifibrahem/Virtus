@@ -11,7 +11,6 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -166,7 +165,7 @@ async def fetch_tools(server_name: str, server_config: dict, conv_id: str = "") 
             async with ClientSession(
                 reader,
                 writer,
-                read_timeout_seconds=timedelta(seconds=_mcp_timeout_seconds()),
+                read_timeout_seconds=_mcp_timeout_seconds(),
             ) as session:
                 await session.initialize()
                 for tool in (await session.list_tools()).tools:
@@ -191,7 +190,7 @@ async def invoke_tool(server_name: str, server_config: dict, tool_name: str, arg
             async with ClientSession(
                 reader,
                 writer,
-                read_timeout_seconds=timedelta(seconds=_mcp_timeout_seconds()),
+                read_timeout_seconds=_mcp_timeout_seconds(),
             ) as session:
                 await session.initialize()
                 result = await session.call_tool(tool_name, arguments)

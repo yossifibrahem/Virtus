@@ -377,6 +377,30 @@ class TestWorkspaceFileRoutes:
         root.mkdir(parents=True, exist_ok=True)
         return folder["id"], root
 
+    @pytest.mark.parametrize('scope', ['conversation', 'folder'])
+    def test_managed_file_cleanup_requires_delete_and_works_above_storage_limit(self, client, tmp_lumen, scope):
+        import shutil
+        import advanced_config
+        if not shutil.rmtree.avoids_symlink_attacks:
+            pytest.skip('Container deletion uses Linux descriptor-relative operations')
+        if scope == 'conversation':
+            identifier, root = self._make_workspace(tmp_lumen)
+            base = f'/api/conversations/{identifier}/files'
+        else:
+            identifier, root = self._make_folder_workspace(tmp_lumen)
+            base = f'/api/folders/{identifier}/files'
+        target = root / 'result.txt'
+        target.write_text('result')
+        advanced_config.save_advanced_config({'max_workspace_bytes': 1})
+        query = {'path': '/workspace/result.txt'}
+        assert client.get(base + '/delete', query_string=query).status_code == 404
+        assert target.exists()
+        assert client.delete(base + '/download', query_string=query).status_code == 405
+        assert client.get(base + '/download', query_string=query).data == b'result'
+        assert client.delete(base + '/delete', query_string={'path': '/workspace/mounts/project'}).status_code == 400
+        response = client.delete(base + '/delete', query_string=query)
+        assert response.status_code == 200 and not target.exists()
+
     def test_list_unknown_conv_returns_error(self, client, tmp_lumen):
         resp = client.get("/api/conversations/ghost/files")
         # Service returns ({"error": ...}, 404) which route passes through

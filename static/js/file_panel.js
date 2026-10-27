@@ -362,6 +362,32 @@ function collapseTreeItem(item, path) {
   if (group) group.hidden = true;
 }
 
+function isManagedPath(path) {
+  const relative = String(path || '').slice('/workspace/'.length);
+  return String(path || '').startsWith('/workspace/') && relative &&
+    !relative.split('/').some(part => !part || part === '.' || part === '..') &&
+    relative.split('/')[0].toLowerCase() !== 'mounts';
+}
+
+async function deleteWorkspaceEntry(entry, button) {
+  const apiBase = workspaceApiBase();
+  if (!apiBase || !isManagedPath(entry.path)) return;
+  if (!window.confirm(`Permanently delete ${entry.path}${entry.type === 'directory' ? ' and all its contents' : ''}?`)) return;
+  button.disabled = true;
+  try {
+    const result = await api.delete(`${apiBase}/files/delete?path=${encodeURIComponent(entry.path)}`);
+    if (result.error) throw new Error(result.error);
+    if (apiBase !== workspaceApiBase()) return;
+    if (selectedPath === entry.path || selectedPath?.startsWith(entry.path + '/')) closePreview();
+    await refreshFilePanel({ keepPreview: Boolean(selectedPath) });
+    showToast('Workspace files deleted');
+  } catch (error) {
+    showToast(error.message || 'Could not delete workspace files');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function fileTreeItem(entry, depth, renderId, { root = false, payload = null } = {}) {
   const isDirectory = entry.type === 'directory';
   const item = document.createElement('div');
@@ -380,6 +406,17 @@ function fileTreeItem(entry, depth, renderId, { root = false, payload = null } =
     <span class="file-row-name">${escapeHtml(entry.name)}</span>
     ${isDirectory || entry.size == null ? '' : `<span class="file-row-size">${escapeHtml(formatBytes(entry.size))}</span>`}`;
   item.appendChild(row);
+  if (!root && isManagedPath(entry.path)) {
+    row.classList.add('has-delete');
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'file-tree-delete';
+    remove.title = `Delete ${entry.name}`;
+    remove.setAttribute('aria-label', `Delete ${entry.name}`);
+    remove.innerHTML = ICONS.trash;
+    remove.addEventListener('click', () => deleteWorkspaceEntry(entry, remove));
+    item.appendChild(remove);
+  }
 
   let group = null;
   if (isDirectory) {

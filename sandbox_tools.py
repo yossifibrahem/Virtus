@@ -200,30 +200,18 @@ def write(path, content, old_text=None, replace_all=False):
     def unchanged():
         if (fingerprint(path) if path.exists() else None) != original:
             raise ValueError('File changed concurrently; reread it before editing')
-    if str(path) == '/memory.md':
-        unchanged()
-        fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    fd, temp = tempfile.mkstemp(prefix='.lumen-', dir=path.parent)
+    try:
         with os.fdopen(fd, 'wb') as f:
-            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
-                raise ValueError('Memory must be a regular file')
-            unchanged()
             f.write(data)
-            f.truncate()
+            os.fchmod(f.fileno(), mode)
             f.flush()
             os.fsync(f.fileno())
-    else:
-        fd, temp = tempfile.mkstemp(prefix='.lumen-', dir=path.parent)
-        try:
-            with os.fdopen(fd, 'wb') as f:
-                f.write(data)
-                os.fchmod(f.fileno(), mode)
-                f.flush()
-                os.fsync(f.fileno())
-            unchanged()
-            os.replace(temp, path)
-        finally:
-            if os.path.exists(temp):
-                os.unlink(temp)
+        unchanged()
+        os.replace(temp, path)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
     return {'text': f'{"Edited" if count is not None else "Wrote"} {path} ({len(data)} bytes)' + (f'; {count} replacement(s)' if count is not None else '')}
 
 

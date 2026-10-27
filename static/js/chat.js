@@ -29,6 +29,19 @@ import { activeTurns, updateConversationActivity } from './conversation_activity
 
 // ── Streaming state ───────────────────────────────────────────────────────────
 
+// Shared with conversation persistence so branch saves cannot bypass recovery.
+const pendingHistoryReloads = state.pendingHistoryReloads ??= new Set();
+
+function hasAuthoritativeHistory(data) {
+  return data && !data.error && Array.isArray(data.messages) && Array.isArray(data.displayLog);
+}
+
+function requireRecoveredHistory(convId, turn = null) {
+  if (pendingHistoryReloads.has(convId) || turn?.historyRecoveryPending) {
+    throw new Error('History recovery is incomplete. Reopen this chat before sending or saving changes.');
+  }
+}
+
 function setStreaming(active) {
   state.isStreaming = active;
 
@@ -238,6 +251,7 @@ async function attachServerStream(convId, streamId, data = {}) {
 
 document.addEventListener('chat:conversation-opened', async event => {
   const { convId, data } = event.detail || {};
+  if (hasAuthoritativeHistory(data)) pendingHistoryReloads.delete(convId);
   for (const { turn, ctx } of activeTurns.values()) {
     if (!isTurnVisible(turn)) releaseTurnUI(ctx);
   }
@@ -247,6 +261,7 @@ document.addEventListener('chat:conversation-opened', async event => {
       // The worker may finish between loading the chat and attaching its stream.
       const saved = await api.get(`/api/conversations/${convId}`).catch(() => null);
       if (state.convId !== convId) return;
+      if (hasAuthoritativeHistory(saved)) pendingHistoryReloads.delete(convId);
       state.messages = saved?.messages || data.messages || [];
       state.displayLog = saved?.displayLog || data.displayLog || [];
       renderAllMessages(state.displayLog);
@@ -280,6 +295,7 @@ function applyTurnTitle(turn, title) {
 }
 
 function createTurnContext(convId) {
+  requireRecoveredHistory(convId);
   return {
     convId,
     title: currentTitle(),
@@ -290,6 +306,7 @@ function createTurnContext(convId) {
 }
 
 async function persistTurnConversation(turn) {
+  requireRecoveredHistory(turn.convId, turn);
   await persistConversationFor(turn.convId, {
     title: turn.title,
     messages: turn.messages,
@@ -355,6 +372,10 @@ function finalizeAssistantAnswer(ctx, messages = null, displayLog = null) {
 
   if (Array.isArray(messages)) ctx.turn.messages = messages;
   if (Array.isArray(displayLog)) ctx.turn.displayLog = displayLog;
+  if (Array.isArray(messages) && Array.isArray(displayLog)) {
+    ctx.turn.historyRecoveryPending = false;
+    pendingHistoryReloads.delete(ctx.turn.convId);
+  }
   syncVisibleTurn(ctx.turn);
 
   if (ctx.assistantDone) {
@@ -385,6 +406,7 @@ async function runAssistantTurnAndPersist(turn) {
 
   try {
     ctx = await runChatLoop(turn);
+    requireRecoveredHistory(turn.convId, turn);
     if (isCurrentStreamContext(turn, ctx)) syncFinalAssistantFooter(turn, ctx);
   } finally {
     finishAssistantTurn(turn, ctx);
@@ -422,6 +444,7 @@ function chatFlowDeps() {
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 export async function sendMessage(userText) {
+  requireRecoveredHistory(state.convId);
   return sendMessageImpl(userText, chatFlowDeps());
 }
 
@@ -513,9 +536,23 @@ async function processSSEEvent(evt, ctx) {
     ctx.reasoningFinalized = false;
     if (ctx.isVisible()) refreshFilePanel({ keepPreview: true }).catch(() => {});
 
+  } else if (evt.type === 'history_reload') {
+    ctx.turn.historyRecoveryPending = true;
+    pendingHistoryReloads.add(ctx.turn.convId);
+    const saved = await api.get(`/api/conversations/${evt.conv_id}`);
+    if (!hasAuthoritativeHistory(saved)) {
+      throw new Error(saved?.error || 'Could not recover saved conversation history');
+    }
+    finalizeAssistantAnswer(ctx, saved.messages, saved.displayLog);
+    if (ctx.isVisible()) renderAllMessages(ctx.turn.displayLog);
+
   } else if (evt.type === 'assistant_done') {
     finalizeAssistantAnswer(ctx, evt.messages, evt.displayLog);
     if ((ctx.cancelled || ctx.failed) && ctx.isVisible()) renderAllMessages(ctx.turn.displayLog);
+
+  } else if (evt.type === 'status') {
+    ctx.turn.displayLog.push(evt);
+    if (ctx.isVisible()) renderAllMessages(ctx.turn.displayLog);
 
   } else if (evt.type === 'title') {
     if (ctx.turn) applyTurnTitle(ctx.turn, evt.title || ctx.turn.title);
@@ -580,9 +617,11 @@ async function runChatLoop(turn) {
     if (err.name === 'AbortError') return ctx;
 
     const saved = await api.get(`/api/conversations/${turn.convId}`).catch(() => null);
-    if (saved?.messages && saved?.displayLog) {
+    if (hasAuthoritativeHistory(saved)) {
       turn.messages = saved.messages;
       turn.displayLog = saved.displayLog;
+      turn.historyRecoveryPending = false;
+      pendingHistoryReloads.delete(turn.convId);
       syncVisibleTurn(turn);
       if (ctx.isVisible()) renderAllMessages(turn.displayLog);
     }
@@ -595,9 +634,11 @@ async function runChatLoop(turn) {
 // Edit/resend and regenerate flows live in chat_edit.js.
 
 export async function editAndResend(logIndex, newText, imageUrls = [], files = [], attachments = null) {
+  requireRecoveredHistory(state.convId);
   return editAndResendImpl(logIndex, newText, imageUrls, files, attachments, chatFlowDeps());
 }
 
 export async function regenerateFrom(logIndex) {
+  requireRecoveredHistory(state.convId);
   return regenerateFromImpl(logIndex, chatFlowDeps());
 }

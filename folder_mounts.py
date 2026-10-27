@@ -66,7 +66,7 @@ def runtime_mounts(runtime_id):
     # Inputs were validated when saved; only host path availability can change.
     for mount in mounts:
         if str(_host_directory(mount['source'])) != mount['source']:
-            raise ValueError('A mounted directory changed location; select it again in Folder settings')
+            raise ValueError('A mounted directory changed location; restore the original directory to use this Folder')
     return mounts
 
 

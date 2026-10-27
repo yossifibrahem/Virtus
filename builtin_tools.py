@@ -4,12 +4,13 @@ import base64
 import json
 
 import container_service
+import memory_service
 import docker_cli
 import sandbox_runtime
 
 TEXT_LIMIT = 32768
 FILE_LIMIT = 1024 * 1024
-NAMES = frozenset({'bash', 'view', 'write', 'edit'})
+NAMES = frozenset({'bash', 'view', 'write', 'edit', 'update_memory'})
 
 
 def schema(name, description, properties, required):
@@ -28,6 +29,16 @@ SCHEMAS = [
     schema('edit', 'Replace exact text in a container UTF-8 file (max 1 MiB). Relative paths use /workspace. Requires one match unless replace_all=true. Empty old_text is invalid. Preserve original line endings in supplied text.',
            {'path': STRING, 'old_text': STRING, 'new_text': STRING, 'replace_all': {'type': 'boolean'}}, ['path', 'old_text', 'new_text']),
 ]
+
+MEMORY_SCHEMA = schema('update_memory',
+    'Remember stable user facts and preferences across chats, correct outdated facts, and keep concise Markdown entries. Do not store histories, secrets, transient tasks or command state. Replace the bounded store using its current revision from remembered context or a conflict response. A stale revision is rejected: merge with returned current content before retrying.',
+    {'content': {'type': 'string', 'maxLength': 32768},
+     'revision': {'type': 'string', 'minLength': 64, 'maxLength': 64}}, ['content', 'revision'])
+SCHEMAS.append(MEMORY_SCHEMA)
+
+
+def available_schemas():
+    return [s for s in SCHEMAS if s is not MEMORY_SCHEMA or memory_service.enabled()]
 
 
 def validate(name, args):
@@ -82,7 +93,20 @@ sys.exit(code)
 
 def invoke(runtime_id, name, args, cancel=None):
     validate(name, args)
+    if cancel and cancel.is_set():
+        raise ValueError('Operation cancelled')
+    if name == 'update_memory':
+        try:
+            state = memory_service.update(args['content'], args['revision'], require_enabled=True)
+            return {'text': json.dumps({'revision': state['revision'], 'saved': True}, ensure_ascii=False)}
+        except memory_service.Conflict:
+            # Data is returned only while enabled, including stale tool calls.
+            if not memory_service.enabled():
+                raise ValueError('Global memory is disabled')
+            return {'text': json.dumps({'error': 'Memory changed; merge current content before retrying', **memory_service.snapshot()}, ensure_ascii=False)}
     with sandbox_runtime.runtime_operation(runtime_id, cancel):
+        info = container_service.ensure_container(runtime_id)
+        notice = info.reset_reason + '\n' if info.reset_reason else ''
         if name == 'bash':
             code, raw, error = sandbox_runtime.docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '-c', BASH_RUNNER],
                 args['command'].encode(), args.get('timeout', 120), cancel, TEXT_LIMIT - 512, True)
@@ -95,7 +119,7 @@ def invoke(runtime_id, name, args, cancel=None):
             encoded = text.encode()
             if len(encoded) > TEXT_LIMIT - 80:
                 text = encoded[:16000].decode('utf-8', 'ignore') + '\n[output truncated]\n' + encoded[-16000:].decode('utf-8', 'ignore')
-            return {'text': text + f'\n[exit status {code}]'}
+            return {'text': notice + text + f'\n[exit status {code}]'}
         code, raw, error = sandbox_runtime.docker_operation(runtime_id, ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py'],
             json.dumps({'name': name, 'args': args}, ensure_ascii=False).encode(), 30, cancel)
         if code:
@@ -113,4 +137,4 @@ def invoke(runtime_id, name, args, cancel=None):
             raw_image = base64.b64decode(image['data'], validate=True)
             if len(raw_image) > FILE_LIMIT or not raw_image.startswith(b'\xff\xd8\xff'):
                 raise ValueError('Invalid or oversized image')
-        return {'text': result['text'], 'images': images, 'error': bool(result.get('error'))}
+        return {'text': notice + result['text'], 'images': images, 'error': bool(result.get('error'))}

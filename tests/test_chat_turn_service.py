@@ -449,10 +449,12 @@ def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_lumen):
 
 
 def test_memory_injection_supports_system_text_blocks(monkeypatch):
-    monkeypatch.setattr(svc.memory_service, "read", lambda: "Remember this")
+    svc.memory_service.update('Remember this', svc.memory_service.snapshot()['revision'])
     blocks = [{"type": "text", "text": "System instructions"}]
     original = [{"role": "system", "content": blocks}]
     messages = svc._inject_memory(original)
-    assert messages[0]["content"] == [*blocks, {"type": "text", "text": "## Persistent Memory\nRemember this"}]
+    assert messages[0]['content'][0] == blocks[0]
+    assert 'Remember this' in messages[0]['content'][1]['text']
+    assert 'subordinate' in messages[0]['content'][1]['text']
     assert original[0]["content"] is blocks
     assert len(blocks) == 1

@@ -546,9 +546,20 @@
       <!-- ── Containers tab ── -->
       <div id="tab-containers" class="tab-panel" role="tabpanel" aria-labelledby="tab-containers-tab">
 
+        <div class="settings-section">
+          <div class="section-title">Global memory</div>
+          <label><input id="memory-enabled" type="checkbox" checked> Remember stable facts across chats (enabled by default)</label>
+          <p class="field-note">Disabling preserves stored memory and stops supplying it or its tool on subsequent model requests. It does not erase facts already in chat history. Memory is managed by the app, outside the computer.</p>
+          <textarea id="memory-content" class="input-base" rows="8" aria-label="Global memory contents"></textarea>
+          <button type="button" id="memory-save" class="btn-secondary">Save memory</button>
+          <button type="button" id="memory-reload" class="btn-secondary">Reload memory</button>
+          <button type="button" id="memory-clear" class="btn-secondary">Clear memory…</button>
+          <p id="memory-status" role="status"></p>
+        </div>
         <!-- Sandbox Container ─────────────────────────────────────────── -->
         <div class="settings-section">
           <div class="section-title">Sandbox Container</div>
+          <p class="field-note">Settings are checked against Docker before reuse. Changes apply when the shared runtime is idle. Recreating an incompatible container retains workspace files but resets installed packages. Legacy memory mounts require a one-time compatibility reset. Networking is managed directly through Docker.</p>
 
           <div class="field">
             <label class="adv-label-row" for="adv-sandbox_image">
@@ -587,14 +598,6 @@
           </div>
 
           <div class="field-row">
-            <div class="field">
-              <label class="adv-label-row" for="adv-container_network">
-                Docker network
-                <span class="adv-env-badge" id="adv-lock-container_network" hidden title="">ENV</span>
-              </label>
-              <input type="text" id="adv-container_network" placeholder="bridge" />
-              <div class="field-note">e.g. <code>bridge</code>, <code>host</code>, <code>none</code>. Env&thinsp;var: <code>LUMEN_CONTAINER_NETWORK</code></div>
-            </div>
 
             <div class="field">
               <label class="adv-label-row" for="adv-container_idle_timeout">
@@ -609,6 +612,14 @@
 
         <div class="section-sep"></div>
 
+        <div class="settings-section">
+          <div class="section-title">Execution safeguards</div>
+          <p class="field-note">Checks run before work and about every 2 seconds during execution. These are safeguards, not hard disk quotas. A limit stops work while preserving existing files and history. Shared runtime cleanup can interrupt other Folder activity.</p>
+          <div class="field"><label for="adv-turn_timeout_seconds">Maximum turn duration (seconds)<span class="adv-env-badge" id="adv-lock-turn_timeout_seconds" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-turn_timeout_seconds" value="900"></div>
+          <div class="field"><label for="adv-turn_tool_limit">Maximum tool calls per turn<span class="adv-env-badge" id="adv-lock-turn_tool_limit" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-turn_tool_limit" value="100"></div>
+          <div class="field"><label for="adv-min_free_disk_bytes">Minimum free disk space (bytes)<span class="adv-env-badge" id="adv-lock-min_free_disk_bytes" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-min_free_disk_bytes" value="536870912"></div>
+          <div class="field"><label for="adv-max_workspace_bytes">Maximum managed workspace size per runtime (bytes)<span class="adv-env-badge" id="adv-lock-max_workspace_bytes" hidden>ENV</span></label><input type="number" min="1" step="1" id="adv-max_workspace_bytes" value="10737418240"></div>
+        </div>
         <!-- File Handling ─────────────────────────────────────────────── -->
         <div class="settings-section">
           <div class="section-title">File Handling</div>
@@ -724,8 +735,8 @@
             </div>
           </div>
         </details>
-        <p class="folder-mount-note">Read only protects the original files. Turn it off to allow edits.</p>
-        <p class="folder-mount-note">Changing directories restarts the sandbox and clears installed packages. Stop active chats before saving.</p>
+        <p class="folder-mount-note">Read only protects original files. Read-write allows editing and deleting original host files.</p>
+        <p class="folder-mount-note">Sharing is chosen during creation and cannot currently be changed afterward. Container recreation for compatibility or settings changes retains workspace files but resets installed packages.</p>
         <p id="folder-mount-error" class="folder-mount-error" role="alert"></p>
       </section>
     </div>
@@ -768,6 +779,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" data-close="move-conv-modal">Cancel</button>
+      <p id="move-conv-warning" class="dialog-description" hidden>Moving this chat to a Folder permanently deletes all files in its current chat workspace and resets its installed environment. Its message history is kept. Workspace files will not be copied to the Folder.</p>
       <button class="btn-primary" id="move-conv-confirm">Move</button>
     </div>
   </div>

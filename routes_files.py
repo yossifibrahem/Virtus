@@ -48,13 +48,17 @@ def folder_files(folder_id: str):
     return _json_result(container_files.folder(folder_id, "list", request.args.get("path", "")))
 
 
-@blueprint.route("/api/conversations/<workspace_id>/files/<action>", defaults={"scope": "conversation"})
-@blueprint.route("/api/folders/<workspace_id>/files/<action>", defaults={"scope": "folder"})
+@blueprint.route("/api/conversations/<workspace_id>/files/<action>", defaults={"scope": "conversation"}, methods=['GET', 'DELETE'])
+@blueprint.route("/api/folders/<workspace_id>/files/<action>", defaults={"scope": "folder"}, methods=['GET', 'DELETE'])
 def workspace_file(scope, workspace_id, action):
     if err := _bad_conv_id(workspace_id):
         return err
     operation = container_files.conversation if scope == "conversation" else container_files.folder
     path = request.args.get("path", "")
+    if request.method == 'DELETE':
+        if action != 'delete':
+            return jsonify({'error': 'Method not allowed'}), 405
+        return _json_result(operation(workspace_id, 'delete', path))
     if action == "content":
         return _json_result(operation(workspace_id, "preview", path,
             range=request.args.get("range"), version=request.args.get("version")))

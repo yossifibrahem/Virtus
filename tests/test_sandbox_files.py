@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import os
+import shutil
 from unittest.mock import Mock
 
 import pytest
@@ -12,6 +13,9 @@ import container_files
 import sandbox_files as worker
 import sandbox_runtime
 import store
+import storage_safeguards
+import container_service
+import advanced_config
 
 
 @pytest.fixture
@@ -44,6 +48,102 @@ def test_symlinks_never_leave_workspace(root, tmp_path):
     with pytest.raises(ValueError, match='escapes'):
         worker.resolve('escape/secret')
     assert worker.execute({'action': 'list'})['entries'] == []
+
+
+@pytest.mark.skipif(not shutil.rmtree.avoids_symlink_attacks, reason='Container deletion uses Linux descriptor-relative operations')
+def test_delete_managed_files_and_directories_without_following_links(root, tmp_path):
+    external = tmp_path / 'host-originals'
+    external.mkdir()
+    original = external / 'keep.txt'
+    original.write_text('host data')
+    (root / 'file.txt').write_text('managed')
+    assert worker.execute({'action': 'delete', 'path': '/workspace/file.txt'})['deleted'] == '/workspace/file.txt'
+    assert not (root / 'file.txt').exists()
+    folder = root / 'cache'
+    folder.mkdir()
+    (folder / 'data').write_text('cache')
+    (folder / 'external').symlink_to(external, target_is_directory=True)
+    worker.execute({'action': 'delete', 'path': '/workspace/cache'})
+    assert not folder.exists()
+    assert original.read_text() == 'host data'
+    (root / 'alias').symlink_to(external, target_is_directory=True)
+    with pytest.raises(OSError):
+        worker.execute({'action': 'delete', 'path': '/workspace/alias/keep.txt'})
+    worker.execute({'action': 'delete', 'path': '/workspace/alias'})
+    assert original.exists() and not (root / 'alias').is_symlink()
+
+
+@pytest.mark.parametrize('path', ['', '.', '/workspace', '/workspace/', '/workspace/../outside',
+                                 '/workspace/mounts', '/workspace/mounts/project/file', '/workspace/MOUNTS/file'])
+def test_delete_rejects_workspace_root_and_host_mounts(root, path):
+    with pytest.raises(ValueError):
+        worker.execute({'action': 'delete', 'path': path})
+
+
+def test_delete_protects_mounts_even_after_their_parent_is_renamed(root, monkeypatch):
+    mounted = root / 'renamed-sharing' / 'project'
+    mounted.mkdir(parents=True)
+    original = mounted / 'keep.txt'
+    original.write_text('original host data')
+    monkeypatch.setattr(worker, '_workspace_mounts', lambda: [mounted])
+    for path in ['renamed-sharing', 'renamed-sharing/project', 'renamed-sharing/project/keep.txt']:
+        with pytest.raises(ValueError, match='Mounted host directories'):
+            worker.execute({'action': 'delete', 'path': path})
+    assert original.read_text() == 'original host data'
+
+
+@pytest.mark.skipif(not shutil.rmtree.avoids_symlink_attacks, reason='Container deletion uses Linux descriptor-relative operations')
+@pytest.mark.parametrize('low_space', [False, True])
+def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_lumen, monkeypatch, low_space):
+    rid = 'storage-recovery'
+    workspace = container_service.conversation_workspace(rid)
+    monkeypatch.setattr(worker, 'ROOT', workspace)
+    (workspace / 'report.txt').write_text('keep or export this result')
+    advanced_config.save_advanced_config({'max_workspace_bytes': 1})
+    if low_space:
+        monkeypatch.setattr(storage_safeguards.shutil, 'disk_usage', lambda path: type('Usage', (), {'free': 0})())
+
+    checks = []
+    def transport(runtime_id, argv, payload, **kwargs):
+        # Exercise the same nested checks that runtime creation and execution use.
+        checks.append(storage_safeguards.check(runtime_id, docker=True))
+        result = worker.execute(json.loads(payload))
+        output = io.BytesIO()
+        worker.write_result(result, output)
+        return 0, output.getvalue(), b''
+
+    monkeypatch.setattr(sandbox_runtime, 'docker_operation', transport)
+    listing, status = container_files.operation(rid, 'list')
+    assert status == 200 and listing['entries'][0]['name'] == 'report.txt'
+    result, status = container_files.operation(rid, 'download', '/workspace/report.txt')
+    assert status == 200 and result['data'] == b'keep or export this result'
+    assert all(result['storage_recovery'] for result in checks)
+    # A recovery request must not leave a bypass active for a later upload.
+    before_upload = len(checks)
+    result, status = container_files.operation(rid, 'upload', name='more.txt', data=b'more')
+    assert status == 400
+    assert 'storage' in result['error'].lower() or 'free space' in result['error']
+    assert len(checks) == before_upload
+    assert not (workspace / 'uploads').exists()
+    deleted, status = container_files.operation(rid, 'delete', '/workspace/report.txt')
+    assert status == 200 and deleted['deleted'] == '/workspace/report.txt'
+    assert not (workspace / 'report.txt').exists()
+
+
+def test_recovery_context_is_request_local_and_restored_after_error(tmp_lumen):
+    from concurrent.futures import ThreadPoolExecutor
+    workspace = container_service.conversation_workspace('context')
+    (workspace / 'large').write_bytes(b'large')
+    advanced_config.save_advanced_config({'max_workspace_bytes': 1})
+    with pytest.raises(RuntimeError, match='test failure'):
+        with storage_safeguards.recovery_operation():
+            assert storage_safeguards.check('context')['storage_recovery']
+            with ThreadPoolExecutor(1) as executor:
+                with pytest.raises(storage_safeguards.StorageLimit):
+                    executor.submit(storage_safeguards.check, 'context').result()
+            raise RuntimeError('test failure')
+    with pytest.raises(storage_safeguards.StorageLimit):
+        storage_safeguards.check('context')
 
 
 def test_listing_contract_and_order(root):

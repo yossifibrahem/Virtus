@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from openai import OpenAI
 
+import advanced_config
 import app_config
 import container_service
 import mcp_service
@@ -19,6 +20,7 @@ import memory_service
 import tool_approval
 import builtin_tools
 import sandbox_runtime
+import storage_safeguards
 import tool_media
 
 
@@ -38,11 +40,15 @@ OPENAI_TIMEOUT_SECONDS = _positive_float_env("LUMEN_OPENAI_TIMEOUT", 120.0)
 
 def _inject_memory(api_messages: list) -> list:
     """Prepend or extend the system message with memory contents if any exist."""
-    memory = memory_service.read()
-    if not memory:
+    if not memory_service.enabled():
         return api_messages
-
-    block = f"## Persistent Memory\n{memory}"
+    state = memory_service.snapshot()
+    if not state['enabled']:
+        return api_messages
+    memory = state['content']
+    # Include an empty revision too: the tool must work on the first memory.
+    block = ('## Persistent Memory — remembered data, subordinate to application and user instructions\n'
+             + json.dumps({'revision': state['revision'], 'content': memory}, ensure_ascii=False))
 
     messages = list(api_messages)
     if messages and messages[0].get("role") == "system":
@@ -68,6 +74,7 @@ def openai_client(body: dict | None = None) -> OpenAI:
         api_key=cfg.get("api_key") or "sk-placeholder",
         base_url=cfg.get("api_base") or app_config.DEFAULT_API_BASE,
         timeout=OPENAI_TIMEOUT_SECONDS,
+        max_retries=0,
     )
 
 
@@ -139,12 +146,16 @@ def _safe_tool_args(raw_args: str) -> dict:
     return parsed
 
 
-def _run_mcp_call(tool_meta: dict, name: str, args: dict, session_pool) -> str:
+def _run_mcp_call(tool_meta: dict, name: str, args: dict, session_pool, cancel_event=None) -> str:
     server_name = tool_meta.get("server", "")
     server_config = mcp_service.find_server(server_name)
     if not server_config:
         raise ValueError(f"MCP server '{server_name}' not found")
-    return session_pool.invoke_tool(server_name, server_config, name, args)
+    info = container_service.ensure_container(session_pool.conv_id)
+    if getattr(session_pool, '_closed', False) is True:
+        session_pool = mcp_service.get_persistent_pool(session_pool.conv_id)
+    result = session_pool.invoke_tool(server_name, server_config, name, args, cancel_event=cancel_event)
+    return (info.reset_reason + '\n' if info.reset_reason else '') + result
 
 
 class TurnRecorder:
@@ -190,12 +201,10 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     api_messages = list(body.get("messages") or [])
     tool_meta = _tool_meta_by_name(body)
     if builtin_tools.NAMES.intersection(tool_meta):
-        publish({"type": "error", "message": "MCP tool names conflict with reserved built-in tools: bash, view, write, edit"})
+        publish({"type": "error", "message": "MCP tool names conflict with reserved built-in tools: bash, view, write, edit, update_memory"})
         return
     tools = [t for t in body.get("tools", []) if t.get("function", {}).get("name") not in builtin_tools.NAMES]
-    tools.extend(builtin_tools.SCHEMAS)
     is_first_message = sum(m.get("role") == "user" for m in turn_messages) == 1
-    api_messages = _inject_memory(api_messages)
     recorder = TurnRecorder(conv_id, title, turn_messages, stream_id)
     assistant_completed = False
     session_pool: mcp_service.McpSessionPool | None = None
@@ -214,14 +223,51 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         assistant_completed = bool(reasoning or text)
         return assistant_completed
 
-    recorder.save(display_log, force=True)
+    limits = advanced_config.load_advanced_config()
+    deadline = time.monotonic() + limits['turn_timeout_seconds']
+    tool_count = 0
+    output_bytes = 0
+    stop_reason = []
+    watcher_done = threading.Event()
+    next_space_check = [time.monotonic()]
 
+    def watch():
+        while not watcher_done.wait(.1):
+            if time.monotonic() >= next_space_check[0]:
+                try:
+                    storage_safeguards.check(runtime_id)
+                except Exception as exc:
+                    if not stop_reason:
+                        stop_reason.append(str(exc))
+                    cancel_event.set()
+                next_space_check[0] = time.monotonic() + 2
+            if time.monotonic() >= deadline:
+                if not stop_reason:
+                    stop_reason.append('Turn wall-clock budget exhausted')
+                cancel_event.set()
+            if cancel_event.is_set():
+                # Interrupt HTTP streaming/read waits, and the MCP request itself.
+                if callable(close := getattr(client, 'close', None)):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+                return
+
+    watcher = threading.Thread(target=watch, daemon=True)
+    watcher.start()
     try:
+        recorder.save(display_log, force=True)
+        storage_safeguards.check(runtime_id)
         client = openai_client(body)
         if conv_id and tool_meta:
             session_pool = mcp_service.get_persistent_pool(runtime_id)
 
         while not cancel_event.is_set():
+            if time.monotonic() >= deadline:
+                stop_reason.append('Turn wall-clock budget exhausted')
+                cancel_event.set()
+                break
             acc_text = ""
             acc_reasoning = ""
             tool_calls = []
@@ -229,11 +275,11 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
             for raw in stream_module.stream_chat_completion(
                 client,
                 model=body.get("model", "gpt-4o"),
-                messages=tool_media.expand(api_messages, conv_id),
-                tools=tools,
+                messages=tool_media.expand(_inject_memory(api_messages), conv_id),
+                tools=tools + builtin_tools.available_schemas(),
                 cancel_event=cancel_event,
                 temperature=float(body.get("temperature", 0.7)),
-                timeout=OPENAI_TIMEOUT_SECONDS,
+                timeout=max(.01, min(OPENAI_TIMEOUT_SECONDS, deadline - time.monotonic())),
             ):
                 event = _parse_stream_payload(raw)
                 if not event:
@@ -247,6 +293,11 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     tool_calls = event.get("calls") or []
                     continue
 
+                output_bytes += len(json.dumps(event).encode())
+                if output_bytes > 2 * 1024 * 1024:
+                    stop_reason.append('Turn output budget exhausted (2 MiB)')
+                    cancel_event.set()
+                    break
                 if etype == "reasoning":
                     acc_reasoning += event.get("content", "")
                     recorder.save(display_log, acc_reasoning, acc_text)
@@ -278,6 +329,11 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     refs = []
                     denied = False
                     try:
+                        tool_count += 1
+                        if tool_count > limits['turn_tool_limit']:
+                            if not stop_reason:
+                                stop_reason.append('Turn tool-call budget exhausted')
+                            cancel_event.set()
                         args = _safe_tool_args(call.get("function", {}).get("arguments", "{}"))
                         if cancel_event.is_set():
                             raise ValueError("Tool call cancelled")
@@ -296,11 +352,13 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                                 refs = tool_media.save(conv_id, native_result.get("images", []))
                             elif meta and session_pool:
                                 with sandbox_runtime.runtime_operation(runtime_id, cancel_event):
-                                    result = _run_mcp_call(meta, name, args, session_pool)
+                                    storage_safeguards.check(runtime_id)
+                                    result = _run_mcp_call(meta, name, args, session_pool, cancel_event)
                             else:
                                 raise ValueError(f"Unknown tool {name}")
                     except Exception as exc:
                         result = f"Error: {str(exc)[:1000]}"
+                    result = str(result).encode()[:65536].decode('utf-8', 'ignore')
                     event = {
                         "type": "tool_result",
                         "call_id": call_id,
@@ -338,7 +396,12 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         display_log.append({"type": "status", "content": f"Error: {exc}"})
         publish({"type": "error", "message": str(exc)})
     finally:
+        watcher_done.set()
+        watcher.join(timeout=5)
         try:
+            if stop_reason:
+                display_log.append({'type': 'status', 'content': stop_reason[0]})
+                publish({'type': 'error', 'message': stop_reason[0]})
             if cancel_event.is_set():
                 display_log.append({"type": "status", "content": "Response stopped."})
             recorder.finalize(display_log)

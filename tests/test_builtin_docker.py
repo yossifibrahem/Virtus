@@ -40,8 +40,8 @@ def test_native_tools_media_files_and_isolation(runtime, tmp_path):
     assert 'Wrote' in native.invoke(rid, 'write', {'path': 'nested/a.txt', 'content': 'alpha\nbeta\n'})['text']
     assert 'beta' in native.invoke(rid, 'view', {'path': 'nested/a.txt', 'range': '2:2'})['text']
     native.invoke(rid, 'edit', {'path': 'nested/a.txt', 'old_text': 'beta', 'new_text': 'gamma'})
-    native.invoke(rid, 'edit', {'path': '/memory.md', 'old_text': 'Memory', 'new_text': 'Updated'})
-    assert (tmp_path / 'memory.md').read_text() == 'Updated\n'
+    native.invoke(rid, 'write', {'path': '/memory.md', 'content': 'Container-only memory'})
+    assert (tmp_path / 'memory.md').read_text() == 'Memory\n'
     assert 'gamma' in native.invoke(rid, 'bash', {'command': 'cat nested/a.txt'})['text']
     script = """python - <<'INNER'
 from PIL import Image
@@ -66,7 +66,7 @@ INNER
     assert container_files.operation(rid, 'upload', name='blocked', data=b'x')[1] == 400
     inspect = docker_cli.run(['inspect', containers.container_name(rid)])
     info = json.loads(inspect.stdout)[0]
-    assert {m['Destination'] for m in info['Mounts']} == {'/workspace', '/memory.md'}
+    assert {m['Destination'] for m in info['Mounts']} == {'/workspace'}
     assert info['HostConfig']['PidsLimit'] == 256
     assert not info['HostConfig']['Privileged']
     assert 'no-new-privileges' in info['HostConfig']['SecurityOpt']

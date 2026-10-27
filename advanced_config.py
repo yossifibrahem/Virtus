@@ -41,14 +41,18 @@ _INT_KEYS: frozenset[str] = frozenset({
     "max_file_preview_bytes",
     "max_file_list_entries",
     "max_upload_bytes",
+    "turn_timeout_seconds", "turn_tool_limit", "min_free_disk_bytes", "max_workspace_bytes",
 })
 
 # Hardcoded defaults (lowest priority).
 _HARDCODED_DEFAULTS: dict = {
     "sandbox_image":          build_info.DEFAULT_SANDBOX_IMAGE,
+    "turn_timeout_seconds": 900,
+    "turn_tool_limit": 100,
+    "min_free_disk_bytes": 512 * 1024 * 1024,
+    "max_workspace_bytes": 10 * 1024 * 1024 * 1024,
     "container_memory":       "512m",
     "container_cpus":         "1",
-    "container_network":      "bridge",
     "container_idle_timeout": 600,
     "max_file_preview_bytes": 512 * 1024,
     "max_file_list_entries":  500,
@@ -62,12 +66,13 @@ _ENV_NAMES: dict[str, str] = {
     "sandbox_image":          "LUMEN_SANDBOX_IMAGE",
     "container_memory":       "LUMEN_CONTAINER_MEMORY",
     "container_cpus":         "LUMEN_CONTAINER_CPUS",
-    "container_network":      "LUMEN_CONTAINER_NETWORK",
     "container_idle_timeout": "LUMEN_CONTAINER_IDLE_TIMEOUT",
     "max_file_preview_bytes": "LUMEN_MAX_FILE_PREVIEW_BYTES",
     "max_file_list_entries":  "LUMEN_MAX_FILE_LIST_ENTRIES",
     "max_upload_bytes":       "LUMEN_MAX_UPLOAD_BYTES",
 }
+
+_ENV_NAMES.update({key: "LUMEN_" + key.upper() for key in ("turn_timeout_seconds", "turn_tool_limit", "min_free_disk_bytes", "max_workspace_bytes")})
 
 # Snapshot env values at import time so we know which keys are "locked" by
 # the operator.  These are never overwritten by UI saves.
@@ -92,16 +97,18 @@ def _cast(key: str, raw) -> int | str:
         value = int(raw)
         ceilings = {'max_file_preview_bytes': 4*1024*1024,
                     'max_file_list_entries': 5000, 'max_upload_bytes': 50*1024*1024}
-        if isinstance(raw, bool) or value < (0 if key == 'container_idle_timeout' else 1):
+        if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()) or value < (0 if key == 'container_idle_timeout' else 1):
             raise ValueError('Expected a positive integer (or zero for idle timeout)')
         return min(value, ceilings.get(key, value))
     value = str(raw).strip()
     if not value:
         raise ValueError('Value must not be empty')
-    if key == 'container_network' and (value == 'host' or value.startswith('container:')):
-        raise ValueError('Host/shared container network namespaces are not allowed')
-    if key == 'container_cpus' and (not math.isfinite(float(value)) or float(value) <= 0):
-        raise ValueError('CPU limit must be positive and finite')
+    if key == 'container_memory':
+        import re
+        if not re.fullmatch(r'[1-9][0-9]*(?:[bkmgBKMG])?', value):
+            raise ValueError('Memory limit must be positive bytes or b/k/m/g')
+    if key == 'container_cpus' and (not math.isfinite(float(value)) or not .01 <= float(value) <= 1024):
+        raise ValueError('CPU limit must be between 0.01 and 1024')
     return value
 
 

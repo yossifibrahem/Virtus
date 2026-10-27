@@ -2,10 +2,12 @@
 import io
 import json
 import re
+from contextlib import nullcontext
 
 import advanced_config
 import sandbox_runtime
 import store
+import storage_safeguards
 
 
 MAX_UPLOAD = 50 * 1024 * 1024
@@ -42,11 +44,13 @@ def operation(runtime_id, action, path='', *, data=None, **kwargs):
             if not isinstance(data, bytes) or len(data) > limits['max_upload_bytes']:
                 raise ValueError('Invalid or oversized upload')
             payload = (payload + b'\n', data)
-        with sandbox_runtime.runtime_operation(runtime_id):
-            code, raw, error = sandbox_runtime.docker_operation(runtime_id,
-                ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
-                payload,
-                timeout=60, limit=response_limit)
+        recovery = action in {'list', 'preview', 'download', 'pdf', 'delete'}
+        with storage_safeguards.recovery_operation() if recovery else nullcontext():
+            with sandbox_runtime.runtime_operation(runtime_id):
+                code, raw, error = sandbox_runtime.docker_operation(runtime_id,
+                    ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
+                    payload,
+                    timeout=60, limit=response_limit)
         if code:
             raise ValueError('Container file operation failed')
         header, separator, data = raw.partition(b'\n') if binary else (raw, None, None)

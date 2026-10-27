@@ -24,6 +24,8 @@ def _merge_tool_call_chunk(store: dict[int, dict], chunk) -> None:
     """Accumulate a streaming tool-call delta into *store* (keyed by chunk index)."""
     idx = chunk.index
     if idx not in store:
+        if len(store) >= 128:
+            raise ValueError('Model tool-call batch exceeds 128 calls')
         store[idx] = {"id": chunk.id or "", "function": {"name": "", "arguments": StringIO()}}
     if chunk.id:
         store[idx]["id"] = chunk.id
@@ -48,6 +50,18 @@ def stream_chat_completion(
     simpler. The cancel_event is checked before every yielded chunk.
     """
     openai_stream = None
+    finished = threading.Event()
+    def interrupt_read():
+        while not finished.wait(.1):
+            if cancel_event.is_set():
+                if openai_stream is not None:
+                    try:
+                        openai_stream.close()
+                    except Exception:
+                        pass
+                return
+    monitor = threading.Thread(target=interrupt_read, daemon=True)
+    monitor.start()
     try:
         request_kwargs: dict[str, Any] = {
             "model": model, "messages": messages, "stream": True,
@@ -63,6 +77,7 @@ def stream_chat_completion(
         announced_tool_indices: set[int] = set()
         openai_stream = client.chat.completions.create(**request_kwargs)
 
+        response_bytes = 0
         for chunk in openai_stream:
             if cancel_event.is_set():
                 break
@@ -71,6 +86,14 @@ def stream_chat_completion(
             if delta is None:
                 continue
 
+            response_bytes += len((delta.content or '').encode('utf-8'))
+            response_bytes += len((getattr(delta, 'reasoning_content', None) or '').encode('utf-8'))
+            for call in delta.tool_calls or []:
+                if call.function:
+                    response_bytes += len((call.function.arguments or '').encode('utf-8'))
+                    response_bytes += len((call.function.name or '').encode('utf-8'))
+            if response_bytes > 2 * 1024 * 1024:
+                raise ValueError('Model response output budget exhausted (2 MiB)')
             reasoning = getattr(delta, 'reasoning_content', None)
             if reasoning:
                 yield {"type": "reasoning", "content": reasoning}
@@ -100,6 +123,8 @@ def stream_chat_completion(
         yield {"type": "error", "message": str(exc)}
         yield {"type": "done"}
     finally:
+        finished.set()
+        monitor.join(timeout=1)
         if openai_stream is not None:
             try:
                 openai_stream.close()

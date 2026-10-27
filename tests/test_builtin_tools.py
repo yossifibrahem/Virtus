@@ -135,6 +135,8 @@ def test_capture_keeps_head_tail_bounded():
 
 
 def test_tool_uses_structured_stdin_never_host_shell(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(container_service, 'ensure_container', lambda *a: SimpleNamespace(reset_reason=''))
     call = Mock(return_value=(0, b'{"text":"ok"}', b''))
     monkeypatch.setattr(sandbox_runtime, 'docker_operation', call)
     native.invoke('runtime', 'view', {'path': '$(touch /host);file'})
@@ -223,6 +225,8 @@ def test_runtime_serialization_and_idle_exemption(monkeypatch):
 
 
 def test_forged_worker_media_is_rejected(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(container_service, 'ensure_container', lambda *a: SimpleNamespace(reset_reason=''))
     result = json.dumps({'text': 'ok', 'images': [{'mime': 'text/html', 'data': 'PHNjcmlwdD4='}]}).encode()
     monkeypatch.setattr(sandbox_runtime, 'docker_operation', lambda *a, **k: (0, result, b''))
     with pytest.raises(ValueError, match='image'):

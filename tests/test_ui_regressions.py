@@ -772,6 +772,11 @@ await picking;
 assert.equal(element('folder-mount-path').value,'');
 assert.equal(element('folder-modal-confirm').disabled,false);
 assert.equal(element('folder-name-input').disabled,false);
+assert.equal(element('folder-mount-browse').hidden,true);
+mod.namespace.addFolderMountPath();
+assert.equal(mod.namespace.editingMounts.length,0,'Existing Folder mounts are immutable');
+openFolderEditor();
+assert.equal(element('folder-mount-browse').hidden,false);
 // The same two list listeners handle controls created on every re-render.
 element('folder-mount-path').value='/chosen';
 mod.namespace.addFolderMountPath();
@@ -898,4 +903,159 @@ new vm.Script(source.slice(source.indexOf('function processBuildEvent('),source.
 for(let index=0;index<200;index++)context.processBuildEvent('event: log\ndata: '+JSON.stringify({line:`${index}:`+'x'.repeat(20000)}));
 assert.equal(details.childNodes.length,50);
 assert(details.childNodes.every(node=>node.text.length<=8193));
+''')
+
+
+def test_move_warning_only_precedes_destructive_standalone_moves():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const controls=new Map();
+function element(id) {
+ if(!controls.has(id))controls.set(id,{value:'',hidden:false,handlers:{},
+  cloneNode(){return element(id+'-clone');},replaceWith(){},
+  addEventListener(name,fn){this.handlers[name]=fn;}});
+ return controls.get(id);
+}
+let opened=0;const requests=[];
+const document={addEventListener(){},getElementById:element};
+const modules={
+ './api.js':{api:{put:async(...args)=>{requests.push(args);return {error:'deliberate test response'};}}},
+ './state.js':{state:{},STORAGE_KEYS:{}},'./storage.js':{storage:{}},
+ './renderer.js':{clearMessages(){},renderAllMessages(){}},
+ './ui.js':{toggleSidebar(){},openModal(){opened++;},closeModal(){},showToast(){}},
+ './icons.js':{ICONS:{}},'./format.js':{escapeHtml:x=>x,formatConversationDate:()=>''},
+ './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
+ './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
+};
+const context=vm.createContext({document,console});
+const source=readFileSync('static/js/conversations.js','utf8')+'\nexport {moveConversation};';
+const mod=new vm.SourceTextModule(source,{context});
+await mod.link(name=>new vm.SyntheticModule(Object.keys(modules[name]),function(){
+ for(const [key,value] of Object.entries(modules[name]))this.setExport(key,value);
+},{context}));
+await mod.evaluate();
+const select=element('move-conv-folder'),warning=element('move-conv-warning');
+mod.namespace.moveConversation({id:'standalone'});
+assert.equal(warning.hidden,true,'No-op has no destructive warning');
+select.value='destination';select.onchange();
+assert.equal(warning.hidden,false);
+assert.equal(requests.length,0,'Opening/selecting/cancelling never submits a move');
+// Reopening after cancellation still made no backend change.
+mod.namespace.moveConversation({id:'folder-chat',folder_id:'source'});
+select.value='';select.onchange();
+assert.equal(warning.hidden,true,'Leaving a shared Folder must not claim it deletes shared files');
+mod.namespace.moveConversation({id:'standalone'});
+select.value='destination';select.onchange();
+await element('move-conv-confirm-clone').handlers.click();
+assert.equal(requests.length,1,'Only explicit confirmation submits');
+assert.equal(requests[0][1].folder_id,'destination');
+''')
+
+
+def test_failed_authoritative_history_reload_blocks_saves_until_recovered():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const handlers=new Map(), writes=[];
+const noop=()=>{};
+const state={convId:'other',folderSystemPrompt:'',systemPrompt:''};
+let response={error:'Temporary server error'};
+const overrides={
+ './api.js':{api:{get:async()=>{if(response instanceof Error)throw response;return response;}}},
+ './state.js':{state},
+ './conversations.js':{persistConversationFor:async(id,data)=>writes.push({id,data})},
+ './conversation_activity.js':{activeTurns:new Map()},
+};
+const context=vm.createContext({
+ document:{addEventListener:(name,handler)=>handlers.set(name,handler),getElementById:()=>null},
+ console,AbortController,
+});
+const source=readFileSync('static/js/chat.js','utf8');
+const names=new Map();
+for(const match of source.matchAll(/(?:import|export)\s*\{([^}]+)\}\s*from\s*'([^']+)'/gs)){
+ const exports=names.get(match[2])||new Set();
+ for(const name of match[1].split(','))exports.add(name.trim().split(/\s+as\s+/)[0]);
+ names.set(match[2],exports);
+}
+const module=new vm.SourceTextModule(source+'\nexport {processSSEEvent,createStreamContext,createTurnContext,persistTurnConversation};',{context});
+const linked=new Map();
+await module.link(specifier=>{
+ if(!linked.has(specifier))linked.set(specifier,new vm.SyntheticModule([...names.get(specifier)],function(){
+  for(const name of names.get(specifier))this.setExport(name,overrides[specifier]?.[name]??noop);
+ },{context}));
+ return linked.get(specifier);
+});
+await module.evaluate();
+const {processSSEEvent:apply,createStreamContext,createTurnContext,persistTurnConversation}=module.namespace;
+const turn={convId:'review',messages:[{role:'user',content:'Old history'}],displayLog:[]};
+const ctx=createStreamContext(turn,'stream');
+for(const failure of [{error:'Temporary server error'},{messages:[]},new Error('Offline')]){
+ response=failure;
+ await assert.rejects(apply({type:'history_reload',conv_id:'review'},ctx));
+ assert.equal(ctx.assistantDone,false);
+ await assert.rejects(persistTurnConversation(turn),/History recovery is incomplete/);
+ assert.throws(()=>createTurnContext('review'),/History recovery is incomplete/);
+}
+assert.equal(writes.length,0,'Failed reload must never overwrite completed server history');
+response={messages:[{role:'assistant',content:'Completed server answer'}],displayLog:[{type:'message',role:'assistant',content:'Completed server answer'}]};
+await apply({type:'history_reload',conv_id:'review'},ctx);
+assert.equal(ctx.assistantDone,true);
+await persistTurnConversation(turn);
+assert.deepEqual(writes[0].data.messages,response.messages);
+// Reopening with successfully fetched authoritative history clears the shared guard,
+// but never authorizes an older in-flight turn to save its partial arrays.
+response={error:'Temporary server error'};
+await assert.rejects(apply({type:'history_reload',conv_id:'review'},ctx));
+const reopened={messages:[{role:'assistant',content:'Recovered on reopening'}],displayLog:[]};
+await handlers.get('chat:conversation-opened')({detail:{convId:'review',data:reopened}});
+await assert.rejects(persistTurnConversation(turn),/History recovery is incomplete/,
+ 'A stale in-flight turn stays blocked even if another view reopens the chat');
+await persistTurnConversation({convId:'review',...reopened});
+assert.equal(writes.length,2);
+''')
+
+
+def test_workspace_delete_requires_confirmation_and_keeps_original_scope_on_navigation():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const state={convId:'original'},requests=[],prompts=[],notices=[];
+let confirmed=false;
+const noop=()=>{};
+const overrides={
+ './api.js':{api:{delete:async url=>{requests.push(url);state.convId='other';return {deleted:true};}}},
+ './state.js':{state},'./ui.js':{showToast:message=>notices.push(message)},
+};
+const context=vm.createContext({window:{confirm:message=>{prompts.push(message);return confirmed;}},console});
+const source=readFileSync('static/js/file_panel.js','utf8');
+const names=new Map();
+for(const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'/gs)){
+ const exports=names.get(match[2])||new Set();
+ for(const name of match[1].split(','))exports.add(name.trim().split(/\s+as\s+/)[0]);
+ names.set(match[2],exports);
+}
+const module=new vm.SourceTextModule(source+'\nexport {deleteWorkspaceEntry,isManagedPath};',{context});
+await module.link(specifier=>new vm.SyntheticModule([...names.get(specifier)],function(){
+ for(const name of names.get(specifier))this.setExport(name,overrides[specifier]?.[name]??noop);
+},{context}));
+await module.evaluate();
+const {deleteWorkspaceEntry:remove,isManagedPath}=module.namespace;
+const button={disabled:false},entry={name:'cache',path:'/workspace/cache',type:'directory'};
+await remove(entry,button);
+assert.equal(requests.length,0,'Cancelling must not send a delete request');
+assert(prompts[0].includes('and all its contents'));
+for(const path of ['/workspace','/workspace/','/workspace/mounts','/workspace/mounts/project','/workspace/../outside']){
+ assert(!isManagedPath(path));
+ await remove({path},button);
+}
+assert.equal(prompts.length,1,'Protected paths must not offer deletion');
+confirmed=true;
+await remove(entry,button);
+assert.deepEqual(requests,['/api/conversations/original/files/delete?path=%2Fworkspace%2Fcache']);
+assert.equal(button.disabled,false);
+assert.equal(notices.length,0,'Navigation must not refresh or notify the wrong workspace');
 ''')

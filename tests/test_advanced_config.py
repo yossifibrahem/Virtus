@@ -35,8 +35,7 @@ def test_uses_stored_sandbox_image_verbatim(tmp_path, monkeypatch):
 def test_rejects_invalid_values_on_save(tmp_path, monkeypatch):
     import pytest
     _isolate(tmp_path, monkeypatch)
-    for update in [{'container_network': 'host'}, {'container_network': 'container:other'},
-                   {'container_cpus': 'nan'}, {'max_file_list_entries': -1},
+    for update in [{'container_cpus': 'nan'}, {'max_file_list_entries': -1},
                    {'max_file_preview_bytes': True}, {'container_memory': ''}]:
         with pytest.raises(ValueError):
             advanced_config.save_advanced_config(update)
@@ -56,8 +55,8 @@ def test_limits_match_worker_capabilities(tmp_path, monkeypatch):
 def test_loaded_settings_cannot_mutate_cached_sandbox_limits(tmp_path, monkeypatch):
     _isolate(tmp_path, monkeypatch)
     loaded = advanced_config.load_advanced_config()
-    loaded["container_network"] = "host"
-    assert advanced_config.load_advanced_config()["container_network"] == "bridge"
+    loaded["container_cpus"] = "9"
+    assert advanced_config.load_advanced_config()["container_cpus"] == "1"
 
 
 def test_changed_config_path_is_not_hidden_by_cache(tmp_path, monkeypatch):
@@ -74,3 +73,10 @@ def test_invalid_environment_override_preserves_valid_saved_value(tmp_path, monk
     path.write_text(json.dumps({"container_cpus": "2"}))
     monkeypatch.setattr(advanced_config, "_ENV_LOCKED", {"container_cpus": "invalid"})
     assert advanced_config.load_advanced_config()["container_cpus"] == "2"
+
+
+def test_legacy_network_values_are_ignored(tmp_path, monkeypatch):
+    path = _isolate(tmp_path, monkeypatch)
+    path.write_text(json.dumps({'container_network': 'host'}))
+    assert 'container_network' not in advanced_config.load_advanced_config()
+    assert 'container_network' not in advanced_config.save_advanced_config({'container_network': 'none'})

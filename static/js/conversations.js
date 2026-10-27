@@ -534,6 +534,9 @@ export function deleteConversation(convId) {
 
 export async function persistConversationFor(convId, { title, messages, displayLog }) {
   if (!convId) return;
+  if ((messages !== undefined || displayLog !== undefined) && state.pendingHistoryReloads?.has(convId)) {
+    throw new Error('History recovery is incomplete. Reopen this chat before saving changes.');
+  }
 
   const payload = {};
   if (title !== undefined) payload.title = title || 'Untitled';
@@ -555,6 +558,8 @@ function renameFolder(folder) {
 
 function openFolderEditor(folder = null) {
   editingFolder = folder;
+  document.getElementById('folder-mount-browse').hidden = !!folder;
+  document.querySelector('.folder-mount-manual').hidden = !!folder;
   ++folderEditorVersion;
   editingMounts = (folder?.mounts || []).map(mount => ({ ...mount }));
   renderFolderMounts();
@@ -577,11 +582,11 @@ function openFolderEditor(folder = null) {
     document.getElementById('folder-mount-add').addEventListener('click', addFolderMountPath);
     const mounts = document.getElementById('folder-mount-list');
     mounts.addEventListener('change', event => {
-      if (event.target.matches('[data-mount-readonly]')) editingMounts[Number(event.target.dataset.mountReadonly)].read_only = event.target.checked;
+      if (!editingFolder && editingMounts[Number(event.target.dataset.mountReadonly)] && event.target.matches('[data-mount-readonly]')) editingMounts[Number(event.target.dataset.mountReadonly)].read_only = event.target.checked;
     });
     mounts.addEventListener('click', event => {
       const button = event.target.closest('[data-mount-remove]');
-      if (!button) return;
+      if (!button || editingFolder) return;
       editingMounts.splice(Number(button.dataset.mountRemove), 1);
       renderFolderMounts();
     });
@@ -603,16 +608,17 @@ function renderFolderMounts() {
         <div class="folder-mount-path" title="${escapeHtml(mount.source)}">${escapeHtml(mount.source)}</div>
         <div class="folder-mount-target">${mount.name ? escapeHtml(`/workspace/mounts/${mount.name}`) : 'Ready to share when you save'}</div>
       </div>
-      <label class="cust-toggle folder-mount-permission">
+      ${editingFolder ? `<span>${mount.read_only ? 'Read only' : 'Read-write'}</span>` : `<label class="cust-toggle folder-mount-permission">
         <span>Read only</span>
         <input type="checkbox" data-mount-readonly="${index}" aria-label="Read only for ${escapeHtml(mount.source)}" ${mount.read_only !== false ? 'checked' : ''}>
         <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
       </label>
-      <button class="folder-mount-remove" type="button" data-mount-remove="${index}" title="Remove directory" aria-label="Remove ${escapeHtml(mount.source)}">${ICONS.close}</button>
+      <button class="folder-mount-remove" type="button" data-mount-remove="${index}" title="Remove directory" aria-label="Remove ${escapeHtml(mount.source)}">${ICONS.close}</button>`}
     </div>`).join('') : `<div class="folder-mount-empty">${ICONS.folder}<span>No directories shared yet</span></div>`;
 }
 
 function addFolderMountPath() {
+  if (editingFolder) return;
   const input = document.getElementById('folder-mount-path');
   const source = input.value.trim();
   if (!source || editingMounts.some(mount => mount.source === source)) return;
@@ -662,7 +668,7 @@ async function submitFolderEditor() {
   const error = document.getElementById('folder-mount-error');
   // Include a typed path even if the user goes straight to Save.
   addFolderMountPath();
-  const payload = { name, mounts: editingMounts };
+  const payload = folder ? { name } : { name, mounts: editingMounts };
   folderEditorBusy = true;
   updateFolderEditorControls();
   error.textContent = '';
@@ -711,6 +717,11 @@ function moveConversation(conv) {
     ...folders.map(folder => `<option value="${folder.id}">${escapeHtml(folder.name)}</option>`),
   ].join('');
   select.value = conv.folder_id || '';
+  const updateWarning = () => {
+    document.getElementById('move-conv-warning').hidden = !!conv.folder_id || !select.value;
+  };
+  select.onchange = updateWarning;
+  updateWarning();
   openModal('move-conv-modal');
 
   const confirm = document.getElementById('move-conv-confirm');

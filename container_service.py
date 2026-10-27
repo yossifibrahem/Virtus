@@ -20,7 +20,6 @@ import advanced_config as _adv_cfg
 import build_info
 import docker_cli
 import folder_mounts
-import memory_service
 from docker_path_utils import host_path_to_docker_src, parse_volume_source
 
 log = logging.getLogger(__name__)
@@ -48,6 +47,7 @@ class ContainerInfo:
     name: str
     workspace: Path
     status: ContainerStatus
+    reset_reason: str = ""
 
 
 def _safe_id(conv_id: str) -> str:
@@ -112,9 +112,6 @@ def _inspect_container(name: str) -> dict | None:
 
 def _mounts_match(mounts: list[dict], workspace: Path, shared: list[dict] | None = None) -> bool:
     expected = {"/workspace": (host_path_to_docker_src(str(workspace)), True)}
-    memory_spec = _memory_volume_spec()
-    if memory_spec:
-        expected[memory_service.CONTAINER_PATH] = (_volume_source(memory_spec), True)
     for mount in shared or []:
         expected[f"/workspace/mounts/{mount['name']}"] = (host_path_to_docker_src(mount["source"]), not mount["read_only"])
     actual = {m["Destination"]: (m["Source"], m.get("RW")) for m in mounts if m.get("Type") == "bind"}
@@ -129,6 +126,71 @@ def _shared_mount_policy_matches(info: dict, shared: list[dict]) -> bool:
     }
     return all(f"/workspace/mounts/{mount['name']}" in readonly
                for mount in shared if mount["read_only"])
+
+
+_CAPABILITIES = ('CHOWN', 'DAC_OVERRIDE', 'SETUID', 'SETGID')
+
+
+@dataclass(frozen=True)
+class RuntimeSpec:
+    image: str
+    memory: int
+    nano_cpus: int
+    pids: int = 256
+    capabilities: tuple = _CAPABILITIES
+    user: str = '0:0'
+    ipc_mode: str = 'private'
+    cgroupns_mode: str = 'private'
+
+
+def _runtime_spec():
+    cfg = _adv_cfg.load_advanced_config()
+    return RuntimeSpec(build_info.canonical_image_reference(str(cfg['sandbox_image'])),
+                       _memory_bytes(cfg['container_memory']),
+                       round(float(cfg['container_cpus']) * 1_000_000_000))
+
+
+def _memory_bytes(value):
+    match = re.fullmatch(r'([1-9][0-9]*)([bkmg]?)', str(value).lower())
+    if not match:
+        raise ValueError('Invalid container memory limit')
+    return int(match[1]) * {'': 1, 'b': 1, 'k': 1024, 'm': 1024**2, 'g': 1024**3}[match[2]]
+
+
+def _runtime_matches(info, workspace, shared):
+    """Single effective specification for normal reuse and conflict recovery.
+
+    Networking is intentionally excluded: Docker owns network attachments.
+    Missing security metadata fails closed, including legacy memory mounts.
+    """
+    spec = _runtime_spec()
+    host = info.get('HostConfig') or {}
+    caps = lambda values: {str(v).upper().removeprefix('CAP_') for v in values or []}
+    security = {str(v).replace(':true', '') for v in host.get('SecurityOpt') or []}
+    return (
+        not _container_image_changed(info, spec.image)
+        and _mounts_match(info.get('Mounts', []), workspace, shared)
+        and _shared_mount_policy_matches(info, shared)
+        and host.get('Memory') == spec.memory
+        and host.get('NanoCpus') == spec.nano_cpus
+        and host.get('PidsLimit') == spec.pids
+        and host.get('Privileged') is False
+        and caps(host.get('CapDrop')) == {'ALL'}
+        and caps(host.get('CapAdd')) == set(spec.capabilities)
+        and 'no-new-privileges' in security
+        and not security.difference({'no-new-privileges'})
+        and all(not host.get(key) for key in (
+            'Devices', 'DeviceRequests', 'DeviceCgroupRules', 'VolumesFrom',
+            'BindsExtra', 'GroupAdd', 'CgroupParent'))
+        and host.get('PidMode', '') == ''
+        and host.get('IpcMode', 'private') == spec.ipc_mode
+        and host.get('UTSMode', '') == ''
+        and host.get('UsernsMode', '') == ''
+        and host.get('CgroupnsMode', 'private') == spec.cgroupns_mode
+        and (info.get('Config') or {}).get('User', '') in (
+            '', 'root', '0', 'root:root', 'root:0', '0:root', spec.user)
+        and (info.get('Config') or {}).get('WorkingDir') == '/workspace'
+    )
 
 
 def _get_tagged_image_id(image: str) -> str:
@@ -148,21 +210,14 @@ def _container_image_changed(info: dict, expected_image: str) -> bool:
     )
 
 
-def _memory_volume_spec() -> str | None:
-    """Return a Docker volume spec for memory.md, creating it from template if needed."""
-    try:
-        memory_file = memory_service.ensure_file()
-        return f"{host_path_to_docker_src(str(memory_file))}:{memory_service.CONTAINER_PATH}:rw"
-    except OSError:
-        return None
+def _memory_volume_spec() -> None:
+    """Legacy hook: canonical memory is never exposed to containers."""
+    return None
 
 
 def _volume_args(workspace: Path, shared: list[dict] | None = None) -> list[str]:
     workspace_source = host_path_to_docker_src(str(workspace))
-    memory_spec = _memory_volume_spec()
     specs = [f"{workspace_source}:/workspace"]
-    if memory_spec:
-        specs.append(memory_spec)
     args = [item for spec in specs for item in ("--volume", spec)]
     for mount in shared or []:
         # Docker --mount uses CSV fields; quote paths containing commas/quotes.
@@ -196,18 +251,23 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
     workspace = _workspace(conv_id)
     shared = folder_mounts.runtime_mounts(conv_id)
+    import storage_safeguards
+    storage_safeguards.check(conv_id)
 
+    reset_reason = ""
     info = _inspect_container(name)
     if info is not None:
-        expected_image = build_info.canonical_image_reference(
-            str(_adv_cfg.load_advanced_config()["sandbox_image"])
-        )
-        image_changed = _container_image_changed(info, expected_image)
-        if (image_changed or not _mounts_match(info.get("Mounts", []), workspace, shared)
-                or not _shared_mount_policy_matches(info, shared)):
-            if image_changed:
-                log.info("[container] %s uses an outdated sandbox image; recreating", name)
-            stop_container(conv_id)
+        if not _runtime_matches(info, workspace, shared):
+            reset_reason = "Sandbox compatibility/settings reset: workspace files retained; installed packages and other container-layer files reset."
+            log.warning("[container] %s compatibility/settings reset: workspace retained; installed packages reset", name)
+            import sandbox_runtime
+            lock = sandbox_runtime.runtime_lock(conv_id)
+            if not lock.acquire(blocking=False):
+                raise RuntimeError('Sandbox compatibility/settings reset requires an idle shared runtime; retry when operations finish')
+            try:
+                stop_container(conv_id, strict=True)
+            finally:
+                lock.release()
         elif info["State"]["Status"] != "running":
             _start_existing(name)
             return ContainerInfo(conv_id, name, workspace, "running")
@@ -217,7 +277,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     result = _run(_docker_run_command(name, workspace, shared))
     if result.returncode == 0:
         log.info("[container] created %s (%s)", name, result.stdout.strip()[:12])
-        return ContainerInfo(conv_id, name, workspace, "running")
+        return ContainerInfo(conv_id, name, workspace, "running", reset_reason)
 
     # Python locks solve same-process races. This handles multi-process Flask or
     # a manual docker run that wins between inspect and create.
@@ -228,11 +288,8 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
 
 
 def _docker_run_command(name: str, workspace: Path, shared: list[dict] | None = None) -> list[str]:
-    cfg = _adv_cfg.load_advanced_config()
-    image = build_info.canonical_image_reference(str(cfg["sandbox_image"]))
-    network = str(cfg["container_network"])
-    if network == "host" or network.startswith("container:"):
-        raise ValueError("Host/shared container network namespaces are not allowed")
+    spec = _runtime_spec()
+    image = spec.image
     return [
         "docker", "run",
         "--detach",
@@ -241,15 +298,14 @@ def _docker_run_command(name: str, workspace: Path, shared: list[dict] | None = 
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
         *_volume_args(workspace, shared),
         "--workdir", "/workspace",
-        "--pids-limit", "256",
-        "--memory", str(cfg["container_memory"]),
-        "--cpus",   str(cfg["container_cpus"]),
-        "--network", str(cfg["container_network"]),
+        "--user", spec.user,
+        "--ipc", spec.ipc_mode,
+        "--cgroupns", spec.cgroupns_mode,
+        "--pids-limit", str(spec.pids),
+        "--memory", str(spec.memory),
+        "--cpus", str(spec.nano_cpus / 1_000_000_000),
         "--cap-drop", "ALL",
-        "--cap-add", "CHOWN",
-        "--cap-add", "DAC_OVERRIDE",
-        "--cap-add", "SETUID",
-        "--cap-add", "SETGID",
+        *[arg for cap in spec.capabilities for arg in ("--cap-add", cap)],
         "--security-opt", "no-new-privileges",
         image,
     ]
@@ -274,16 +330,8 @@ def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
     shared = folder_mounts.runtime_mounts(conv_id)
-    if (not _mounts_match(info.get("Mounts", []), _workspace(conv_id), shared)
-            or not _shared_mount_policy_matches(info, shared)):
-        raise RuntimeError(f"Container {name} already exists with unexpected mounts")
-    expected_image = build_info.canonical_image_reference(
-        str(_adv_cfg.load_advanced_config()["sandbox_image"])
-    )
-    if _container_image_changed(info, expected_image):
-        raise RuntimeError(
-            f"Container {name} already exists but uses a different sandbox image"
-        )
+    if not _runtime_matches(info, _workspace(conv_id), shared):
+        raise RuntimeError(f"Container {name} already exists with incompatible runtime settings; retry when idle for a compatibility reset (workspace retained, installed packages reset)")
     if info["State"]["Status"] != "running":
         _start_existing(name)
     log.info("[container] reused concurrently-created %s", name)

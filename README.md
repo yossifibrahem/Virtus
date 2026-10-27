@@ -11,7 +11,7 @@ Lumen is distributed as an installable desktop application for normal users whil
 - **Desktop experience:** small macOS menu-bar and Windows tray applications run Lumen locally and open the same chat UI in the user's default browser.
 - **User prerequisite:** Docker Desktop is the only external runtime users install. Python, Node.js, npm, Git, and the Lumen source tree are included or handled internally.
 - **Sandbox installation:** the app bundles `Dockerfile.sandbox`. After explicit confirmation on first run, Docker pulls `ubuntu:24.04`, installs the sandbox runtimes and packages, and creates the local `lumen-sandbox:latest` image.
-- **Execution and sharing:** model commands run inside Docker. Standalone chats have separate workspaces; chats in a Folder/Project share one. File sharing is explicit, and network access defaults to Docker bridge networking. Share files through uploads or explicit host-directory mounts in Folder/Project settings. Mounted directories default to read-only; users can enable writes.
+- **Execution and sharing:** model commands run inside Docker. Standalone chats have separate workspaces; chats in a Folder/Project share one. File sharing is explicit, and networking is managed directly through Docker. Share files through uploads or explicit host-directory mounts during Folder/Project creation. Mounted directories default to read-only; read-write sharing allows edits and deletion of original host files. Sharing cannot currently be changed after creation.
 - **MCP boundary:** user-configured servers run only inside Lumen's containers. No MCP server is bundled or automatically registered; configure servers through settings or `mcp.json`.
 - **Distribution:** desktop artifacts are an Apple Silicon macOS 14+ DMG and a portable Windows x64 `onedir` ZIP. The Windows package must remain intact; the executable is not a standalone distribution.
 - **Data ownership:** chats, settings, memory, and workspaces remain under `~/.lumen/`; replacing or uninstalling the app does not remove them.
@@ -51,7 +51,9 @@ Lumen AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser UI
 **Persistent memory**
 
 - The model remembers facts across all conversations via `~/.lumen/memory.md`
-- Mounted read-write into every container at `/memory.md` so the model can update it using its file tools
+- Enabled by default, optional global memory stays outside Docker. The built-in `update_memory` tool saves concise facts using revision checks and atomic writes.
+- Container settings let you inspect, edit, clear, and disable memory. Disabling preserves it, stops context injection and removes its tool on subsequent model requests; chat history already containing facts remains.
+- Memory is limited to 32 KiB, with eight recoverable prior versions in `memory.history.json`. Existing content is preserved. Legacy container memory mounts cause a one-time compatibility reset on next use: workspace files remain, installed packages reset. Memory toggles never reset computers.
 - Memory contents are injected into the system prompt at the start of every turn
 
 **Folders**
@@ -258,7 +260,8 @@ Open the **Container / Advanced Settings** panel to configure:
 | Sandbox Image | Docker image name for sandbox containers |
 | Container Memory | Memory limit per container (e.g. `512m`, `1g`) |
 | Container CPUs | CPU quota per container |
-| Container Network | Docker network mode |
+| Turn duration / tool calls | Defaults: 900 seconds / 100 calls per turn |
+| Storage safeguards | Defaults: minimum 512 MiB free; maximum 10 GiB per managed workspace |
 | Container Idle Timeout | Seconds before idle containers are stopped; `0` disables |
 | Max File Preview Bytes | Maximum bytes loaded for in-browser text file preview |
 | Max File List Entries | Maximum workspace directory entries returned |
@@ -295,7 +298,6 @@ http://localhost:1234/v1     # LM Studio
 | `LUMEN_CONTAINERS_ROOT` | `~/.lumen/containers` | Host directory for standalone-chat and shared-folder workspaces |
 | `LUMEN_CONTAINER_MEMORY` | `512m` | Memory limit per sandbox container |
 | `LUMEN_CONTAINER_CPUS` | `1` | CPU quota per sandbox container |
-| `LUMEN_CONTAINER_NETWORK` | `bridge` | Docker network mode |
 | `LUMEN_CONTAINER_PREFIX` | `lumen-chat-` | Prefix for generated container names |
 | `LUMEN_CONTAINER_IDLE_TIMEOUT` | `600` | Seconds before idle containers are stopped; `0` disables |
 | `LUMEN_MAX_CONTENT_LENGTH` | `62914560` | Flask request body cap (bytes) |
@@ -317,7 +319,7 @@ All runtime data is stored outside the repo under `~/.lumen/`:
 ├── config.json            # Server-side API provider config
 ├── advanced_config.json   # Container and file-handling settings (written by the UI)
 ├── mcp.json               # MCP server configuration
-├── memory.md              # Persistent cross-chat memory; mounted at /memory.md in every container
+├── memory.md              # App-managed cross-chat memory, never mounted into containers
 ├── folders.json           # Folder names, IDs, instructions, and explicit directory mounts
 ├── conversations/         # One JSON file per conversation
 ├── containers/            # Workspace directories for standalone chats and shared folders
@@ -368,7 +370,7 @@ Model-facing tool names use the MCP tool name directly. The matching MCP server 
 1. Click **New folder** in the sidebar and give the folder a name. Optionally use **Browse…** to select host directories, or enter an absolute host path and click **Add path**. Each directory defaults to **Read only**; turn it off to let the LLM modify the original host files.
 2. Open the folder to create chats, browse its shared workspace, or add folder-level instructions.
 3. Use a conversation's menu to move an existing chat into a folder or back to **Recent**.
-4. Open the Folder menu → **Folder settings** to add/remove directories or change permissions later. Stop active chats before changing mounts. The sandbox restarts on its next use; workspace files persist, but packages installed into its container layer need reinstalling.
+4. After creation, **Folder settings** displays saved paths and permissions without editing controls. Names and instructions remain editable, including when a shared directory is disconnected. Restore unavailable directories before running tools.
 
 Each chat retains its own message history, but chats in the same folder use one shared Docker container and `/workspace`. Folder instructions are used in place of the global system prompt for chats in that folder. The folder retains its files when its last chat is deleted or moved out. Moving a chat switches workspaces without copying files. Deleting a folder permanently deletes its chats, shared container, and managed workspace files. Mounted host directories are kept. Shared directories appear at `/workspace/mounts/<directory-name>` for all chats and the file panel. Docker Desktop must have permission to access the selected host paths. Browse opens a native chooser on the machine running Lumen (macOS/Windows; Linux requires Zenity or KDialog).
 
@@ -409,13 +411,19 @@ Built-in tools run automatically. Bash uses a fresh shell each time: files and i
 
 ### Isolation and sharing
 
-Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace, shared `/memory.md`, and any host directories explicitly selected in Folder settings. **MCP arguments never authorize host mounts**: install server code inside the container and use container paths. Explicit directory sharing belongs only to a Folder/Project; standalone chats and MCP configuration cannot add host mounts. Read-only permissions are enforced recursively by Docker bind mounts. This requires a Docker Engine with `bind-recursive=readonly` support and a daemon Linux kernel of 5.12 or later (including the Linux VM used by Docker Desktop). Unsupported engines fail rather than falling back to writable submounts.
+Standalone chats have separate workspaces. Chats in a Folder share a runtime and workspace. The application mounts its managed workspace and host directories explicitly selected during Folder creation. **MCP arguments never authorize host mounts**: install server code inside the container and use container paths. Explicit directory sharing belongs only to a Folder/Project; standalone chats and MCP configuration cannot add host mounts. Read-only permissions are enforced recursively by Docker bind mounts. This requires a Docker Engine with `bind-recursive=readonly` support and a daemon Linux kernel of 5.12 or later (including the Linux VM used by Docker Desktop). Unsupported engines fail rather than falling back to writable submounts.
 
-Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker's configured bridge networking remains available, including reachable host/LAN services. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
+Commands run as container root, with reduced capabilities, no-new-privileges, CPU/memory limits and a 256-process limit. Docker chooses the normal default networking for new containers; existing Docker-managed network attachments are preserved, including reachable host/LAN services. The app supplies no network override and ignores obsolete saved network preferences and environment values. This is not a network air gap, a disk quota, or a guarantee against Docker/kernel vulnerabilities. Do not expose the Docker socket or run privileged containers. Local API requests require a same-origin browser session and a CSRF token; additional served hostnames must be explicitly listed in `LUMEN_ALLOWED_HOSTS`.
 
 The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Text preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Visual previews use a 20 MiB input limit. Images and notebook outputs reuse the View worker’s 1600-pixel visual bounds and bounded text; PDFs display the original file without text extraction. Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; Copy retains the loaded text and Download saves the original file. Smaller upload limits are supported. Unchanged previews reuse their loaded content after a file-version check, avoiding repeated reads, image conversion, and notebook parsing. Uploads, downloads, and PDF ranges transfer raw bytes after a small JSON metadata header; visual previews use bounded JSON/base64 transport. Transfers remain buffered and bounded by the file size limits. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
 
 After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
+
+If a workspace reaches a storage limit, the file panel remains available for browsing,
+downloads, and explicit deletion of managed files or directories. Delete asks for
+confirmation and does not follow symlinks or delete mounted host directories. Uploads
+and ordinary agent execution remain blocked until space is recovered. Rebuild the
+sandbox image after updating the file worker to enable this recovery action.
 
 ---
 
@@ -433,7 +441,7 @@ for the module map and runtime ownership rules.
 A single chat turn in `chat_turn_service.py`:
 
 1. Build an OpenAI client from server-side config.
-2. Read `~/.lumen/memory.md` and inject its contents into the system message.
+2. When enabled, inject bounded global memory as remembered data subordinate to instructions, along with its revision. Each subsequent model request rechecks the preference.
 3. Resolve the chat or Folder runtime; tools start its sandbox when needed. MCP paths never create host mounts.
 4. Stream model output via `streaming.py`; accumulate text and tool calls.
 5. Validate each tool call’s JSON arguments. Native tools run inside the runtime automatically; additional MCP tools follow their approval settings and use the runtime’s persistent session pool. Append one result per call, including denied, failed, or cancelled calls.
@@ -535,3 +543,14 @@ When filing a bug, please include the OS, browser and version, whether this is a
 ## License
 
 MIT — built for people who like local control, readable code, and AI tools that do not require a 14-step deployment ritual.
+
+
+### Persistence and execution safeguards
+
+Stop/start, idle shutdown and normal app restarts reuse compatible containers and retain installed packages. An image, mount, resource or isolation mismatch can require recreation at an idle boundary; workspace files remain but installed packages and other container-layer state reset. CPU, memory, PID limits, capability restrictions, no-new-privileges and namespace/device isolation are checked before reuse, including name-conflict recovery. There are no environment snapshots.
+
+Moving a standalone chat into a Folder requires an explicit warning/confirmation: its old workspace files are permanently deleted and its environment reset; its message history and the destination Folder's files remain. Cancelling changes nothing. Moving out of a Folder preserves that Folder's shared workspace.
+
+Execution safeguards default to 900 seconds and 100 tool calls per turn, 512 MiB minimum free space, and 10 GiB per managed workspace. Configure these in Container settings, or with `LUMEN_TURN_TIMEOUT_SECONDS`, `LUMEN_TURN_TOOL_LIMIT`, `LUMEN_MIN_FREE_DISK_BYTES`, and `LUMEN_MAX_WORKSPACE_BYTES`. Checks run before work and approximately every two seconds during execution, including MCP waits. Managed storage accounting skips symlink targets and host shares. Docker filesystem free/used space is checked inside running containers when observable, since Docker Desktop may use a separate VM disk. Unavailable Docker storage telemetry does not imply unlimited space. These are best-effort safeguards, not hard quotas; fast writers can exceed thresholds between checks.
+
+Reaching limits cancels execution and may stop a shared runtime to terminate descendants. This can interrupt other activity in the Folder. Existing files and chat history are retained; the app never deletes user artifacts or shared host files to recover space. Model output is bounded to 2 MiB per response/turn, MCP tool text to 64 KiB, and replay to 8 MiB per active stream. On replay exhaustion the turn stops and the browser reloads authoritative saved history. Ordinary built-in output limits remain in force.

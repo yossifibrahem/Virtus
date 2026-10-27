@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import shutil
 import sys
 
 ROOT = Path('/workspace')
@@ -100,6 +101,61 @@ def workspace_path(path):
     return '/workspace' + ('' if rel == '.' else '/' + rel)
 
 
+def _workspace_mounts():
+    """Inspect actual mount locations, including renamed mount ancestors."""
+    try:
+        with open('/proc/self/mountinfo') as source:
+            mounts = []
+            for line in source:
+                raw = line.split()[4]
+                path = Path(re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), raw))
+                if path != ROOT and ROOT in path.parents:
+                    mounts.append(path)
+            return mounts
+    except FileNotFoundError:
+        if sys.platform.startswith('linux'):
+            raise ValueError('Cannot verify mounted directories before deletion')
+        return []  # Native worker tests; the deployed worker runs inside Linux.
+
+
+def delete_managed(value):
+    """Delete an explicitly selected managed path without following symlinks.
+
+    Descriptor-relative traversal keeps concurrent symlink swaps from redirecting
+    deletion into host shares. The workspace root and reserved mounts tree are
+    never deletion targets. This worker runs inside Docker, not on the host.
+    """
+    raw = str(value or '').replace('\\', '/')
+    if raw.startswith('/workspace/'):
+        raw = raw[len('/workspace/'):]
+    elif raw.startswith('/'):
+        raise ValueError('Only managed workspace paths can be deleted')
+    parts = [part for part in raw.split('/') if part != '.']
+    if not parts or any(part in ('', '..') for part in parts) or parts[0].lower() == 'mounts':
+        raise ValueError('The workspace root and mounted host directories cannot be deleted')
+    target = ROOT.joinpath(*parts)
+    for mount in _workspace_mounts():
+        if target == mount or mount in target.parents or target in mount.parents:
+            raise ValueError('Mounted host directories and their ancestors cannot be deleted')
+    parent = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        name = parts[-1]
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if stat.S_ISDIR(info.st_mode):
+            if not shutil.rmtree.avoids_symlink_attacks:
+                raise ValueError('Safe directory deletion is unavailable')
+            shutil.rmtree(name, dir_fd=parent)
+        else:
+            os.unlink(name, dir_fd=parent)
+    finally:
+        os.close(parent)
+    return {'deleted': '/workspace/' + '/'.join(parts)}
+
+
 def entry(path, preview_limit, *, with_version=False):
     target = path.resolve()
     if target != ROOT and ROOT not in target.parents:
@@ -122,6 +178,8 @@ def execute(req):
     list_limit = min(max(1, int(limits.get('max_file_list_entries', 500))), 5000)
     upload_limit = min(max(1, int(limits.get('max_upload_bytes', MAX_UPLOAD))), MAX_UPLOAD)
     action = req['action']
+    if action == 'delete':
+        return delete_managed(req.get('path'))
     target = resolve(req.get('path'))
     if action == 'pdf':
         return pdf_file(target, req)

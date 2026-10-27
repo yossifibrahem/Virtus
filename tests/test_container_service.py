@@ -204,7 +204,7 @@ class TestVolumeArgs:
         with pytest.raises(ValueError, match="Implicit host mounts"):
             container_service.ensure_container("chat", ["/host:/host:ro"])
 
-    def test_no_extra_volumes_include_workspace_and_memory(self, tmp_path, monkeypatch):
+    def test_legacy_memory_hook_cannot_expose_canonical_memory(self, tmp_path, monkeypatch):
         import docker_path_utils
 
         monkeypatch.setattr(
@@ -216,8 +216,6 @@ class TestVolumeArgs:
         assert result == [
             "--volume",
             f"{docker_path_utils.host_path_to_docker_src(str(tmp_path))}:/workspace",
-            "--volume",
-            "/host/memory.md:/memory.md:rw",
         ]
 
     def test_windows_workspace_source_uses_forward_slashes(self, monkeypatch):
@@ -266,7 +264,11 @@ class TestContainerImageIdentity:
             'container_cpus': '1', 'container_network': 'bridge'})
         info = {
             'State': {'Status': 'running'}, 'Image': 'sha256:current',
-            'Config': {'Labels': {
+            'HostConfig': {'Memory': 512*1024**2, 'NanoCpus': 1000000000,
+                'PidsLimit': 256, 'Privileged': False, 'CapDrop': ['ALL'],
+                'CapAdd': ['CHOWN', 'DAC_OVERRIDE', 'SETUID', 'SETGID'],
+                'SecurityOpt': ['no-new-privileges']},
+            'Config': {'WorkingDir': '/workspace', 'Labels': {
                 container_service.build_info.CONTAINER_BUILD_LABEL: 'lumen-sandbox:latest',
                 container_service.build_info.CONTAINER_IDENTITY_LABEL: 'identity'}},
             'Mounts': [{'Type': 'bind', 'RW': True, 'Source': str(tmp_path), 'Destination': '/workspace'}],
@@ -285,7 +287,7 @@ class TestContainerImageIdentity:
             output = json.dumps(info) if args[1] == 'inspect' else 'sha256:current'
             return subprocess.CompletedProcess(args, 0, output, '')
         monkeypatch.setattr(container_service, '_run', run)
-        monkeypatch.setattr(container_service, 'stop_container', removed.append)
+        monkeypatch.setattr(container_service, 'stop_container', lambda cid, strict=False: removed.append(cid))
         assert container_service.ensure_container('conversation').status == 'running'
         assert removed == (['conversation'] if change else [])
         assert len(calls) == (3 if change else 2)

@@ -3,9 +3,10 @@ import bash from './bash.js';
 import view from './view.js';
 import write from './write.js';
 import edit from './edit.js';
+import update_memory from './memory.js';
 import { workspacePath } from './shared.js';
 
-const adapters = new Map(Object.entries({ bash, view, write, edit }));
+const adapters = new Map(Object.entries({ bash, view, write, edit, update_memory }));
 export const nativeAdapterFor = name => adapters.get(name) ?? null;
 
 export function bindNativeActions(element, name, args) {

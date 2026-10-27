@@ -13,8 +13,8 @@ import asyncio
 import json
 import sys
 import threading
+import time
 import types
-from datetime import timedelta
 import pytest
 
 import mcp_service
@@ -332,8 +332,9 @@ class TestMcpSessionPool:
                 self.exited += 1
 
             async def initialize(self):
-                # The SDK calls total_seconds() when sending initialize.
-                self.read_timeout_seconds.total_seconds()
+                # MCP 2.x accepts numeric seconds and performs deadline arithmetic.
+                assert isinstance(self.read_timeout_seconds, (int, float))
+                time.monotonic() + self.read_timeout_seconds
                 self.initialized += 1
 
             async def list_tools(self):
@@ -467,7 +468,7 @@ class TestMcpSessionPool:
         finally:
             pool.close()
 
-        assert created_sessions[0].read_timeout_seconds == timedelta(seconds=2.5)
+        assert created_sessions[0].read_timeout_seconds == 2.5
 
     @pytest.mark.parametrize("operation", ["fetch_tools", "invoke_tool"])
     @pytest.mark.parametrize("configured_timeout, expected_seconds", [
@@ -494,7 +495,7 @@ class TestMcpSessionPool:
             )
             assert result == "tool:1"
 
-        assert created_sessions[0].read_timeout_seconds == timedelta(seconds=expected_seconds)
+        assert created_sessions[0].read_timeout_seconds == expected_seconds
         assert created_sessions[0].initialized == 1
         assert created_sessions[0].exited == 1
         assert created_stdio[0].exited == 1
@@ -771,3 +772,46 @@ def test_cancelled_queued_invocations_never_execute(monkeypatch):
         await worker
     asyncio.run(exercise_worker())
     assert calls == []
+
+
+def test_real_mcp_sdk_discovery_invocation_and_cancellation(tmp_path, monkeypatch):
+    """Exercise MCP 2.x deadline arithmetic and stdio, not a mock of its API."""
+    from mcp import StdioServerParameters
+    script = tmp_path / 'server.py'
+    started = tmp_path / 'started'
+    script.write_text('''import asyncio, sys
+from pathlib import Path
+from mcp.server import MCPServer
+server = MCPServer("Disposable regression server")
+@server.tool()
+async def echo(text: str, delay: float = 0) -> str:
+    Path(sys.argv[1]).write_text("started")
+    await asyncio.sleep(delay)
+    return text
+server.run(transport="stdio")
+''')
+    params = StdioServerParameters(command=sys.executable, args=[str(script), str(started)])
+    monkeypatch.setattr(mcp_service, '_build_server_params', lambda *args, **kwargs: params)
+    monkeypatch.setenv('LUMEN_MCP_TOOL_TIMEOUT', '4')
+    tools = mcp_service.run_async(mcp_service.fetch_tools('local', {}))
+    assert [tool['name'] for tool in tools] == ['echo']
+    assert mcp_service.run_async(mcp_service.invoke_tool('local', {}, 'echo', {'text': 'one-shot'})) == 'one-shot'
+    pool = mcp_service.McpSessionPool('', tool_timeout=4)
+    cancel = threading.Event()
+    try:
+        assert pool.invoke_tool('local', {}, 'echo', {'text': 'persistent'}) == 'persistent'
+        started.unlink()
+        def stop_when_started():
+            deadline = time.monotonic() + 4
+            while not started.exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            cancel.set()
+        stopper = threading.Thread(target=stop_when_started, daemon=True)
+        stopper.start()
+        with pytest.raises(RuntimeError, match='cancelled'):
+            pool.invoke_tool('local', {}, 'echo', {'text': 'interrupted', 'delay': 30}, cancel_event=cancel)
+        stopper.join(2)
+        assert pool.invoke_tool('local', {}, 'echo', {'text': 'recovered'}) == 'recovered'
+    finally:
+        pool.close(timeout=3)
+    assert not pool._thread.is_alive()

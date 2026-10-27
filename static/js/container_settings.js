@@ -15,6 +15,7 @@ let _envLocked = {};   // key → true when the env var was set at server start
 // ── Load ──────────────────────────────────────────────────────────────────────
 
 export async function loadContainerSettings() {
+  await loadMemory();
   try {
     const data = await api.get('/api/container-settings');
     if (!data || data.error) return;
@@ -42,11 +43,11 @@ const _KEYS = [
   'sandbox_image',
   'container_memory',
   'container_cpus',
-  'container_network',
   'container_idle_timeout',
   'max_file_preview_bytes',
   'max_file_list_entries',
   'max_upload_bytes',
+  'turn_timeout_seconds', 'turn_tool_limit', 'min_free_disk_bytes', 'max_workspace_bytes',
 ];
 
 // ── UI sync helpers ───────────────────────────────────────────────────────────
@@ -78,7 +79,6 @@ const _ENV_NAMES = {
   sandbox_image:          'LUMEN_SANDBOX_IMAGE',
   container_memory:       'LUMEN_CONTAINER_MEMORY',
   container_cpus:         'LUMEN_CONTAINER_CPUS',
-  container_network:      'LUMEN_CONTAINER_NETWORK',
   container_idle_timeout: 'LUMEN_CONTAINER_IDLE_TIMEOUT',
   max_file_preview_bytes: 'LUMEN_MAX_FILE_PREVIEW_BYTES',
   max_file_list_entries:  'LUMEN_MAX_FILE_LIST_ENTRIES',
@@ -110,4 +110,35 @@ export async function deleteAllData() {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+let memoryRevision = '';
+let memoryBound = false;
+async function loadMemory() {
+  const status = _el('memory-status');
+  try {
+    const data = await api.get('/api/memory');
+    if (data.error) throw new Error(data.error);
+    memoryRevision = data.revision;
+    _el('memory-content').value = data.content;
+    _el('memory-enabled').checked = data.enabled;
+    status.textContent = data.oversized ? 'Legacy memory exceeds 32 KiB. Original content is preserved; reduce the file before editing.' : '';
+  } catch (error) { status.textContent = error.message; }
+  if (memoryBound) return;
+  memoryBound = true;
+  const save = async (payload, reload = false) => {
+    try {
+      const data = await api.put('/api/memory', payload);
+      if (data.error) throw new Error(data.error);
+      if ('content' in payload) memoryRevision = data.revision;
+      status.textContent = 'Saved';
+      if (reload) await loadMemory();
+    } catch (error) { status.textContent = error.message + ' Reload memory before merging and retrying.'; }
+  };
+  _el('memory-save').onclick = () => save({content: _el('memory-content').value, revision: memoryRevision});
+  _el('memory-reload').onclick = loadMemory;
+  _el('memory-enabled').onchange = () => save({enabled: _el('memory-enabled').checked});
+  _el('memory-clear').onclick = () => {
+    if (window.confirm('Clear all stored global memory?')) save({content: '', revision: memoryRevision}, true);
+  };
 }

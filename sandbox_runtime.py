@@ -8,6 +8,7 @@ import time
 
 import container_service
 import docker_cli
+import storage_safeguards
 
 _LOCKS = weakref.WeakValueDictionary()
 _GUARD = threading.Lock()
@@ -35,6 +36,7 @@ def runtime_operation(runtime_id, cancel=None):
         with _GUARD:
             _ACTIVE[runtime_id] = _ACTIVE.get(runtime_id, 0) + 1
             registered = True
+        storage_safeguards.check(runtime_id)
         yield
     finally:
         if registered:
@@ -76,6 +78,7 @@ class Capture:
 def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, limit=8*1024*1024, tail=False):
     """Bound both transport output and wall time; never invoke a host shell."""
     container_service.ensure_container(runtime_id)
+    storage_safeguards.check(runtime_id, docker=True)
     command = ['exec', '-i', '--workdir', '/workspace', container_service.container_name(runtime_id), *argv]
     proc = subprocess.Popen(docker_cli.argv(command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, **docker_cli._windowless_process_kwargs())
@@ -101,6 +104,7 @@ def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, lim
         thread.start()
     deadline = time.monotonic() + timeout
     interrupted = None
+    next_disk_check = time.monotonic() + 2
     while proc.poll() is None:
         if cancel and cancel.is_set():
             interrupted = 'Operation cancelled'
@@ -108,6 +112,12 @@ def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, lim
             interrupted = 'Operation timed out'
         elif not tail and output.total > limit:
             interrupted = 'Worker output exceeded limit'
+        if time.monotonic() >= next_disk_check:
+            try:
+                storage_safeguards.check(runtime_id, docker=True)
+            except Exception as exc:
+                interrupted = str(exc)
+            next_disk_check = time.monotonic() + 2
         if interrupted:
             # Killing docker-exec alone leaves container children running. Kill the
             # entire runtime, including detached descendants, before returning.
