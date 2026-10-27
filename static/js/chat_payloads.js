@@ -59,10 +59,10 @@ function prepareMessageForApi(message) {
     : cleanMessage;
 }
 
-export async function buildApiMessages(turnMessages, turnSystemPrompt = null) {
+export async function buildApiMessages(turnMessages, turnSystemPrompt = null, turnFolderId = state.folderId) {
   const messages = [];
-  const configuredPrompt = turnSystemPrompt ?? (state.folderSystemPrompt.trim() || state.systemPrompt);
-  const systemParts = [configuredPrompt, buildAppSystemPrompt()].filter(Boolean);
+  const configuredPrompt = turnSystemPrompt ?? ((turnFolderId && state.folderSystemPrompt.trim()) || state.systemPrompt);
+  const systemParts = [configuredPrompt, buildAppSystemPrompt(turnFolderId)].filter(Boolean);
   if (systemParts.length) messages.push({ role: 'system', content: systemParts.join('\n\n') });
 
   messages.push(...turnMessages.map(prepareMessageForApi));

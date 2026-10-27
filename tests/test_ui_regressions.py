@@ -17,6 +17,54 @@ def run_node(script):
     assert result.returncode == 0, result.stderr
 
 
+def test_chat_payload_scopes_folder_context_and_preserves_attachment_context():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const state={folderId:null,folderSystemPrompt:'Folder instructions',systemPrompt:'Global instructions'};
+const context=vm.createContext({});
+const policy=new vm.SourceTextModule(readFileSync('static/js/app_policy.js','utf8'),{context});
+await policy.link(()=>{throw new Error('Unexpected policy dependency');});
+await policy.evaluate();
+const mod=new vm.SourceTextModule(readFileSync('static/js/chat_payloads.js','utf8'),{context});
+await mod.link(specifier=>{
+ if(specifier==='./app_policy.js')return policy;
+ const values=specifier==='./state.js'?{state}:{isToolEnabled:()=>true,isToolAutoApprove:()=>false};
+ return new vm.SyntheticModule(Object.keys(values),function(){
+  for(const [key,value] of Object.entries(values))this.setExport(key,value);
+ },{context});
+});
+await mod.evaluate();
+const build=mod.namespace.buildApiMessages;
+const history=[{role:'user',content:'Read this',attachments:[{name:'report.pdf',path:'/workspace/uploads/report.pdf'}]}];
+let messages=await build(history);
+assert(messages[0].content.startsWith('Global instructions\n\n'));
+assert(!messages[0].content.includes('Folder instructions'));
+assert(!messages[0].content.includes('Folder/Project'));
+assert(!messages[0].content.includes('/workspace/uploads/'));
+assert.equal(messages[1].content,'Read this\n\nAttached file(s) available in the chat workspace:\n- report.pdf: /workspace/uploads/report.pdf');
+assert.equal(history[0].content,'Read this','Payload assembly must not mutate saved history');
+state.folderId='folder-a';
+messages=await build(history);
+assert(messages[0].content.startsWith('Folder instructions\n\n'));
+assert(messages[0].content.includes('shares its workspace and container'));
+assert(!messages[0].content.includes('Global instructions'));
+state.folderSystemPrompt=' ';
+assert((await build(history))[0].content.startsWith('Global instructions\n\n'));
+// Explicit turn snapshots must win over whichever chat the user navigates to.
+state.folderId='folder-b';
+state.folderSystemPrompt='Other folder instructions';
+messages=await build(history,'Captured standalone instructions',null);
+assert(messages[0].content.startsWith('Captured standalone instructions\n\n'));
+assert(!messages[0].content.includes('Folder/Project'));
+state.folderId=null;
+messages=await build(history,'Captured folder instructions','folder-a');
+assert(messages[0].content.startsWith('Captured folder instructions\n\n'));
+assert(messages[0].content.includes('shares its workspace and container'));
+''')
+
+
 def test_sse_handles_fragmented_unicode_truncation_and_callback_errors():
     run_node(r'''
 import assert from 'node:assert/strict';

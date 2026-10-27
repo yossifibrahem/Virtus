@@ -252,6 +252,13 @@ best-effort safeguards, not hard quotas or a network air gap. Keep the Docker so
 
 ## Global memory and bounded execution
 
+Model context stays scoped to its source: `static/js/app_policy.js` contains only compact
+app guidance (identity/date, sandbox workspace, artifact links, concise responses and permissions).
+Tool contracts live in tool schemas; uploaded paths are attached to their user messages.
+Folder instructions replace the global custom prompt only inside a Folder, and the shared-workspace
+sentence appears only there. Each turn captures its Folder identity and custom instructions before
+asynchronous work so navigating to another chat cannot change its context.
+
 Memory defaults enabled. `memory_service` owns `~/.lumen/memory.md`, with SHA-256 content revisions,
 a process-wide lock, atomic replacement, a 32 KiB limit and eight prior versions in
 `memory.history.json`. `/api/memory` supports inspection, version-checked edits/clears and a
