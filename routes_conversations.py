@@ -39,6 +39,14 @@ def list_conversations():
     return jsonify(store.list_all())
 
 
+@blueprint.route("/api/conversations/activity", methods=["GET"])
+def conversation_activity():
+    return jsonify([
+        {"id": conv["id"], "active_stream_id": conv["active_stream_id"]}
+        for conv in store.list_all() if conv.get("active_stream_id")
+    ])
+
+
 @blueprint.route("/api/conversations", methods=["POST"])
 def create_conversation():
     body = _body()

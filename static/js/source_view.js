@@ -1,4 +1,4 @@
-// One bounded, escaped source view for workspace previews and native Read results.
+// One bounded, escaped source view for workspace previews and native View results.
 import { escapeHtml, fileExtension } from './format.js';
 
 const LANGUAGES = {

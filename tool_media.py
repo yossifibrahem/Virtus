@@ -40,7 +40,7 @@ def expand(messages, conv_id):
     def flush():
         if pending:
             output.append({'role': 'user', 'content': [
-                {'type': 'text', 'text': 'Visual results from the preceding Read tool calls (not a new user request).'}, *pending]})
+                {'type': 'text', 'text': 'Visual results from the preceding View tool calls (not a new user request).'}, *pending]})
             pending.clear()
     for message in messages:
         if message.get('role') != 'tool':

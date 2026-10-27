@@ -342,7 +342,7 @@ def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch)
         clients.append(current)
         if len(clients) == 1:
             yield {'type': 'tool_calls', 'calls': [{'id': 'one', 'function': {
-                'name': 'read', 'arguments': '{"path":"x"}'}}]}
+                'name': 'view', 'arguments': '{"path":"x"}'}}]}
         else:
             yield {'type': 'text', 'content': 'Done'}
     monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
@@ -367,7 +367,7 @@ def test_tool_batches_always_have_matching_results(tmp_lumen, monkeypatch, mode)
     monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
     monkeypatch.setattr(svc.mcp_service, 'get_persistent_pool', lambda runtime: pool)
     native = mode in {'cancel_native', 'invalid_native'}
-    name = 'read' if native else 'external'
+    name = 'view' if native else 'external'
     calls = [{'id': str(i), 'function': {'name': name, 'arguments': '{bad' if mode.startswith('invalid') else '{}'}}
              for i in range(2)]
     requests = []

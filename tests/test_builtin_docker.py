@@ -40,7 +40,7 @@ def runtime(tmp_path, monkeypatch):
 def test_native_tools_media_files_and_isolation(runtime, tmp_path):
     rid = runtime
     assert 'Wrote' in native.invoke(rid, 'write', {'path': 'nested/a.txt', 'content': 'alpha\nbeta\n'})['text']
-    assert 'beta' in native.invoke(rid, 'read', {'path': 'nested/a.txt', 'range': '2:2'})['text']
+    assert 'beta' in native.invoke(rid, 'view', {'path': 'nested/a.txt', 'range': '2:2'})['text']
     native.invoke(rid, 'edit', {'path': 'nested/a.txt', 'old_text': 'beta', 'new_text': 'gamma'})
     native.invoke(rid, 'edit', {'path': '/memory.md', 'old_text': 'Memory', 'new_text': 'Updated'})
     assert (tmp_path / 'memory.md').read_text() == 'Updated\n'
@@ -54,15 +54,15 @@ open('/workspace/book.ipynb','w').write(json.dumps({'cells':[{'cell_type':'code'
 INNER
 """
     assert 'exit status 0' in native.invoke(rid, 'bash', {'command': script})['text']
-    assert native.invoke(rid, 'read', {'path': 'picture.png'})['images']
-    pdf = native.invoke(rid, 'read', {'path': 'document.pdf'})
+    assert native.invoke(rid, 'view', {'path': 'picture.png'})['images']
+    pdf = native.invoke(rid, 'view', {'path': 'document.pdf'})
     assert 'Hello PDF' in pdf['text'] and pdf['images']
-    assert 'print(1)' in native.invoke(rid, 'read', {'path': 'book.ipynb'})['text']
+    assert 'print(1)' in native.invoke(rid, 'view', {'path': 'book.ipynb'})['text']
     result, status = container_files.operation(rid, 'download', '/workspace/nested/a.txt')
     assert status == 200 and base64.b64decode(result['data']) == b'alpha\ngamma\n'
     result, status = container_files.operation(rid, 'upload', name='test.txt', data=base64.b64encode(b'upload').decode())
     assert status == 200
-    assert 'upload' in native.invoke(rid, 'read', {'path': result['path']})['text']
+    assert 'upload' in native.invoke(rid, 'view', {'path': result['path']})['text']
     native.invoke(rid, 'bash', {'command': 'ln -s /etc /workspace/escape; rm -rf /workspace/uploads; ln -s /etc /workspace/uploads'})
     assert container_files.operation(rid, 'preview', '/workspace/escape/passwd')[1] == 400
     assert container_files.operation(rid, 'upload', name='blocked', data='eA==')[1] == 400
@@ -106,12 +106,12 @@ def test_package_installs_and_pid_limit(runtime):
 def test_malformed_and_oversized_document_inputs(runtime):
     for filename in ('bad.pdf', 'bad.png', 'bad.ipynb'):
         native.invoke(runtime, 'write', {'path': filename, 'content': 'not a valid document'})
-        result = native.invoke(runtime, 'read', {'path': filename})
+        result = native.invoke(runtime, 'view', {'path': filename})
         assert result['error'] and 'Error:' in result['text']
     native.invoke(runtime, 'bash', {'command': 'truncate -s 22000000 oversized.png; mkfifo pipe'})
-    assert native.invoke(runtime, 'read', {'path': 'oversized.png'})['error']
-    assert native.invoke(runtime, 'read', {'path': 'pipe'})['error']
-    assert native.invoke(runtime, 'read', {'path': '/workspace', 'range': '1:2'})['error']
+    assert native.invoke(runtime, 'view', {'path': 'oversized.png'})['error']
+    assert native.invoke(runtime, 'view', {'path': 'pipe'})['error']
+    assert native.invoke(runtime, 'view', {'path': '/workspace', 'range': '1:2'})['error']
 
 
 def test_folder_host_mounts_readonly_write_through_and_isolation(runtime, tmp_path, monkeypatch):
@@ -126,7 +126,7 @@ def test_folder_host_mounts_readonly_write_through_and_isolation(runtime, tmp_pa
     target = f"/workspace/mounts/{mounts[0]['name']}"
     try:
         containers.ensure_container(rid)
-        assert 'host data' in native.invoke(rid, 'read', {'path': target + '/original.txt'})['text']
+        assert 'host data' in native.invoke(rid, 'view', {'path': target + '/original.txt'})['text']
         result = native.invoke(rid, 'bash', {'command': f"echo denied > '{target}/denied.txt'"})['text']
         assert 'Read-only file system' in result
         assert not (source / 'denied.txt').exists()

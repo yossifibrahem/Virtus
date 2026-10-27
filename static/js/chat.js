@@ -21,8 +21,7 @@ import { createClientId } from './ids.js';
 import { sendMessage as sendMessageImpl } from './chat_send.js';
 import { editAndResend as editAndResendImpl, regenerateFrom as regenerateFromImpl } from './chat_edit.js';
 import { lastAssistantMessageIndex } from './chat_log_utils.js';
-
-const activeTurns = new Map();
+import { activeTurns, updateConversationActivity } from './conversation_activity.js';
 
 // Attachment handling lives in chat_attachments.js.
 
@@ -172,6 +171,7 @@ async function attachServerStream(convId, streamId, data = {}) {
   };
   const ctx = createStreamContext(turn, streamId);
   activeTurns.set(convId, { turn, ctx, streamId });
+  updateConversationActivity(convId);
 
   if (isTurnVisible(turn)) {
     syncVisibleTurn(turn);
@@ -184,6 +184,7 @@ async function attachServerStream(convId, streamId, data = {}) {
 
   try {
     ctx.abortController = new AbortController();
+    ctx.requestStarted = true;
     const resp = await api.stream('/api/chat/stream', {
       stream_id: streamId,
       conv_id: convId,
@@ -193,6 +194,7 @@ async function attachServerStream(convId, streamId, data = {}) {
     if (!resp.ok) throw new Error(await readResponseError(resp));
 
     const success = await readSSEStream(resp, event => processSSEEvent(event, ctx));
+    ctx.streamComplete = success;
     if (!success || ctx.cancelled) return false;
 
     if (!ctx.assistantDone) {
@@ -270,7 +272,10 @@ function finishAssistantTurn(turn = null, ctx = null) {
   const isCurrent = !turn?.convId || !ctx || isCurrentStreamContext(turn, ctx);
 
   ctx?.disposeApproval?.();
-  if (turn?.convId && isCurrent) activeTurns.delete(turn.convId);
+  if (turn?.convId && isCurrent) {
+    activeTurns.delete(turn.convId);
+    updateConversationActivity(turn.convId, Boolean(ctx?.requestStarted && !ctx.streamComplete));
+  }
 
   if ((!turn || isTurnVisible(turn)) && isCurrent) {
     if (ctx) ctx.abortController = null;
@@ -503,6 +508,7 @@ async function runChatLoop(turn) {
   const ctx = createStreamContext(turn, streamId);
 
   activeTurns.set(turn.convId, { turn, ctx, streamId });
+  updateConversationActivity(turn.convId);
   state.streamId = streamId;
 
   // A newly-started turn already has the user's message appended in-place.
@@ -526,11 +532,13 @@ async function runChatLoop(turn) {
       auto_generate_titles:  state.autoGenerateTitles ?? true,
     };
 
+    ctx.requestStarted = true;
     const resp = await api.stream('/api/chat/stream', payload, { signal: ctx.abortController.signal });
 
     if (!resp.ok) throw new Error(await readResponseError(resp));
 
     const success = await readSSEStream(resp, event => processSSEEvent(event, ctx));
+    ctx.streamComplete = success;
     if (!success || ctx.cancelled) return ctx;
 
     if (!ctx.assistantDone) {

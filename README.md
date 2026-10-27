@@ -163,7 +163,7 @@ The development server binds to `127.0.0.1` with debug mode disabled by default.
 
 ### Configuring tools
 
-The built-in tools `bash`, `read`, `write`, and `edit` are provided by Lumen itself, with server-owned schemas and container-only execution. They work without an MCP server. Optional MCP servers provide additional tools; their code and dependencies must be available inside the container. Node.js, Python, `uv`, and `mcp-remote` are bundled for these integrations. MCP discovery returns only additional tools, while native tools are injected directly into each chat request.
+The built-in tools `bash`, `view`, `write`, and `edit` are provided by Lumen itself, with server-owned schemas and container-only execution. They work without an MCP server. Optional MCP servers provide additional tools; their code and dependencies must be available inside the container. Node.js, Python, `uv`, and `mcp-remote` are bundled for these integrations. MCP discovery returns only additional tools, while native tools are injected directly into each chat request.
 
 ## Installation
 
@@ -435,7 +435,7 @@ Click the stop button while a response is streaming. The server marks the stream
 | `mcp_adapters.py` | Wraps MCP commands for Docker `exec`; never infers host mounts from arguments |
 | `container_service.py` | Docker container lifecycle: create, start, stop, idle reaping, workspace management |
 | `container_files.py`, `sandbox_files.py` | File panel transport and container-only workspace file operations |
-| `builtin_tools.py`, `sandbox_tools.py` | Built-in tool contracts and container-only Read/Write/Edit workers |
+| `builtin_tools.py`, `sandbox_tools.py` | Built-in tool contracts and container-only View/Write/Edit workers |
 | `sandbox_runtime.py` | Shared runtime serialization, bounded Docker I/O, cancellation |
 | `store.py` | Filesystem persistence for conversations, folders, and images; cached conversation index |
 
@@ -476,11 +476,11 @@ The frontend is plain browser ES modules — no build step, no framework. `templ
 | `renderer_actions.js` | Copy/edit/regenerate buttons and branch arrows in message footers |
 | `mcp.js` | MCP config UI, tool loading, enable/auto-approve toggles |
 | `file_panel.js` | Workspace browser, preview, and download |
-| `source_view.js` | Shared numbered source rendering for file previews and native Read results |
+| `source_view.js` | Shared numbered source rendering for file previews and native View results |
 | `conversations.js` | Conversation/folder CRUD, search, folder home, and sidebar rendering |
 | `settings.js` | API and chat settings UI |
 | `markdown.js` | Markdown, code highlighting, KaTeX, safe workspace file links |
-| `tool_ui.js` / `native_tools/` | Shared presentation routing and dedicated Bash, Read, Write, Edit views |
+| `tool_ui.js` / `native_tools/` | Shared presentation routing and dedicated Bash, View, Write, Edit views |
 | `tool_adapters/` | External MCP display adapters, including Exa |
 
 The frontend maintains two parallel histories: `state.messages` (model/API-facing) and `state.displayLog` (UI-facing). These have different structures and indices — do not conflate them. Branches for edited messages and regenerated responses are stored in `displayLog` so the visible conversation can switch paths while preserving the saved model history.
@@ -583,7 +583,7 @@ Every chat has four server-provided tools, even with no MCP servers configured:
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `bash` | `command`, optional `timeout` (1–600 seconds; default 120) | Combined command output and exit status, bounded to 32 KiB. |
-| `read` | `path`, optional `range` (`start:end`, inclusive and one-based) | Text lines, directory listing, image, PDF pages, or notebook cells. |
+| `view` | `path`, optional `range` (`start:end`, inclusive and one-based) | Text lines, directory listing, image, PDF pages, or notebook cells. |
 | `write` | `path`, `content` | Creates parents and writes UTF-8 text, including empty files. |
 | `edit` | `path`, `old_text`, `new_text`, optional `replace_all` | Exact replacement; ambiguous matches fail unless explicitly replacing all. |
 
@@ -599,7 +599,7 @@ Commands run as container root, with reduced capabilities, no-new-privileges, CP
 
 The file panel transfers files through the container rather than following sandbox-created symlinks on the host. Uploads and downloads are bounded to 50 MiB per file. Preview limits default to 512 KiB (maximum 4 MiB); directory listings default to 500 entries (maximum 5000). Source views display up to 2000 lines or 128 Ki characters with an explicit shortening notice; the file panel’s Copy and Download actions retain the full loaded file content. Smaller upload limits are supported. Large transfers use bounded JSON/base64 transport and temporarily consume more memory than the raw file size. Tool images are stored separately per conversation; raw media is expanded only when constructing the model request.
 
-After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `read`, `write`, and `edit` are reserved; rename conflicting MCP tools.
+After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
 
 ### Verification
 

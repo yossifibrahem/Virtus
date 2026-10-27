@@ -40,13 +40,98 @@ assert(!failed.body.locked);
 ''')
 
 
+def test_conversation_activity_survives_navigation_and_clears_background_turns():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {api} from './static/js/api.js';
+import * as activity from './static/js/conversation_activity.js';
+const {activeTurns, updateConversationActivity:update, syncConversationActivity:sync, workingIndicator} = activity;
+const indicator = ids => ({dataset:{workingConversations:ids},hidden:true});
+const a = indicator('a'), b = indicator('b'), folder = indicator('a b');
+let indicators = [a, b, folder];
+globalThis.CSS = {escape:s=>s};
+globalThis.document = {querySelectorAll:selector => {
+  const ids = [...selector.matchAll(/~="([^"]+)"/g)].map(match=>match[1]);
+  return indicators.filter(el=>el.dataset.workingConversations.split(' ').some(id=>ids.includes(id)));
+}};
+const timers = [];
+globalThis.setTimeout = callback => {timers.push(callback); return 1;};
+const start = id => {activeTurns.set(id, {}); update(id);};
+const finish = (id, disconnected=false) => {activeTurns.delete(id); update(id, disconnected);};
+const initialVersion = activity.activityVersion;
+start('a');
+assert(!a.hidden);
+assert(b.hidden);
+assert(!folder.hidden);
+assert(!workingIndicator('a').includes(' hidden'));
+const rebuiltA = indicator('a');
+indicators = [rebuiltA, b, folder];
+sync([{id:'a'}], initialVersion);
+assert(!workingIndicator('a').includes(' hidden'));
+start('b');
+const staleVersion = activity.activityVersion;
+finish('a');
+assert(rebuiltA.hidden);
+assert(!b.hidden, 'Background completion must not clear another running chat');
+assert(!folder.hidden);
+sync([{id:'a',active_stream_id:'old-stream'}], staleVersion);
+assert(rebuiltA.hidden, 'A stale response cannot revive a completed turn');
+finish('b');
+for (let i=0; i<1000; i++) {start(`chat-${i}`); finish(`chat-${i}`);}
+assert.equal(activeTurns.size, 0);
+assert.equal(timers.length, 0, 'Local streams never need status polling');
+assert(folder.hidden);
+
+// Server-only turns poll compact status; attaching a consumer stops requests.
+sync([{id:'a',active_stream_id:'server-stream'}]);
+assert(!rebuiltA.hidden);
+start('a');
+sync([{id:'a',active_stream_id:'server-stream'}]);
+api.get = async () => {throw new Error('Local consumer should prevent polling');};
+await timers.shift()();
+assert.equal(timers.length, 0);
+
+// A disconnected consumer hands off to polling instead of reporting completion.
+finish('a', true);
+assert(!rebuiltA.hidden);
+api.get = async url => {
+  assert.equal(url, '/api/conversations/activity');
+  return [{id:'a',active_stream_id:'server-stream'}];
+};
+await timers.shift()();
+assert(!rebuiltA.hidden);
+api.get = async () => {throw new Error('Temporary network failure');};
+await timers.shift()();
+assert(!rebuiltA.hidden);
+assert.equal(timers.length, 1);
+api.get = async () => [];
+await timers.shift()();
+assert(rebuiltA.hidden);
+assert(folder.hidden);
+assert.equal(timers.length, 0);
+
+// Completion while a poll is in flight invalidates that older response.
+sync([{id:'a',active_stream_id:'server-stream'}]);
+let resolvePoll;
+api.get = () => new Promise(resolve=>resolvePoll=resolve);
+const polling = timers.shift()();
+start('a'); finish('a');
+resolvePoll([{id:'a',active_stream_id:'server-stream'}]);
+await polling;
+assert(rebuiltA.hidden);
+assert.equal(timers.length, 0);
+assert(workingIndicator('a').includes('aria-label="Assistant working"'));
+''')
+
+
+
 def test_chat_approvals_survive_navigation_without_blocking_or_cross_chat_cancellation():
     run_node(r'''
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const state = {convId:'a',isStreaming:true,streamId:'stream-a'};
-const posts=[], approvals=[], results=[], running=[];
+const posts=[], approvals=[], results=[], running=[], activityChanges=[];
 const noop = () => {};
 const renderer = Object.fromEntries([
   'appendAssistantStatus','finalizeStreamingMessage','setStreamingMessageLogIndex',
@@ -72,17 +157,21 @@ const modules = {
   './conversations.js': {persistConversationFor:noop,createNewConversation:noop},
   './file_panel.js': {refreshFilePanel:async () => {}},
   './format.js': {escapeHtml:value=>value},
-  './stream_consumer.js': {readResponseError:noop,readSSEStream:noop},
+  './stream_consumer.js': {readResponseError:noop,readSSEStream:async()=>true},
   './chat_attachments.js': {initImageAttachments:noop,hasPendingAttachments:noop},
   './chat_payloads.js': {buildApiMessages:noop,buildToolsPayload:noop,buildMcpToolMetaPayload:noop},
   './ids.js': {createClientId:noop},
   './chat_send.js': {sendMessage:noop},
   './chat_edit.js': {editAndResend:noop,regenerateFrom:noop},
   './chat_log_utils.js': {lastAssistantMessageIndex:()=>-1},
+  './conversation_activity.js': {
+    activeTurns:new Map(),
+    updateConversationActivity:(id,disconnected=false)=>activityChanges.push([id,disconnected]),
+  },
 };
 const context=vm.createContext({document:{addEventListener:noop,getElementById:()=>null},AbortController});
 const source=readFileSync('static/js/chat.js','utf8')+
-  '\nexport {createStreamContext,processSSEEvent,reattachRuntime,activeTurns};';
+  '\nexport {createStreamContext,processSSEEvent,reattachRuntime,activeTurns,attachServerStream};';
 const module=new vm.SourceTextModule(source,{context});
 const linked=new Map();
 await module.link(specifier=>{
@@ -99,10 +188,10 @@ await module.evaluate();
 const {createStreamContext,processSSEEvent:apply,reattachRuntime,activeTurns,stopAssistantTurn}=module.namespace;
 const turn={convId:'a',messages:[],displayLog:[]};
 const ctx=createStreamContext(turn,'stream-a');
-await apply({type:'tool_start',name:'read'},ctx);
+await apply({type:'tool_start',name:'view'},ctx);
 await apply({type:'tool_start',name:'external'},ctx);
-await apply({type:'tool_running',name:'read'},ctx);
-await apply({type:'tool_result',name:'read',result:'file'},ctx);
+await apply({type:'tool_running',name:'view'},ctx);
+await apply({type:'tool_result',name:'view',result:'file'},ctx);
 await apply({type:'tool_approval_required',name:'external',call_id:'one',args:{}},ctx);
 assert.equal(approvals.length,1,'Approval must not block event consumption');
 assert.equal(approvals[0].strip,ctx.toolStrips[1],'Mixed auto/manual tools must use the matching strip');
@@ -132,6 +221,20 @@ assert.equal(posts.at(-1).body.stream_id,'stream-a');
 assert(state.isStreaming,'Composer waits for authoritative completion');
 await apply({type:'assistant_done',messages:[],displayLog:[]},ctx);
 assert(ctx.assistantDone);
+
+// The real attachment lifecycle releases local history, but distinguishes a
+// terminal stream from a disconnect while the independent worker is running.
+activeTurns.delete('a');
+state.convId='b';
+modules['./api.js'].api.stream=async()=>({ok:true});
+assert(await module.namespace.attachServerStream('a','success',{title:'Working'}));
+assert.deepEqual(activityChanges.slice(-2),[['a',false],['a',false]]);
+assert(!activeTurns.has('a'));
+modules['./api.js'].api.stream=async()=>{throw new Error('Disconnected');};
+assert(!await module.namespace.attachServerStream('a','disconnected',{title:'Working'}));
+assert.deepEqual(activityChanges.slice(-2),[['a',false],['a',true]]);
+assert(!activeTurns.has('a'),'Disconnected consumers must release their retained history');
+assert(activeTurns.has('b'),'Finishing a background consumer must preserve other turns');
 ''')
 
 
@@ -139,19 +242,19 @@ def test_shared_source_preserves_lines_escapes_and_bounds_large_previews():
     run_node(r'''
 import assert from 'node:assert/strict';
 import {renderSource} from './static/js/source_view.js';
-import read from './static/js/native_tools/read.js';
+import view from './static/js/native_tools/view.js';
 const raw = '<script>\r\n\tvalue & "text"\r\n\r\n';
 const numbered = '1: <script>\n2: \tvalue & "text"\n3: \n';
 assert.equal(renderSource(raw), renderSource(numbered, {numbered: true}));
 assert(!renderSource(raw).includes('<script>'));
 assert(renderSource(raw).includes('&lt;script&gt;'));
 assert.equal((renderSource('').match(/class="source-line"/g) || []).length, 1);
-const range = read.renderResult('105: <img>\n106: \n[more content]');
+const range = view.renderResult('105: <img>\n106: \n[more content]');
 assert(range.includes('>105</span>'));
 assert(range.includes('&lt;img&gt;'));
 assert(range.includes('[more content]'));
 const lines = Array.from({length: 300}, (_, i) => `${i + 1}: line ${i + 1}`).join('\n');
-assert(read.renderResult(lines).includes('line 300'), 'Read must not silently discard lines after 250');
+assert(view.renderResult(lines).includes('line 300'), 'View must not silently discard lines after 250');
 const large = renderSource('row\n'.repeat(100000));
 assert.equal((large.match(/class="source-line"/g) || []).length, 2000);
 assert(large.includes('Preview shortened'));
@@ -372,6 +475,7 @@ const dependencies={
   './renderer.js':{clearMessages:()=>rendered.push('empty'),renderAllMessages:log=>rendered.push(log[0].content)},
   './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}}, './icons.js':{ICONS:{}},
   './format.js':{escapeHtml:s=>s}, './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
+  './conversation_activity.js':{activityVersion:0,workingIndicator:()=>'',syncConversationActivity(){}},
 };
 const module=new vm.SourceTextModule(readFileSync('static/js/conversations.js','utf8'));
 await module.link(specifier=>new vm.SyntheticModule(Object.keys(dependencies[specifier]),function(){
@@ -465,6 +569,7 @@ const modules = {
   './ui.js':{toggleSidebar(){},openModal(){},closeModal(){}},
   './icons.js':{ICONS:{}}, './format.js':{escapeHtml:value=>value},
   './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
+  './conversation_activity.js':{activityVersion:0,workingIndicator:()=>'',syncConversationActivity(){}},
 };
 const context=vm.createContext({document,requestAnimationFrame(){},console});
 const source=readFileSync('static/js/conversations.js','utf8')+

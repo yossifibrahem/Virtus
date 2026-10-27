@@ -188,7 +188,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     api_messages = list(body.get("messages") or [])
     tool_meta = _tool_meta_by_name(body)
     if builtin_tools.NAMES.intersection(tool_meta):
-        publish({"type": "error", "message": "MCP tool names conflict with reserved built-in tools: bash, read, write, edit"})
+        publish({"type": "error", "message": "MCP tool names conflict with reserved built-in tools: bash, view, write, edit"})
         return
     tools = [t for t in body.get("tools", []) if t.get("function", {}).get("name") not in builtin_tools.NAMES]
     tools.extend(builtin_tools.SCHEMAS)

@@ -8,6 +8,7 @@ import { toggleSidebar, openModal, closeModal } from './ui.js';
 import { ICONS } from './icons.js';
 import { escapeHtml } from './format.js';
 import { refreshFilePanel, resetFilePanel } from './file_panel.js';
+import { activityVersion, workingIndicator, syncConversationActivity } from './conversation_activity.js';
 
 let navigationId = 0;
 let folders = [];
@@ -24,12 +25,14 @@ let folderPickerBusy = false;
 // ── Sidebar list ──────────────────────────────────────────────────────────────
 
 export async function loadConversationList() {
+  const version = activityVersion;
   const [list, folderList] = await Promise.all([
     api.get('/api/conversations'),
     api.get('/api/folders'),
   ]);
   conversations = list;
   folders = folderList;
+  syncConversationActivity(list, version);
   const container = document.getElementById('conv-list');
   container.innerHTML = '';
 
@@ -97,6 +100,7 @@ function renderConversationSearchResults() {
             <span class="folder-home-chat-title">${escapeHtml(conv.title || 'Untitled')}</span>
             ${folderName ? `<span class="search-result-folder">${escapeHtml(folderName)}</span>` : ''}
           </span>
+          ${workingIndicator(conv.id)}
           <time>${escapeHtml(formatSearchDate(conv.updated_at))}</time>
         </button>
       </div>`;
@@ -135,6 +139,7 @@ function _buildFolderGroup(folder) {
       <button class="folder-open" type="button" aria-label="Open ${escapeHtml(folder.name || 'Untitled Folder')}">
         <span class="folder-icon">${ICONS.folder}</span>
         <span class="folder-name">${escapeHtml(folder.name || 'Untitled Folder')}</span>
+        ${workingIndicator(conversations.filter(conv => conv.folder_id === folder.id).map(conv => conv.id))}
       </button>
       <div class="folder-controls">
         <div class="folder-menu-wrap">
@@ -193,6 +198,7 @@ function _buildConvItem(conv) {
   item.innerHTML = `
     <button class="conv-open" type="button" title="${escapeHtml(title)}"${conv.id === state.convId ? ' aria-current="page"' : ''}>
       <span class="conv-title">${escapeHtml(title)}</span>
+      ${workingIndicator(conv.id)}
     </button>
     <div class="conv-menu-wrap">
       <button class="conv-menu-btn" type="button" title="Conversation options" aria-label="Conversation options" aria-expanded="false">

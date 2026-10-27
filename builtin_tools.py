@@ -9,7 +9,7 @@ import sandbox_runtime
 
 TEXT_LIMIT = 32768
 FILE_LIMIT = 1024 * 1024
-NAMES = frozenset({'bash', 'read', 'write', 'edit'})
+NAMES = frozenset({'bash', 'view', 'write', 'edit'})
 
 
 def schema(name, description, properties, required):
@@ -21,7 +21,7 @@ STRING = {'type': 'string'}
 SCHEMAS = [
     schema('bash', 'Run noninteractive Bash inside the container at /workspace. Files persist; shell state does not. Supports apt/pip/npm. Foreground only; default timeout 120 seconds, maximum 600. Output capped at 32 KiB; redirect to a file for full logs.',
            {'command': STRING, 'timeout': {'type': 'integer', 'minimum': 1, 'maximum': 600}}, ['command']),
-    schema('read', 'Read a container path, relative to /workspace. Text: numbered UTF-8 lines, max 200 lines/32 KiB. Optional inclusive 1-based range start:end selects lines, PDF pages (max 5, default 1), or notebook cells (max 200, default 20). Images returned visually. Directories list two levels, skipping dotfiles/node_modules (max 200 entries); no range for images/directories. Does not execute notebooks.',
+    schema('view', 'View a container path, relative to /workspace. Text: numbered UTF-8 lines, max 200 lines/32 KiB. Optional inclusive 1-based range start:end selects lines, PDF pages (max 5, default 1), or notebook cells (max 200, default 20). Images returned visually. Directories list two levels, skipping dotfiles/node_modules (max 200 entries); no range for images/directories. Does not execute notebooks.',
            {'path': STRING, 'range': STRING}, ['path']),
     schema('write', 'Create or overwrite a UTF-8 file inside the container; creates parents. Relative paths use /workspace. Maximum 1 MiB of text, including empty text.',
            {'path': STRING, 'content': STRING}, ['path', 'content']),

@@ -14,6 +14,7 @@ import { createElement } from './dom.js';
 import { initTabs } from './ui.js';
 import { ICONS } from './icons.js';
 import { escapeHtml } from './format.js';
+import { workingIndicator } from './conversation_activity.js';
 
 import { scrollToBottom as _scrollToBottom, messagesEl, createMessageRow, moveComposerToMain } from './renderer_core.js';
 import { prepareAssistantRow } from './renderer_groups.js';
@@ -82,6 +83,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
           <div class="folder-home-chat" data-conv-id="${escapeHtml(conv.id)}">
             <button class="folder-home-chat-open" type="button">
               <span class="folder-home-chat-title">${escapeHtml(conv.title || 'Untitled')}</span>
+              ${workingIndicator(conv.id)}
               <time>${escapeHtml(formatFolderChatDate(conv.updated_at))}</time>
             </button>
             <div class="conv-menu-wrap">

@@ -229,6 +229,23 @@
   text-overflow: ellipsis;
 }
 .conv-menu-wrap { position: relative; flex-shrink: 0; }
+.conv-working {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  border: 2px solid var(--accent-border-dim);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: conv-working-spin .8s linear infinite;
+}
+.conv-working[hidden] { display: none; }
+.conv-open .conv-title { flex: 1; min-width: 0; }
+@keyframes conv-working-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .conv-working { animation: none; }
+}
 .conv-menu-btn {
   width: 28px;
   height: 28px;

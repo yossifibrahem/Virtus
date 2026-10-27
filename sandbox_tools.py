@@ -67,7 +67,7 @@ def image_block(raw):
     return {'mime': 'image/jpeg', 'data': base64.b64encode(output.getvalue()).decode('ascii')}
 
 
-def read(path, range_value=None):
+def view(path, range_value=None):
     path = Path(path)
     if path.is_dir():
         if range_value is not None:
@@ -226,8 +226,8 @@ def write(path, content, old_text=None, replace_all=False):
 
 
 def execute(name, args):
-    if name == 'read':
-        return read(args['path'], args.get('range'))
+    if name == 'view':
+        return view(args['path'], args.get('range'))
     if name == 'write':
         return write(args['path'], args['content'])
     if name == 'edit':

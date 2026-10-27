@@ -75,7 +75,7 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `chat_turn_service.py` | Model/tool loop, memory injection, throttled turn persistence |
 | `streaming.py` | Typed model deltas, tool argument accumulation, SSE encoding |
 | `builtin_tools.py` | Server-owned schemas, validation, Docker tool dispatch |
-| `sandbox_tools.py` | Container-only Read/Write/Edit implementation |
+| `sandbox_tools.py` | Container-only View/Write/Edit implementation |
 | `sandbox_runtime.py` | Shared runtime serialization, bounded subprocess I/O, cancellation |
 | `container_service.py` | Runtime identity, Docker lifecycle, mounts, idle cleanup |
 | `container_files.py` | Host transport and upload name/size checks for the file panel |
@@ -121,7 +121,7 @@ removed on startup. Bind mount contents remain under the app's data directory.
 
 ## Tools and file transport
 
-Every turn receives the built-in `bash`, `read`, `write`, and `edit` schemas. These
+Every turn receives the built-in `bash`, `view`, `write`, and `edit` schemas. These
 names are reserved and conflicting MCP discovery fails. Native tools run
 automatically within the user's request. MCP approvals remain configurable.
 
@@ -130,7 +130,7 @@ maximum of 600. Its supervisor removes background descendants after the shell
 exits. Cancellation, timeout, abnormal termination, or retained transport pipes
 can stop the shared runtime. Other chats in that Folder may be interrupted.
 
-Read returns bounded text, two-level directory listings, images, PDF pages, or
+View returns bounded text, two-level directory listings, images, PDF pages, or
 saved notebook cells; notebooks are never executed. Write/Edit accept at most
 1 MiB of UTF-8 text. Edit requires exact matches and checks file fingerprints
 before replacing content. `/memory.md` is updated in place because it is a bind

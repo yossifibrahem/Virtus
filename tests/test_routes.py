@@ -40,6 +40,16 @@ class TestListConversations:
         resp = client.get("/api/conversations")
         assert any(c["title"] == "Alpha" for c in resp.json)
 
+    def test_activity_returns_only_active_ids_and_streams(self, client, tmp_lumen):
+        store.create("Idle")
+        active = store.create("Working")
+        store.save(active["id"], {**active, "active_stream_id": "stream-1"})
+        response = client.get("/api/conversations/activity")
+        assert response.status_code == 200
+        assert response.json == [{"id": active["id"], "active_stream_id": "stream-1"}]
+        store.save(active["id"], active)
+        assert client.get("/api/conversations/activity").json == []
+
 
 class TestCreateConversation:
 
