@@ -17,7 +17,8 @@ import { clearMessages } from './renderer.js';
 import { initIcons } from './icons.js';
 import { loadCustomization, saveCustomization, initSwatchPicker, syncCustomizationUI } from './customization.js';
 import { initFilePanel } from './file_panel.js';
-import { loadMemorySettings, deleteAllData } from './workspace_settings.js';
+import { loadMemorySettings } from './memory_settings.js';
+import { deleteAllData } from './workspace_settings.js';
 import { switchBranch } from './chat_branches.js';
 
 // ── Event binding ─────────────────────────────────────────────────────────────
