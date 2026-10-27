@@ -5,7 +5,6 @@
 :is(.thinking-header, .tr-summary, .group-header) { width: 100%; }
 .thinking-label { flex: 1; }
 .thinking-body { max-height: 320px; overflow-y: auto; }
-.thinking-block.thinking-streaming .thinking-label { opacity: .85; }
 .tool-inline, .tool-strip-result { margin: 6px 0 2px; }
 .tool-strip-using, .tool-strip-running { gap: 7px; color: var(--text2); font-size: .73rem; font-weight: 400; }
 .tool-strip-running { display: block; }
@@ -113,6 +112,26 @@
 .tr-status span { color: var(--accent); }
 .tr-args { max-height: 200px; overflow-y: auto; padding: 0; border: none; background: none; white-space: normal; }
 
-/* Running state is expressed by the existing status label, without shimmer. */
+/* Active labels share a subtle, theme-aware shimmer until work completes. */
 :is(.block-group.group-active .group-label, .thinking-block.thinking-streaming .thinking-label,
     .tool-strip-using .tui-name, .tool-strip-running .tui-name) { color: var(--text); }
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  @media (prefers-reduced-motion: no-preference) {
+    :is(.block-group.group-active .group-label, .thinking-block.thinking-streaming .thinking-label,
+        .tool-strip-using .tui-name, .tool-strip-running .tui-name) {
+      background: linear-gradient(110deg, var(--text2) 35%, var(--text) 48%, var(--text) 52%, var(--text2) 65%);
+      background-size: 250% 100%;
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      -webkit-text-fill-color: transparent;
+      animation: chat-label-shimmer 2s linear infinite;
+    }
+  }
+}
+
+@keyframes chat-label-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -150% 0; }
+}
