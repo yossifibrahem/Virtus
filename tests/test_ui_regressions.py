@@ -1042,7 +1042,7 @@ for (const fail of [false, true]) {
     Event: class {constructor(type) {this.type = type;}},
     console: {error() {}}, showToast() {},
     state: {}, STORAGE_KEYS: {lastConv: 'last'}, storage: {get: () => 'saved'},
-    initIcons() {}, initFilePanel() {},
+    initIcons() {}, initFilePanel() {}, initTerminalPanel() {},
     bindEvents() {}, loadSettings() {}, loadCustomization() {},
     initSidebar: () => {sidebarReady = true;}, loadCachedTools() {},
     loadMemorySettings: () => pending,
@@ -1068,4 +1068,44 @@ for (const fail of [false, true]) {
   fallback();
   assert(!classes.has('app-loading'));
 }
+''')
+
+
+def test_terminal_reload_reattaches_without_creating_or_deleting_shells():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const handlers = new Map(), windowHandlers = new Map(), elements = new Map();
+function element() { return {hidden:true, style:{setProperty(){}}, classList:{toggle(){}},
+  setAttribute(){}, append(){}, prepend(){}, replaceChildren(){}, focus(){},
+  addEventListener(){}, removeEventListener(){}, remove(){}}; }
+const base='/api/conversations/chat';
+let saved=JSON.stringify({base,open:true,active:1,tabs:[{number:1,url:base+'/terminal/existing',output:'old output'}]});
+const posts=[], deletes=[], reads=[], output=[];
+const context=vm.createContext({
+  ICONS:{}, state:{convId:'chat'}, createNewConversation(){throw Error('Unexpected new chat');},
+  refreshFilePanel:async()=>{},
+  api:{get:async url=>{reads.push(url);return {output:'new output'};},
+    post:async (...args)=>{posts.push(args);return {};}, delete:async url=>deletes.push(url)},
+  sessionStorage:{getItem:()=>saved,setItem:(_,value)=>{saved=value;}},
+  document:{hidden:false,getElementById:id=>{if(!elements.has(id)) elements.set(id,element());return elements.get(id);},
+    createElement:element,addEventListener:(name,fn)=>handlers.set(name,fn)},
+  window:{innerHeight:900, addEventListener:(name,fn)=>windowHandlers.set(name,fn),
+    Terminal:class {cols=80;rows=24;loadAddon(){}open(){}onData(){}focus(){}write(s){output.push(s);}},
+    FitAddon:{FitAddon:class {fit(){}}}},
+  ResizeObserver:class {observe(){}},setTimeout:()=>1,clearTimeout(){},console,
+});
+const source=readFileSync('static/js/terminal_panel.js','utf8').replace(/^import .*;\n/gm,'').replace('export function','function');
+vm.runInContext(source+'\ninitTerminalPanel();',context);
+handlers.get('chat:conversation-opened')();
+await new Promise(resolve=>setImmediate(resolve));
+assert.deepEqual(reads,[base+'/terminal/existing']);
+assert.equal(posts.length,0,'Reload must reuse the existing shell');
+assert(output.includes('old output') && output.includes('new output'));
+handlers.get('app:ready')();
+assert.equal(reads.length,1,'Boot events must not restore sessions twice');
+windowHandlers.get('pagehide')();
+assert.equal(deletes.length,0,'Reload must not disconnect the shell');
+assert.equal(JSON.parse(saved).tabs[0].url,base+'/terminal/existing');
 ''')

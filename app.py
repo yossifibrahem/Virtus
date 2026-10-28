@@ -23,6 +23,7 @@ import routes_conversations
 import routes_chat
 import routes_mcp
 import routes_files
+import routes_terminal
 import routes_startup
 import container_service
 import mcp_service
@@ -70,6 +71,7 @@ def create_app() -> Flask:
     app.register_blueprint(routes_chat.blueprint)
     app.register_blueprint(routes_mcp.blueprint)
     app.register_blueprint(routes_files.blueprint)
+    app.register_blueprint(routes_terminal.blueprint)
     container_service.start_reaper()
     if startup_status.ok:
         _cleanup_stale_containers()

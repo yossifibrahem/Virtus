@@ -79,6 +79,15 @@ Virtus AI Chat.app ──> Waitress + Flask on 127.0.0.1:38492 ──> browser U
 - Access a folder's shared workspace before opening or creating a chat
 - Images are stored by SHA-256 content hash and sent as vision inputs to compatible models
 
+**Workspace terminal**
+
+- Open the **Terminal** (`>_`) button in the chat header to run commands in the same Docker container as the model, starting in `/workspace`
+- Interactive Bash supports persistent working directories, command history, Ctrl+C, colors, and terminal applications
+- Drag the divider above the terminal to resize it; the file panel can remain open alongside it
+- Use **+** to open independent terminal tabs. Hiding the panel keeps their shells running. Closing a terminal tab or switching chats ends its session. Reloading the page restores tabs and reconnects to their existing shells; workspace files remain
+- Chats in a folder use the folder's shared workspace. Terminal sessions expire after 90 seconds without browser contact
+- Terminal assets are bundled locally; no frontend build or WebSocket server is required
+
 **UI**
 
 - Markdown, syntax-highlighted code blocks, and KaTeX math rendering

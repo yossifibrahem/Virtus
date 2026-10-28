@@ -44,7 +44,7 @@
   .folder-open { min-height: 40px; }
   .conv-menu-btn { opacity: 1; padding: 6px; }
   .sidebar-action { padding: 11px 10px; }
-  #btn-toggle-sidebar, #btn-toggle-files { width: 36px; height: 36px; }
+  #btn-toggle-sidebar, #btn-toggle-files, #btn-toggle-terminal { width: 36px; height: 36px; }
   #btn-toggle-sidebar svg { width: 20px; height: 20px; }
   .modal-overlay { padding: 12px; }
   .modal, .modal-wide { max-height: calc(100dvh - 24px); }

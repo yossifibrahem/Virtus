@@ -114,6 +114,9 @@
 
 <!-- App styles -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm/xterm.css') }}" />
+<script src="{{ url_for('static', filename='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/xterm/addon-fit.js') }}"></script>
 
 
 <script src="{{ url_for('static', filename='js/brand_assets.js') }}" defer></script>
@@ -169,6 +172,10 @@
     </div>
 
     <div class="header-actions">
+      <button id="btn-toggle-terminal" aria-controls="terminal-panel" aria-expanded="false" title="Terminal" aria-label="Terminal">
+        <span data-icon="mcpBash"></span>
+        <span id="terminal-connected-count" aria-hidden="true" hidden></span>
+      </button>
       <button id="btn-toggle-files" aria-controls="file-panel" aria-expanded="false" title="Workspace files" aria-label="Workspace files">
         <span data-icon="mcpFileSystem"></span>
       </button>
@@ -227,6 +234,15 @@
     <!-- Suggestion chips shown in new-conversation state -->
     <div id="suggestions-bar"></div>
   </div>
+  <section id="terminal-panel" aria-label="Workspace terminal" hidden>
+    <div id="terminal-resizer" role="separator" aria-label="Resize terminal" aria-orientation="horizontal" tabindex="0"></div>
+    <div class="terminal-toolbar">
+      <div id="terminal-tabs" role="tablist" aria-label="Terminal sessions"><button id="btn-add-terminal" type="button" title="New terminal" aria-label="New terminal"><span data-icon="plus"></span></button></div>
+      <span id="terminal-status" role="status">Disconnected</span>
+      <button id="btn-close-terminal" type="button" aria-label="Hide terminal" title="Hide terminal"><span data-icon="close"></span></button>
+    </div>
+    <div id="terminal-screen"></div>
+  </section>
 </main>
 
 <!-- Workspace Files Panel -->

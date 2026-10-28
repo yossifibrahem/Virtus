@@ -55,6 +55,23 @@ def is_active(runtime_id):
         return runtime_id in _ACTIVE
 
 
+@contextmanager
+def runtime_activity(runtime_id):
+    """Keep interactive sessions alive without blocking file/tool operations."""
+    with _GUARD:
+        _ACTIVE[runtime_id] = _ACTIVE.get(runtime_id, 0) + 1
+    try:
+        yield
+    finally:
+        with _GUARD:
+            remaining = _ACTIVE[runtime_id] - 1
+            if remaining:
+                _ACTIVE[runtime_id] = remaining
+            else:
+                _ACTIVE.pop(runtime_id)
+        container_service._touch(runtime_id)
+
+
 class Capture:
     def __init__(self, limit, tail=False):
         self.limit, self.tail = limit, tail

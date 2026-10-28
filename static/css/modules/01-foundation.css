@@ -75,18 +75,18 @@ svg { flex-shrink: 0; }
 #file-preview-body::-webkit-scrollbar-thumb,
 .msg-content pre::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }
 
-:is(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #send-btn, #stop-btn, .file-panel-actions button, .file-preview-actions button, .msg-action-btn, .tc-allow, .tc-deny, .btn-primary, .btn-secondary, .btn-danger, .modal-tab, .sidebar-action, #btn-new-chat, #model-badge, .mp-chip, .model-chip, .model-row, .model-refresh-btn, .server-icon-btn, .icon-option, .eye-btn, .file-row, .suggestion-chip, .code-copy, .img-preview-remove) {
+:is(#btn-toggle-sidebar, #btn-toggle-files, #btn-toggle-terminal, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #send-btn, #stop-btn, .file-panel-actions button, .file-preview-actions button, .msg-action-btn, .tc-allow, .tc-deny, .btn-primary, .btn-secondary, .btn-danger, .modal-tab, .sidebar-action, #btn-new-chat, #model-badge, .mp-chip, .model-chip, .model-row, .model-refresh-btn, .server-icon-btn, .icon-option, .eye-btn, .file-row, .suggestion-chip, .code-copy, .img-preview-remove) {
   transition: color var(--fast), background var(--fast), border-color var(--fast), opacity var(--fast);
 }
 
-:is(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #send-btn, #stop-btn, .file-panel-actions button, .file-preview-actions button, .model-refresh-btn) {
+:is(#btn-toggle-sidebar, #btn-toggle-files, #btn-toggle-terminal, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #send-btn, #stop-btn, .file-panel-actions button, .file-preview-actions button, .model-refresh-btn) {
   display: grid;
   place-items: center;
   border: none;
 }
 
 /* Keep the reset weaker than component hover and selection rules. */
-:where(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #msg-action-btn, .file-panel-actions button, .file-preview-actions button, .tc-allow, .tc-deny, .modal-tab, .model-refresh-btn, .eye-btn) {
+:where(#btn-toggle-sidebar, #btn-toggle-files, #btn-toggle-terminal, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #msg-action-btn, .file-panel-actions button, .file-preview-actions button, .tc-allow, .tc-deny, .modal-tab, .model-refresh-btn, .eye-btn) {
   background: none;
 }
 
@@ -121,7 +121,7 @@ svg { flex-shrink: 0; }
   outline-offset: 2px;
 }
 
-:is(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .model-refresh-btn, .file-panel-actions button, .file-preview-actions button) {
+:is(#btn-toggle-sidebar, #btn-toggle-files, #btn-toggle-terminal, .modal-close, .model-refresh-btn, .file-panel-actions button, .file-preview-actions button) {
   width: 30px;
   height: 30px;
   padding: 0;
