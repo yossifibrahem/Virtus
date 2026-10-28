@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import logging
-import csv
-import io
 import json
 import os
 import re
@@ -19,7 +17,6 @@ from typing import Mapping, Literal
 import advanced_config as _adv_cfg
 import build_info
 import docker_cli
-import folder_mounts
 from docker_path_utils import host_path_to_docker_src, parse_volume_source
 
 log = logging.getLogger(__name__)
@@ -110,22 +107,10 @@ def _inspect_container(name: str) -> dict | None:
     return info
 
 
-def _mounts_match(mounts: list[dict], workspace: Path, shared: list[dict] | None = None) -> bool:
+def _mounts_match(mounts: list[dict], workspace: Path) -> bool:
     expected = {"/workspace": (host_path_to_docker_src(str(workspace)), True)}
-    for mount in shared or []:
-        expected[f"/workspace/mounts/{mount['name']}"] = (host_path_to_docker_src(mount["source"]), not mount["read_only"])
     actual = {m["Destination"]: (m["Source"], m.get("RW")) for m in mounts if m.get("Type") == "bind"}
     return len(mounts) == len(expected) and actual == expected
-
-
-def _shared_mount_policy_matches(info: dict, shared: list[dict]) -> bool:
-    readonly = {
-        mount.get("Target") for mount in info.get("HostConfig", {}).get("Mounts") or []
-        if mount.get("ReadOnly") is True
-        and (mount.get("BindOptions") or {}).get("ReadOnlyForceRecursive") is True
-    }
-    return all(f"/workspace/mounts/{mount['name']}" in readonly
-               for mount in shared if mount["read_only"])
 
 
 _CAPABILITIES = ('CHOWN', 'DAC_OVERRIDE', 'SETUID', 'SETGID')
@@ -157,7 +142,7 @@ def _memory_bytes(value):
     return int(match[1]) * {'': 1, 'b': 1, 'k': 1024, 'm': 1024**2, 'g': 1024**3}[match[2]]
 
 
-def _runtime_matches(info, workspace, shared):
+def _runtime_matches(info, workspace):
     """Single effective specification for normal reuse and conflict recovery.
 
     Networking is intentionally excluded: Docker owns network attachments.
@@ -169,8 +154,7 @@ def _runtime_matches(info, workspace, shared):
     security = {str(v).replace(':true', '') for v in host.get('SecurityOpt') or []}
     return (
         not _container_image_changed(info, spec.image)
-        and _mounts_match(info.get('Mounts', []), workspace, shared)
-        and _shared_mount_policy_matches(info, shared)
+        and _mounts_match(info.get('Mounts', []), workspace)
         and host.get('Memory') == spec.memory
         and host.get('NanoCpus') == spec.nano_cpus
         and host.get('PidsLimit') == spec.pids
@@ -210,20 +194,8 @@ def _container_image_changed(info: dict, expected_image: str) -> bool:
     )
 
 
-def _volume_args(workspace: Path, shared: list[dict] | None = None) -> list[str]:
-    workspace_source = host_path_to_docker_src(str(workspace))
-    specs = [f"{workspace_source}:/workspace"]
-    args = [item for spec in specs for item in ("--volume", spec)]
-    for mount in shared or []:
-        # Docker --mount uses CSV fields; quote paths containing commas/quotes.
-        output = io.StringIO()
-        fields = ["type=bind", f"source={host_path_to_docker_src(mount['source'])}",
-                  f"target=/workspace/mounts/{mount['name']}", "bind-propagation=rprivate"]
-        if mount['read_only']:
-            fields.extend(['readonly', 'bind-recursive=readonly'])
-        csv.writer(output, lineterminator='\n').writerow(fields)
-        args.extend(['--mount', output.getvalue()[:-1]])
-    return args
+def _volume_args(workspace: Path) -> list[str]:
+    return ["--volume", f"{host_path_to_docker_src(str(workspace))}:/workspace"]
 
 
 def get_status(conv_id: str) -> ContainerStatus:
@@ -245,14 +217,13 @@ def ensure_container(conv_id: str, extra_volumes: list[str] | None = None) -> Co
 def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
     workspace = _workspace(conv_id)
-    shared = folder_mounts.runtime_mounts(conv_id)
     import storage_safeguards
     storage_safeguards.check(conv_id)
 
     reset_reason = ""
     info = _inspect_container(name)
     if info is not None:
-        if not _runtime_matches(info, workspace, shared):
+        if not _runtime_matches(info, workspace):
             reset_reason = "Sandbox compatibility/settings reset: workspace files retained; installed packages and other container-layer files reset."
             log.warning("[container] %s compatibility/settings reset: workspace retained; installed packages reset", name)
             import sandbox_runtime
@@ -269,7 +240,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
         else:
             return ContainerInfo(conv_id, name, workspace, "running")
 
-    result = _run(_docker_run_command(name, workspace, shared))
+    result = _run(_docker_run_command(name, workspace))
     if result.returncode == 0:
         log.info("[container] created %s (%s)", name, result.stdout.strip()[:12])
         return ContainerInfo(conv_id, name, workspace, "running", reset_reason)
@@ -282,7 +253,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     raise RuntimeError(f"Failed to create container {name}: {result.stderr.strip()}")
 
 
-def _docker_run_command(name: str, workspace: Path, shared: list[dict] | None = None) -> list[str]:
+def _docker_run_command(name: str, workspace: Path) -> list[str]:
     spec = _runtime_spec()
     image = spec.image
     return [
@@ -291,7 +262,7 @@ def _docker_run_command(name: str, workspace: Path, shared: list[dict] | None = 
         "--name", name,
         "--label", f"{build_info.CONTAINER_BUILD_LABEL}={image}",
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
-        *_volume_args(workspace, shared),
+        *_volume_args(workspace),
         "--workdir", "/workspace",
         "--user", spec.user,
         "--ipc", spec.ipc_mode,
@@ -324,8 +295,7 @@ def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
     if info is None:
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
-    shared = folder_mounts.runtime_mounts(conv_id)
-    if not _runtime_matches(info, _workspace(conv_id), shared):
+    if not _runtime_matches(info, _workspace(conv_id)):
         raise RuntimeError(f"Container {name} already exists with incompatible runtime settings; retry when idle for a compatibility reset (workspace retained, installed packages reset)")
     if info["State"]["Status"] != "running":
         _start_existing(name)

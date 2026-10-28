@@ -764,77 +764,6 @@ assert(card.title.includes('try again'));
 ''')
 
 
-def test_folder_picker_blocks_save_and_ignores_results_for_another_editor():
-    run_node(r'''
-import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
-const controls = new Map();
-const element = id => {
-  if (!controls.has(id)) controls.set(id, {
-    disabled:false, value:'', textContent:'', innerHTML:'', open:false,
-    handlers:{}, addEventListener(name,handler){this.handlers[name]=handler;}, querySelectorAll(){return [];},
-    classList:{contains(){return true;}},
-  });
-  return controls.get(id);
-};
-const document = {
-  addEventListener(){}, getElementById:element,
-  querySelector:element,
-  querySelectorAll(){return [element('folder-name-input'),element('folder-mount-add')];},
-};
-let resolvePicker;
-const requests=[];
-const modules = {
-  './api.js':{api:{post:async (url,body)=>{
-    requests.push({url,body});
-    return await new Promise(resolve => {resolvePicker=resolve;});
-  }}},
-  './state.js':{state:{}, STORAGE_KEYS:{}}, './storage.js':{storage:{}},
-  './renderer.js':{clearMessages(){},renderAllMessages(){}},
-  './ui.js':{toggleSidebar(){},openModal(){},closeModal(){},showToast(){}},
-  './icons.js':{ICONS:{}}, './format.js':{escapeHtml:value=>value,formatConversationDate:()=>''},
-  './file_panel.js':{refreshFilePanel(){},resetFilePanel(){}},
-  './conversation_activity.js':{activityVersion:0,workingTitleAttributes:()=>'',syncConversationActivity(){}},
-};
-const context=vm.createContext({document,requestAnimationFrame(){},console});
-const source=readFileSync('static/js/conversations.js','utf8')+
- '\nexport {openFolderEditor, browseFolderMount, submitFolderEditor, addFolderMountPath, editingMounts};';
-const mod=new vm.SourceTextModule(source,{context});
-await mod.link(specifier=>{
- const exports=modules[specifier];
- return new vm.SyntheticModule(Object.keys(exports),function(){
-   for(const [name,value] of Object.entries(exports))this.setExport(name,value);
- },{context});
-});
-await mod.evaluate();
-const {openFolderEditor,browseFolderMount,submitFolderEditor}=mod.namespace;
-openFolderEditor(); element('folder-name-input').value='Original';
-const picking=browseFolderMount();
-assert.equal(element('folder-modal-confirm').disabled,true);
-await submitFolderEditor();
-assert.equal(requests.length,1,'Save must not race the native directory chooser');
-openFolderEditor({id:'another',name:'Another',mounts:[]});
-resolvePicker({path:'/unexpected-directory'});
-await picking;
-assert.equal(element('folder-mount-path').value,'');
-assert.equal(element('folder-modal-confirm').disabled,false);
-assert.equal(element('folder-name-input').disabled,false);
-assert.equal(element('folder-mount-browse').hidden,true);
-mod.namespace.addFolderMountPath();
-assert.equal(mod.namespace.editingMounts.length,0,'Existing Folder mounts are immutable');
-openFolderEditor();
-assert.equal(element('folder-mount-browse').hidden,false);
-// The same two list listeners handle controls created on every re-render.
-element('folder-mount-path').value='/chosen';
-mod.namespace.addFolderMountPath();
-element('folder-mount-list').handlers.change({target:{matches:()=>true,dataset:{mountReadonly:'0'},checked:false}});
-assert.equal(mod.namespace.editingMounts[0].read_only,false);
-element('folder-mount-list').handlers.click({target:{closest:()=>({dataset:{mountRemove:'0'}})}});
-assert.equal(mod.namespace.editingMounts.length,0);
-''')
-
-
 def test_voice_errors_preserve_draft_and_notify_composer():
     run_node(r'''
 import assert from 'node:assert/strict';
@@ -1096,7 +1025,7 @@ const button={disabled:false},entry={name:'cache',path:'/workspace/cache',type:'
 await remove(entry,button);
 assert.equal(requests.length,0,'Cancelling must not send a delete request');
 assert(prompts[0].includes('and all its contents'));
-for(const path of ['/workspace','/workspace/','/workspace/mounts','/workspace/mounts/project','/workspace/../outside']){
+for(const path of ['/workspace','/workspace/','/workspace/../outside']){
  assert(!isManagedPath(path));
  await remove({path},button);
 }

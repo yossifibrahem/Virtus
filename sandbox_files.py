@@ -101,29 +101,12 @@ def workspace_path(path):
     return '/workspace' + ('' if rel == '.' else '/' + rel)
 
 
-def _workspace_mounts():
-    """Inspect actual mount locations, including renamed mount ancestors."""
-    try:
-        with open('/proc/self/mountinfo') as source:
-            mounts = []
-            for line in source:
-                raw = line.split()[4]
-                path = Path(re.sub(r'\\([0-7]{3})', lambda match: chr(int(match[1], 8)), raw))
-                if path != ROOT and ROOT in path.parents:
-                    mounts.append(path)
-            return mounts
-    except FileNotFoundError:
-        if sys.platform.startswith('linux'):
-            raise ValueError('Cannot verify mounted directories before deletion')
-        return []  # Native worker tests; the deployed worker runs inside Linux.
-
-
 def delete_managed(value):
     """Delete an explicitly selected managed path without following symlinks.
 
     Descriptor-relative traversal keeps concurrent symlink swaps from redirecting
-    deletion into host shares. The workspace root and reserved mounts tree are
-    never deletion targets. This worker runs inside Docker, not on the host.
+    deletion outside the workspace. The workspace root is never a deletion
+    target. This worker runs inside Docker, not on the host.
     """
     raw = str(value or '').replace('\\', '/')
     if raw.startswith('/workspace/'):
@@ -131,12 +114,8 @@ def delete_managed(value):
     elif raw.startswith('/'):
         raise ValueError('Only managed workspace paths can be deleted')
     parts = [part for part in raw.split('/') if part != '.']
-    if not parts or any(part in ('', '..') for part in parts) or parts[0].lower() == 'mounts':
-        raise ValueError('The workspace root and mounted host directories cannot be deleted')
-    target = ROOT.joinpath(*parts)
-    for mount in _workspace_mounts():
-        if target == mount or mount in target.parents or target in mount.parents:
-            raise ValueError('Mounted host directories and their ancestors cannot be deleted')
+    if not parts or any(part in ('', '..') for part in parts):
+        raise ValueError('The workspace root cannot be deleted')
     parent = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         for part in parts[:-1]:

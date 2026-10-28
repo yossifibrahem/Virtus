@@ -150,6 +150,16 @@
 }
 .folder-icon { display: flex; margin: 0 8px 0 3px; color: var(--text3); }
 .folder-icon svg { width: 14px; height: 14px; }
+.folder-chats {
+  margin: 0 0 4px 24px;
+}
+.folder-chats[hidden] { display: none; }
+.folder-chats .conv-item { min-height: 34px; }
+.folder-chats .conv-open { min-height: 32px; }
+.folder-chats-empty { padding: 8px 12px; color: var(--text3); font-size: .7rem; }
+.folder-header:focus-within .conv-menu-btn,
+.folder-header:hover .folder-new-chat { opacity: 1; pointer-events: auto; }
+.folder-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .folder-name {
   flex: 1;
   min-width: 0;

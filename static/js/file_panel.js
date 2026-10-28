@@ -365,8 +365,7 @@ function collapseTreeItem(item, path) {
 function isManagedPath(path) {
   const relative = String(path || '').slice('/workspace/'.length);
   return String(path || '').startsWith('/workspace/') && relative &&
-    !relative.split('/').some(part => !part || part === '.' || part === '..') &&
-    relative.split('/')[0].toLowerCase() !== 'mounts';
+    !relative.split('/').some(part => !part || part === '.' || part === '..');
 }
 
 async function deleteWorkspaceEntry(entry, button) {

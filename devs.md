@@ -17,16 +17,8 @@ Moving a chat switches its runtime; it does not copy files between workspaces.
 Deletion confirms sandbox removal before deleting owned workspaces or metadata;
 a Docker removal failure is reported while the saved data remains available.
 
-Sharing is explicit: uploads enter `/workspace/uploads/`. The app mounts its
-managed workspace. Host directory mounts belong only to Folder/Project creation, persist in `folders.json`,
-and appear at `/workspace/mounts/<name>`. Read-only is the default, recursively enforced
-with `bind-recursive=readonly` (daemon Linux kernel 5.12+). Read-write permits modification
-and deletion of originals. Mounts are immutable after creation, including before first use.
-Backend updates reject changes, while omitted/identical mounts allow metadata edits without
-source revalidation or container resets. Existing mounts are retained. Host sources must exist;
-missing sources fail instead of being silently created. Native selection uses
-macOS AppleScript, Windows FolderBrowserDialog, or Linux Zenity/KDialog, with a
-manual path fallback. MCP arguments and environment values are container values, never authorization to mount or execute host paths.
+Sharing is explicit: uploads enter `/workspace/uploads/`. The app mounts only its
+managed workspace. MCP arguments and environment values are container values.
 
 New containers receive no network flag. Docker owns networking and any manually managed
 attachments. Ignore obsolete saved network settings and environment overrides; network mode
@@ -81,7 +73,6 @@ python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
 | `container_files.py` | Host transport and upload name/size checks for the file panel |
 | `sandbox_files.py` | Container-only listing, preview, upload, download, path checks |
 | `routes_files.py` | File panel and image/media HTTP endpoints |
-| `folder_mounts.py` | Folder mount validation, runtime mount lookup, native directory chooser |
 | `routes_conversations.py`, `store.py` | Chat/Folder CRUD, runtime ownership, atomic JSON persistence |
 | `mcp_adapters.py` | Wrap explicit MCP commands and environment for `docker exec` |
 | `mcp_service.py` | MCP config, discovery, one-shot calls, persistent pool registry |
@@ -106,7 +97,7 @@ history, streams, and tool media.
 `ensure_container()` serializes creation per runtime. Existing container metadata
 is read with one inspect call; a second call resolves the configured image ID.
 Both labels (image reference and sandbox identity), the actual image ID, and the
-complete mount set and recursive policy must match before reuse. A shared RuntimeSpec also
+managed workspace mount must match before reuse. A shared RuntimeSpec also
 checks normalized CPU/memory/PID limits, capabilities, no-new-privileges and namespace/device
 restrictions. Mismatches require recreation under the runtime lock; active shared operations
 return a clear retry error. Removal failure aborts recreation. Network attachments are excluded. Workspaces survive recreation; packages installed into the
@@ -282,7 +273,7 @@ File-panel list/preview/download/PDF/delete operations use a request-local recov
 context so they remain available over storage limits. Only these known worker actions
 can bypass growth checks; uploads, Bash, MCP calls and normal turns still enforce them.
 Deletion is a confirmed DELETE request, runs inside Docker using descriptor-relative
-paths, and rejects the workspace root and reserved mounts tree. Symlinks are unlinked
+paths, and rejects the workspace root. Symlinks are unlinked
 or refused as parents rather than followed. The context is reset on errors and does
 not propagate to unrelated request threads.
 
@@ -305,4 +296,4 @@ disposable local stdio server, without Docker or network services.
 
 Standalone-to-Folder moves use the existing failure-safe delete ordering, with a warning next to the
 Move confirmation. No copying is performed. Leaving a Folder or removing its last chat retains its
-workspace. Removing a Folder only deletes its owned runtime/workspace, never source host directories.
+workspace. Removing a Folder only deletes its chats and owned runtime/workspace.

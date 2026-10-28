@@ -31,6 +31,7 @@ export const STORAGE_KEYS = {
   models:            'lumen_models',
   lastConv:          'lumen_last_conv',
   sidebar:           'lumen_sidebar',
+  expandedFolders:   'lumen_expanded_folders',
   filePanelOpen:     'lumen_file_panel_open',
   customization:     'lumen_customization',
 };

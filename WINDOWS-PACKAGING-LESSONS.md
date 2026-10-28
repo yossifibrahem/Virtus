@@ -2,7 +2,7 @@
 
 ## Current scope
 
-The bundled Node MCP server has been removed. References below to bundled tools, MCP source, TypeScript, and server lockfiles describe the historical packaging attempts only. Current packages include the Dockerfile and both Python sandbox workers (`sandbox_tools.py` and `sandbox_files.py`); sandbox identity covers these workers, `.dockerignore`, and `Dockerfile.sandbox`. All MCP servers are user-configured and execute inside the chat or Folder/Project container. Only Folder/Project settings can grant host-directory mounts; the sandbox uses Docker bridge networking by default. The former server packaging and validation requirements no longer apply.
+The bundled Node MCP server has been removed. References below to bundled tools, MCP source, TypeScript, and server lockfiles describe the historical packaging attempts only. Current packages include the Dockerfile and both Python sandbox workers (`sandbox_tools.py` and `sandbox_files.py`); sandbox identity covers these workers, `.dockerignore`, and `Dockerfile.sandbox`. All MCP servers are user-configured and execute inside the chat or Folder/Project container. The app mounts only its managed workspace; the sandbox uses Docker bridge networking by default. The former server packaging and validation requirements no longer apply.
 
 ## Purpose
 

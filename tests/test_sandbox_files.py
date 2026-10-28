@@ -73,23 +73,10 @@ def test_delete_managed_files_and_directories_without_following_links(root, tmp_
     assert original.exists() and not (root / 'alias').is_symlink()
 
 
-@pytest.mark.parametrize('path', ['', '.', '/workspace', '/workspace/', '/workspace/../outside',
-                                 '/workspace/mounts', '/workspace/mounts/project/file', '/workspace/MOUNTS/file'])
-def test_delete_rejects_workspace_root_and_host_mounts(root, path):
+@pytest.mark.parametrize('path', ['', '.', '/workspace', '/workspace/', '/workspace/../outside'])
+def test_delete_rejects_workspace_root_and_escaping_paths(root, path):
     with pytest.raises(ValueError):
         worker.execute({'action': 'delete', 'path': path})
-
-
-def test_delete_protects_mounts_even_after_their_parent_is_renamed(root, monkeypatch):
-    mounted = root / 'renamed-sharing' / 'project'
-    mounted.mkdir(parents=True)
-    original = mounted / 'keep.txt'
-    original.write_text('original host data')
-    monkeypatch.setattr(worker, '_workspace_mounts', lambda: [mounted])
-    for path in ['renamed-sharing', 'renamed-sharing/project', 'renamed-sharing/project/keep.txt']:
-        with pytest.raises(ValueError, match='Mounted host directories'):
-            worker.execute({'action': 'delete', 'path': path})
-    assert original.read_text() == 'original host data'
 
 
 @pytest.mark.skipif(not shutil.rmtree.avoids_symlink_attacks, reason='Container deletion uses Linux descriptor-relative operations')

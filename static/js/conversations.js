@@ -18,10 +18,9 @@ let pendingFolderId = null;
 let activeFolderId = null;
 let editingFolder = null;
 let folderEditorBound = false;
-let editingMounts = [];
 let folderEditorVersion = 0;
 let folderEditorBusy = false;
-let folderPickerBusy = false;
+let expandedFolderIds = null;
 
 // ── Sidebar list ──────────────────────────────────────────────────────────────
 
@@ -131,19 +130,27 @@ export function bindConversationSearch() {
 }
 
 function _buildFolderGroup(folder, conversationIds) {
+  if (!expandedFolderIds) {
+    const saved = storage.get(STORAGE_KEYS.expandedFolders, []);
+    expandedFolderIds = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === 'string') : []);
+  }
   const group = document.createElement('section');
   group.className = `folder-group${folder.id === state.folderId ? ' active' : ''}`;
   group.dataset.folderId = folder.id;
   group.innerHTML = `
     <div class="folder-header">
-      <button class="folder-open" type="button" aria-label="Open ${escapeHtml(folder.name || 'Untitled Folder')}">
+      <button class="folder-open" type="button" aria-expanded="false" aria-controls="folder-chats-${escapeHtml(folder.id)}">
         <span class="folder-icon">${ICONS.folder}</span>
         <span class="folder-name" ${workingTitleAttributes(conversationIds)}>${escapeHtml(folder.name || 'Untitled Folder')}</span>
       </button>
       <div class="folder-controls">
+        <button class="conv-menu-btn folder-new-chat" type="button" title="New chat in folder" aria-label="New chat in ${escapeHtml(folder.name || 'Untitled Folder')}">${ICONS.plus}</button>
         <div class="folder-menu-wrap">
           <button class="conv-menu-btn folder-menu-btn" type="button" title="Folder options" aria-label="Folder options" aria-expanded="false">${ICONS.moreVertical}</button>
           <div class="conv-menu folder-menu" role="menu">
+            <button class="conv-menu-item" type="button" role="menuitem" data-folder-action="open">
+              ${ICONS.folderOpen}<span>Open folder</span>
+            </button>
             <button class="conv-menu-item" type="button" role="menuitem" data-folder-action="rename">
               ${ICONS.edit}<span>Folder settings</span>
             </button>
@@ -153,10 +160,33 @@ function _buildFolderGroup(folder, conversationIds) {
           </div>
         </div>
       </div>
-    </div>`;
+    </div>
+    <div class="folder-chats" id="folder-chats-${escapeHtml(folder.id)}" hidden></div>`;
 
-  group.querySelector('.folder-header').addEventListener('click', event => {
-    if (!event.target.closest('.folder-menu-wrap')) startNewChat(folder.id);
+  const children = group.querySelector('.folder-chats');
+  const chatById = new Map(conversations.map(conv => [conv.id, conv]));
+  conversationIds.forEach(id => children.appendChild(_buildConvItem(chatById.get(id))));
+  if (!conversationIds.length) {
+    children.appendChild(Object.assign(document.createElement('div'), {
+      className: 'folder-chats-empty', textContent: 'No chats yet',
+    }));
+  }
+  setFolderExpanded(group, expandedFolderIds.has(folder.id));
+  const toggle = group.querySelector('.folder-open');
+  toggle.addEventListener('click', () => {
+    setFolderExpanded(group, children.hidden);
+  });
+  toggle.addEventListener('keydown', event => {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      event.preventDefault();
+      if (event.key === 'ArrowRight' && !children.hidden) children.querySelector('.conv-open')?.focus();
+      else setFolderExpanded(group, event.key === 'ArrowRight');
+    }
+  });
+  group.querySelector('.folder-new-chat').addEventListener('click', () => startNewChat(folder.id));
+  group.querySelector('[data-folder-action="open"]').addEventListener('click', () => {
+    closeFolderMenus();
+    startNewChat(folder.id);
   });
   const menuBtn = group.querySelector('.folder-menu-btn');
   menuBtn.addEventListener('click', event => {
@@ -177,6 +207,16 @@ function _buildFolderGroup(folder, conversationIds) {
     removeFolder(folder);
   });
   return group;
+}
+
+function setFolderExpanded(group, expanded) {
+  group.querySelector('.folder-chats').hidden = !expanded;
+  group.querySelector('.folder-open').setAttribute('aria-expanded', String(expanded));
+  group.querySelector('.folder-icon').innerHTML = expanded ? ICONS.folderOpen : ICONS.folder;
+  group.classList.toggle('expanded', expanded);
+  if (expanded) expandedFolderIds.add(group.dataset.folderId);
+  else expandedFolderIds.delete(group.dataset.folderId);
+  storage.set(STORAGE_KEYS.expandedFolders, [...expandedFolderIds]);
 }
 
 function closeFolderMenus(exceptGroup = null) {
@@ -336,6 +376,7 @@ function updateConversationListTitle(convId, title) {
 function setActiveConversationItem(convId) {
   document.querySelectorAll('.folder-group').forEach(group => {
     group.classList.toggle('active', group.dataset.folderId === state.folderId);
+    if (group.dataset.folderId === state.folderId) setFolderExpanded(group, true);
   });
   document.querySelectorAll('.conv-item.active').forEach(item => {
     item.classList.remove('active');
@@ -558,14 +599,8 @@ function renameFolder(folder) {
 
 function openFolderEditor(folder = null) {
   editingFolder = folder;
-  document.getElementById('folder-mount-browse').hidden = !!folder;
-  document.querySelector('.folder-mount-manual').hidden = !!folder;
   ++folderEditorVersion;
-  editingMounts = (folder?.mounts || []).map(mount => ({ ...mount }));
-  renderFolderMounts();
-  document.getElementById('folder-mount-path').value = '';
-  document.querySelector('.folder-mount-manual').open = false;
-  document.getElementById('folder-mount-error').textContent = '';
+  document.getElementById('folder-editor-error').textContent = '';
   const input = document.getElementById('folder-name-input');
   const title = document.getElementById('folder-modal-title');
   const confirm = document.getElementById('folder-modal-confirm');
@@ -578,18 +613,6 @@ function openFolderEditor(folder = null) {
 
   if (!folderEditorBound) {
     confirm.addEventListener('click', submitFolderEditor);
-    document.getElementById('folder-mount-browse').addEventListener('click', browseFolderMount);
-    document.getElementById('folder-mount-add').addEventListener('click', addFolderMountPath);
-    const mounts = document.getElementById('folder-mount-list');
-    mounts.addEventListener('change', event => {
-      if (!editingFolder && editingMounts[Number(event.target.dataset.mountReadonly)] && event.target.matches('[data-mount-readonly]')) editingMounts[Number(event.target.dataset.mountReadonly)].read_only = event.target.checked;
-    });
-    mounts.addEventListener('click', event => {
-      const button = event.target.closest('[data-mount-remove]');
-      if (!button || editingFolder) return;
-      editingMounts.splice(Number(button.dataset.mountRemove), 1);
-      renderFolderMounts();
-    });
     input.addEventListener('keydown', event => {
       if (event.isComposing) return;
       if (event.key === 'Enter') submitFolderEditor();
@@ -599,83 +622,28 @@ function openFolderEditor(folder = null) {
   }
 }
 
-function renderFolderMounts() {
-  const list = document.getElementById('folder-mount-list');
-  list.innerHTML = editingMounts.length ? editingMounts.map((mount, index) => `
-    <div class="folder-mount-row">
-      <span class="folder-mount-icon">${ICONS.folder}</span>
-      <div class="folder-mount-copy">
-        <div class="folder-mount-path" title="${escapeHtml(mount.source)}">${escapeHtml(mount.source)}</div>
-        <div class="folder-mount-target">${mount.name ? escapeHtml(`/workspace/mounts/${mount.name}`) : 'Ready to share when you save'}</div>
-      </div>
-      ${editingFolder ? `<span>${mount.read_only ? 'Read only' : 'Read-write'}</span>` : `<label class="cust-toggle folder-mount-permission">
-        <span>Read only</span>
-        <input type="checkbox" data-mount-readonly="${index}" aria-label="Read only for ${escapeHtml(mount.source)}" ${mount.read_only !== false ? 'checked' : ''}>
-        <span class="cust-toggle-track"><span class="cust-toggle-thumb"></span></span>
-      </label>
-      <button class="folder-mount-remove" type="button" data-mount-remove="${index}" title="Remove directory" aria-label="Remove ${escapeHtml(mount.source)}">${ICONS.close}</button>`}
-    </div>`).join('') : `<div class="folder-mount-empty">${ICONS.folder}<span>No directories shared yet</span></div>`;
-}
-
-function addFolderMountPath() {
-  if (editingFolder) return;
-  const input = document.getElementById('folder-mount-path');
-  const source = input.value.trim();
-  if (!source || editingMounts.some(mount => mount.source === source)) return;
-  editingMounts.push({ source, read_only: true });
-  input.value = '';
-  renderFolderMounts();
-}
-
 function updateFolderEditorControls() {
   document.querySelectorAll('#folder-modal .modal-body input, #folder-modal .modal-body button').forEach(control => {
     control.disabled = folderEditorBusy;
   });
-  document.getElementById('folder-modal-confirm').disabled = folderEditorBusy || folderPickerBusy;
-  document.getElementById('folder-mount-browse').disabled = folderEditorBusy || folderPickerBusy;
-}
-
-async function browseFolderMount() {
-  if (folderEditorBusy || folderPickerBusy) return;
-  const error = document.getElementById('folder-mount-error');
-  const version = folderEditorVersion;
-  folderPickerBusy = true;
-  updateFolderEditorControls();
-  error.textContent = '';
-  try {
-    const result = await api.post('/api/folders/browse-directory', {});
-    if (version !== folderEditorVersion || !document.getElementById('folder-modal').classList.contains('open')) return;
-    if (result.error) { error.textContent = result.error; return; }
-    if (result.path) {
-      document.getElementById('folder-mount-path').value = result.path;
-      addFolderMountPath();
-    }
-  } catch (err) {
-    if (version === folderEditorVersion) error.textContent = err.message;
-  } finally {
-    folderPickerBusy = false;
-    updateFolderEditorControls();
-  }
+  document.getElementById('folder-modal-confirm').disabled = folderEditorBusy;
 }
 
 async function submitFolderEditor() {
-  if (folderEditorBusy || folderPickerBusy) return;
+  if (folderEditorBusy) return;
   const input = document.getElementById('folder-name-input');
   const name = input.value.trim();
   if (!name) return;
   const folder = editingFolder;
   const version = folderEditorVersion;
-  const error = document.getElementById('folder-mount-error');
-  // Include a typed path even if the user goes straight to Save.
-  addFolderMountPath();
-  const payload = folder ? { name } : { name, mounts: editingMounts };
+  const error = document.getElementById('folder-editor-error');
   folderEditorBusy = true;
   updateFolderEditorControls();
   error.textContent = '';
   try {
     const updated = folder
-      ? await api.put(`/api/folders/${folder.id}`, payload)
-      : await api.post('/api/folders', payload);
+      ? await api.put(`/api/folders/${folder.id}`, { name })
+      : await api.post('/api/folders', { name });
     if (updated.error) { if (version === folderEditorVersion) error.textContent = updated.error; return; }
     if (version === folderEditorVersion) closeModal('folder-modal');
     await loadConversationList();

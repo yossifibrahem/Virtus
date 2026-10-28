@@ -114,9 +114,9 @@ def test_effective_configuration_rejected_in_both_reuse_paths(tmp_lumen, monkeyp
     workspace = containers.conversation_workspace(rid)
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
-    assert containers._runtime_matches(info, workspace, [])
+    assert containers._runtime_matches(info, workspace)
     info['HostConfig'][key] = value
-    assert not containers._runtime_matches(info, workspace, [])
+    assert not containers._runtime_matches(info, workspace)
     monkeypatch.setattr(containers, '_inspect_container', lambda *args: info)
     with pytest.raises(RuntimeError, match='incompatible'):
         containers._reuse_conflicting_container(rid)
@@ -132,10 +132,10 @@ def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_lumen, monk
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
     info['HostConfig']['NetworkMode'] = 'custom-docker-network'
-    assert containers._runtime_matches(info, workspace, [])
+    assert containers._runtime_matches(info, workspace)
     assert '--network' not in containers._docker_run_command('test', workspace)
     info['Mounts'].append({'Type': 'bind', 'Source': '/host/unexpected', 'Destination': '/unexpected', 'RW': True})
-    assert not containers._runtime_matches(info, workspace, [])
+    assert not containers._runtime_matches(info, workspace)
 
 
 @pytest.mark.parametrize('user', ['', 'root', '0', '0:0', 'root:root', 'root:0', '0:root'])
@@ -144,9 +144,9 @@ def test_equivalent_root_users_do_not_reset_the_environment(tmp_lumen, monkeypat
     info = valid_runtime(workspace)
     info['Config']['User'] = user
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
-    assert containers._runtime_matches(info, workspace, [])
+    assert containers._runtime_matches(info, workspace)
     info['Config']['User'] = '1000:1000'
-    assert not containers._runtime_matches(info, workspace, [])
+    assert not containers._runtime_matches(info, workspace)
 
 
 def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(tmp_lumen, monkeypatch):

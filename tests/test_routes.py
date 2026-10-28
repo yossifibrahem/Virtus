@@ -397,7 +397,7 @@ class TestWorkspaceFileRoutes:
         assert target.exists()
         assert client.delete(base + '/download', query_string=query).status_code == 405
         assert client.get(base + '/download', query_string=query).data == b'result'
-        assert client.delete(base + '/delete', query_string={'path': '/workspace/mounts/project'}).status_code == 400
+        assert client.delete(base + '/delete', query_string={'path': '/workspace'}).status_code == 400
         response = client.delete(base + '/delete', query_string=query)
         assert response.status_code == 200 and not target.exists()
 

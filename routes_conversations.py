@@ -8,7 +8,6 @@ from flask import Blueprint, abort, jsonify, request
 
 import container_service
 import store
-import folder_mounts
 import sandbox_runtime
 
 blueprint = Blueprint("conversations", __name__)
@@ -75,14 +74,9 @@ def list_folders():
 @blueprint.route("/api/folders", methods=["POST"])
 def create_folder():
     body = _body()
-    try:
-        mounts = folder_mounts.normalize_mounts(body.get("mounts", []))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
     return jsonify(store.create_folder(
         body.get("name", "New Folder"),
         body.get("system_prompt", ""),
-        mounts=mounts,
     )), 201
 
 
@@ -91,24 +85,11 @@ def update_folder(folder_id: str):
     if err := _bad_conv_id(folder_id):
         return err
     body = _body()
-    runtime_id = f"folder_{folder_id}"
     previous = store.get_folder(folder_id)
     if previous is None:
         return jsonify({"error": "Not found"}), 404
     changes = {key: body[key] for key in ("name", "system_prompt") if key in body}
-    # Name/instruction edits should remain available while tools are running,
-    # including when an unchanged host directory is temporarily disconnected.
-    if "mounts" not in body or body["mounts"] == previous.get("mounts", []):
-        return jsonify(store.update_folder(folder_id, **changes))
-    return jsonify({"error": "Shared directories are chosen during Folder creation and cannot currently be changed"}), 409
-
-
-@blueprint.route("/api/folders/browse-directory", methods=["POST"])
-def browse_folder_directory():
-    try:
-        return jsonify({"path": folder_mounts.choose_directory()})
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    return jsonify(store.update_folder(folder_id, **changes))
 
 
 @blueprint.route("/api/folders/<folder_id>", methods=["DELETE"])

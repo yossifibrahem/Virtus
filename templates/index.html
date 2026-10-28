@@ -644,29 +644,7 @@
         <label for="folder-name-input">Name</label>
         <input id="folder-name-input" type="text" class="input-base" placeholder="Folder name" autocomplete="off" />
       </div>
-      <section class="folder-mounts-section" aria-labelledby="folder-mounts-title">
-        <div class="folder-mounts-heading">
-          <div>
-            <h2 id="folder-mounts-title">Shared directories</h2>
-            <p>Choose which host directories the chats in this Folder can access.</p>
-          </div>
-          <button class="btn-secondary" type="button" id="folder-mount-browse"><span data-icon="folder"></span>Browse…</button>
-        </div>
-        <div id="folder-mount-list"></div>
-        <details class="folder-mount-manual">
-          <summary>Enter a path manually</summary>
-          <div class="field folder-mount-path-field">
-            <label for="folder-mount-path">Host directory</label>
-            <div class="folder-mount-actions">
-              <input id="folder-mount-path" type="text" class="input-base" placeholder="Absolute directory path" autocomplete="off" />
-              <button class="btn-secondary" type="button" id="folder-mount-add">Add path</button>
-            </div>
-          </div>
-        </details>
-        <p class="folder-mount-note">Read only protects original files. Read-write allows editing and deleting original host files.</p>
-        <p class="folder-mount-note">Sharing is chosen during creation and cannot currently be changed afterward. Container recreation for compatibility or settings changes retains workspace files but resets installed packages.</p>
-        <p id="folder-mount-error" class="folder-mount-error" role="alert"></p>
-      </section>
+      <p id="folder-editor-error" class="folder-editor-error" role="alert"></p>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" data-close="folder-modal">Cancel</button>
@@ -683,7 +661,7 @@
       <button class="modal-close" data-close="delete-folder-modal" aria-label="Close" data-icon="close"></button>
     </div>
     <div class="modal-body">
-      <p class="dialog-description">All chats in this folder, its shared container, and its workspace files will be permanently removed. Mounted host directories will be kept.</p>
+      <p class="dialog-description">All chats in this folder, its shared container, and its workspace files will be permanently removed.</p>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" data-close="delete-folder-modal">Cancel</button>

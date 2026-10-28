@@ -1,6 +1,6 @@
 # Lumen architecture decisions and implementation handoff
 
-Date: 2026-10-27
+Date: 2026-10-28
 
 Status: implemented on 2026-10-27; automated verification recorded below. This document records
 the user's final decisions after an architecture review. Implement the requirements
@@ -21,48 +21,16 @@ changes do not damage the host's unrelated files or packages.
 - Keep built-in command/file tools and ordinary MCP server processes in Docker.
 - Internet connectivity is essential for online MCP servers, search, downloads,
   and package installation. Network restriction is not a product goal.
-- File sharing is explicit. Uploads are copies in the managed workspace; selected
-  host directories are bind mounts.
+- File sharing uses uploads copied into the managed workspace.
 - A Folder/Project is a persistent workspace and environment shared by its chats.
   Chats retain separate histories. Standalone chats have their own runtimes.
 - Keep the local, single-process application design. No multi-user service,
   distributed infrastructure, or replacement desktop framework is requested.
 
-## 2. Persistence: choose mounts at Folder creation and then freeze them
+## 2. Persistence: shared managed workspaces
 
-### Final decision
-
-Do not implement `docker commit`, environment snapshots, snapshot image retention,
-automatic setup-script reconstruction, or a VM-based replacement. The user rejected
-the snapshot proposal and wants a simpler interim solution.
-
-Host directory mounts can be selected only during Folder creation. After the Folder
-is created, users cannot add, remove, rename, replace, or change permissions on its
-mounts. This applies even before the Folder's first container has been created.
-
-### Required behavior
-
-- Preserve the creation flow: native Browse, manual absolute paths, multiple
-  directories, and read-only/read-write selection.
-- Keep read-only as the default. Read-write explicitly allows modification and
-  deletion of original host files.
-- Retain Docker-enforced recursive read-only handling, source validation, and the
-  rule that MCP arguments/configuration do not authorize host mounts.
-- In existing Folder settings, display the saved directory paths and permissions
-  without editing controls. Explain that sharing is chosen during creation and
-  cannot currently be changed afterward.
-- Enforce immutability in the backend as well as the UI. Reject actual changes to
-  the saved mount configuration. Requests that omit mounts, or include the unchanged
-  configuration, must still allow ordinary name/instruction edits.
-- Existing Folders keep their current mounts; their mount configuration becomes
-  immutable too. Do not erase or silently rewrite it.
-- A missing/disconnected host directory must fail clearly. Do not silently remove
-  it from the Folder, create a replacement source, or broaden sharing.
-- Folder name and instruction edits remain available, including while a mounted
-  directory is temporarily unavailable. They must not reset the environment.
-- Moving/deleting the last chat must continue to preserve the Folder's managed
-  workspace. Deleting a Folder may remove its owned runtime/workspace, never the
-  original mounted host directories.
+Folder chats share the app-managed workspace. Host-directory sharing has been removed.
+Do not add compatibility or migration handling for the removed feature.
 
 ### Accepted persistence limits
 
@@ -70,12 +38,12 @@ mounts. This applies even before the Folder's first container has been created.
   container and retain its installed packages.
 - Workspace data remains separately persistent through container recreation.
 - Recreating a container for a sandbox/base-image upgrade may reset installed
-  packages and other files outside persistent mounts. The user accepts this.
+  packages and other files outside the persistent workspace. The user accepts this.
 - Do not build an upgrade/rebase/migration framework to preserve arbitrary OS state.
 - State these limits accurately in the UI and documentation. Do not promise that
   the entire computer survives every kind of recreation.
 
-Likely touchpoints: `routes_conversations.py`, `folder_mounts.py`,
+Likely touchpoints: `routes_conversations.py`,
 `static/js/conversations.js`, `templates/index.html`, `README.md`, `devs.md`.
 
 ## 3. Original review point 1: warn before a destructive chat move
@@ -202,16 +170,10 @@ neither remembered context nor a memory tool to subsequent model requests.
   effective behavior (enabled) unless a different default is agreed; document the
   chosen default. Complete disable behavior is mandatory regardless of default.
 
-### Resolve the interaction with immutable mounts
+### Keep canonical memory outside the sandbox
 
-Implementation guidance to satisfy both accepted decisions: do not keep the
-canonical memory file as a read-write sandbox bind mount. Prefer keeping it entirely
-outside new containers and providing access through context plus the narrow built-in
-tool. A read-only mount is unnecessary when the full bounded memory is injected.
-
-This allows memory toggles and updates without changing Folder mounts, recreating
-the computer, or resetting packages. Adding a global runtime mount to enable memory
-and removing it to disable memory would reintroduce the rejected persistence issue.
+Canonical memory stays on the host and is accessed through context and the narrow
+built-in tool. Memory toggles and updates do not recreate the computer or reset packages.
 
 Folder-specific memory was discussed as a possible distinction, but a second memory
 system is not required in this implementation. Global cross-chat user memory is the
@@ -320,17 +282,16 @@ Do not resurrect these proposals simply because they appeared in the initial rev
 
 Suggested order (an implementation choice):
 
-1. Freeze Folder mount editing and add the destructive-move warning.
+1. Keep Folder workspaces shared and add the destructive-move warning.
 2. Remove network configuration/overrides and update the corresponding docs.
 3. Implement optional host-managed memory, with a JSON store.
-4. Complete runtime configuration reconciliation, accounting for the new mount set.
+4. Complete runtime configuration reconciliation, checking the managed workspace mount.
 5. Add disk/turn/replay safeguards and update remaining documentation.
 
 Use focused regression tests for the actual behavioral changes, then run the
 existing suite and JavaScript syntax checks. In particular verify:
 
-- Mounts work during creation; changed mounts are rejected afterward in both UI
-  and backend; ordinary Folder metadata edits remain functional.
+- Folder creation and ordinary metadata edits remain functional.
 - Destructive move cancellation preserves data; the accepted move still deletes
   only the owned standalone workspace and preserves history/destination files.
 - Resource/isolation mismatches are reconciled or rejected through every container
@@ -338,7 +299,7 @@ existing suite and JavaScript syntax checks. In particular verify:
 - Concurrent memory writes do not silently lose updates. Disabled memory contributes
   no injected context or tool, rejects update calls, and exposes no app-managed
   writable memory mount. Toggling it does not recreate containers.
-- Legacy memory, existing Folder mounts, and saved settings migrate predictably.
+- Legacy memory and saved settings migrate predictably.
 - Container creation passes no network override, obsolete network settings are
   ignored, and unrelated isolation settings remain effective.
 - Disk/turn/replay limits stop work cleanly and preserve consistent saved history.
@@ -352,13 +313,13 @@ results, not validation of this handoff or future implementation. Run current ch
 and report actual results. Live Docker isolation was not verified in that review.
 
 After implementation, update `README.md` and `devs.md` to describe implemented
-behavior, remove contradictory instructions (particularly editable Folder mounts,
-writable memory mounts, and network settings), and update this document's status.
+behavior, remove contradictory instructions (particularly writable memory mounts
+and network settings), and update this document's status.
 
 
 ## 10. Implementation verification (2026-10-27)
 
-Implemented immutable Folder mounts, the destructive-move warning, Docker-managed
+Implemented the destructive-move warning, Docker-managed
 networking, optional revision-checked app-owned memory with JSON storage,
 effective runtime validation, disk monitoring, cancellable turn/tool budgets, bounded
 output/replay and corresponding settings/documentation. Memory defaults enabled.
@@ -378,8 +339,8 @@ The follow-up review findings are fixed:
   namespaces. Reuse accepts equivalent root-user representations, preventing
   repeated environment resets caused by image or daemon defaults.
 - Storage recovery remains available through file-panel reads/downloads and
-  confirmed deletion of managed workspace files/directories. Mounted host
-  directories, their ancestors, and symlink targets are protected. Normal agent
+  confirmed deletion of managed workspace files/directories. The workspace root
+  and symlink targets are protected. Normal agent
   execution and uploads remain storage-limited; recovery does not enable arbitrary
   Bash/MCP bypasses.
 - Failed authoritative-history reloads block turn and branch saves and new edits
