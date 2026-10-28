@@ -367,7 +367,7 @@ function element() {
     querySelectorAll: () => [], querySelector: () => null, contains: () => false,
   };
 }
-const els = Object.fromEntries(['panel','toggle','list','title','body','copy','download','toggleRender'].map(k => [k,element()]));
+const els = Object.fromEntries(['tabs','panel','toggle','list','title','body','copy','download','toggleRender'].map(k => [k,element()]));
 const pending = [];
 const state = {convId:'first'};
 let disposedPdfs = 0;
@@ -384,7 +384,7 @@ const modules = {
 };
 globalThis.document = {createElement:element};
 let code = readFileSync('static/js/file_panel.js', 'utf8');
-code += '\nexport function setup(elements) { els = elements; }\nexport {loadFilePreview, closePreview, loadFileList};';
+code += '\nexport function setup(elements) { els = elements; }\nexport {loadFilePreview, closePreview, loadFileList, closeFileTab};';
 const module = new vm.SourceTextModule(code);
 await module.link(specifier => new vm.SyntheticModule(Object.keys(modules[specifier]), function() {
   for (const [name,value] of Object.entries(modules[specifier])) this.setExport(name,value);
@@ -478,6 +478,23 @@ pending[13].resolve({unchanged:true});
 await refreshText;
 assert.equal(els.body.children[0],source,'Unchanged text must not be highlighted again');
 assert.equal(els.copy.disabled,false);
+const tabNames = () => els.tabs.children.map(tab => tab.children[0].textContent);
+assert.deepEqual(tabNames(), ['Files','broken','report.pdf','image.png','notes.py'],
+  'Workspace reset clears old tabs, and refreshes reuse an existing tab');
+ui.closeFileTab('/workspace/broken');
+assert.equal(els.title.textContent,'notes.py','Closing an inactive tab preserves the preview');
+ui.closePreview();
+assert.equal(tabNames().length,4,'Returning to Files preserves open tabs');
+const reopen = ui.loadFilePreview('/workspace/notes.py');
+pending[14].resolve(file('notes.py'));
+await reopen;
+assert.equal(tabNames().length,4,'Reopening a file selects its existing tab');
+ui.closeFileTab('/workspace/notes.py');
+pending[15].resolve(file('image.png'));
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(els.title.textContent,'image.png','Closing the active tab selects its neighbor');
+ui.resetFilePanel();
+assert.deepEqual(tabNames(),['Files']);
 ''')
 
 

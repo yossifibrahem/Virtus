@@ -51,22 +51,12 @@
 #file-panel.resizing #file-panel-resizer::after { opacity: 1; background: var(--accent-border-mid); }
 body.file-panel-resizing { cursor: col-resize; user-select: none; }
 
-.file-panel-header,
 .file-preview-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-shrink: 0;
-}
-.file-panel-header {
-  min-height: calc(42px + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) 12px 0;
-}
-.file-panel-title {
-  color: var(--text);
-  font-size: .78rem;
-  font-weight: 500;
 }
 .file-panel-empty,
 .file-panel-note {
@@ -203,22 +193,23 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   display: none;
   flex-direction: column;
 }
-#file-panel.preview-open .file-panel-header,
 #file-panel.preview-open #file-panel-list { display: none; }
 #file-panel.preview-open #file-preview { display: flex; }
 .file-preview-header {
-  min-height: calc(54px + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) 12px 0;
+  min-height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
 }
 .file-preview-heading { min-width: 0; flex: 1; }
 #file-preview-title {
-  max-width: min(520px, calc(var(--file-panel-w) - 170px));
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
-  font-size: .76rem;
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-size: .63rem;
+  color: var(--text3);
+  font-weight: 400;
 }
 #file-preview-body {
   flex: 1;
@@ -327,10 +318,81 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   }
   #file-panel.open { transform: translateX(0); }
   #file-panel-resizer { display: none; }
-  #file-preview-title { max-width: calc(94vw - 170px); }
+
 }
 
-@media (max-width: 768px) {
-  .file-panel-header { min-height: calc(42px + env(safe-area-inset-top, 0px)); }
-  .file-preview-header { min-height: calc(50px + env(safe-area-inset-top, 0px)); }
+/* Keep panel actions visible while the tabs scroll independently. */
+.file-panel-toolbar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  padding-top: env(safe-area-inset-top, 0px);
+  border-bottom: 1px solid var(--border);
 }
+.file-panel-toolbar .file-panel-actions {
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+#file-panel-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  overflow-x: auto;
+  gap: 4px;
+  padding: 5px 8px;
+  scrollbar-width: none;
+}
+#file-panel-tabs::-webkit-scrollbar { display: none; }
+.file-panel-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 190px;
+  border-radius: 6px;
+  color: var(--text3);
+  transition: background var(--fast), color var(--fast);
+}
+.file-panel-tab.active { background: var(--surface2); color: var(--text); }
+.file-panel-tab:hover { color: var(--text); background: var(--surface2); }
+.file-panel-tab button {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+.file-tab-select {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  font-size: .72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 8px), transparent);
+}
+.file-tab-icon { display: flex; flex-shrink: 0; opacity: .65; }
+.file-panel-tab:is(:hover, .active) .file-tab-icon { opacity: 1; }
+.file-tab-icon svg { width: 13px; height: 13px; }
+.file-panel-tab .file-tab-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 7px;
+  border-radius: 4px;
+  opacity: 0;
+}
+.file-tab-close svg { width: 12px; height: 12px; }
+.file-panel-tab:hover .file-tab-close,
+.file-panel-tab .file-tab-close:focus-visible { opacity: 1; }
+.file-panel-tab .file-tab-close:hover { background: var(--border); }
+.file-panel-tab button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+@media (hover: none) { .file-panel-tab .file-tab-close { opacity: 1; } }

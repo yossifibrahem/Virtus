@@ -231,8 +231,8 @@
 <!-- Workspace Files Panel -->
 <aside id="file-panel" aria-label="Workspace files" inert>
   <div id="file-panel-resizer" title="Resize workspace panel" aria-hidden="true"></div>
-  <div class="file-panel-header">
-    <div class="file-panel-title">Workspace</div>
+  <div class="file-panel-toolbar">
+    <div id="file-panel-tabs" role="tablist" aria-label="Open workspace files"></div>
     <div class="file-panel-actions">
       <button id="btn-refresh-files" title="Refresh files" aria-label="Refresh files"><span data-icon="refresh"></span></button>
       <button id="btn-close-files" title="Close files panel" aria-label="Close files panel"><span data-icon="close"></span></button>
@@ -245,12 +245,9 @@
         <div id="file-preview-title">Preview</div>
       </div>
       <div class="file-preview-actions">
-        <button id="btn-back-files" title="Back to files" aria-label="Back to files"><span data-icon="chevronLeft"></span></button>
         <button id="btn-toggle-render" title="View source" aria-label="View source" hidden></button>
         <button id="btn-copy-file" disabled title="Copy file content" aria-label="Copy file content"><span data-icon="copy"></span></button>
         <button id="btn-download-file" disabled title="Download file" aria-label="Download file"><span data-icon="download"></span></button>
-        <button id="btn-refresh-files-preview" title="Refresh files" aria-label="Refresh files"><span data-icon="refresh"></span></button>
-        <button id="btn-close-files-preview" title="Close files panel" aria-label="Close files panel"><span data-icon="close"></span></button>
       </div>
     </div>
     <div id="file-preview-body"></div>

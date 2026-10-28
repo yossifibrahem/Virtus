@@ -27,6 +27,8 @@ let treeRenderId = 0;
 let listRequestId = 0;
 let previewRequestId = 0;
 let disposePdf = null;
+const openFiles = new Map();
+
 const expandedPaths = new Set([WORKSPACE_ROOT]);
 
 // Resolved once in initFilePanel — these elements are stable for the page lifetime.
@@ -103,7 +105,7 @@ function setPanelOpen(open, { persist = true } = {}) {
 function setPreviewOpen(open) {
   const changed = open && !els.panel?.classList.contains('preview-open');
   els.panel?.classList.toggle('preview-open', open);
-  if (changed && isOpen) els.back?.focus();
+  if (changed && isOpen) els.tabs?.querySelector('.active .file-tab-select')?.focus();
 }
 
 function updateToggleButton(name, mode, visual = false) {
@@ -259,9 +261,80 @@ function renderVisualPreview(data) {
 }
 
 
+function renderTabs() {
+  if (!els.tabs) return;
+  els.tabs.replaceChildren();
+  const addTab = (path, label) => {
+    const active = path === selectedPath;
+    const wrapper = document.createElement('div');
+    wrapper.className = `file-panel-tab${active ? ' active' : ''}`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'file-tab-select';
+    button.textContent = label;
+    const icon = document.createElement('span');
+    icon.className = 'file-tab-icon';
+    icon.innerHTML = path ? ICONS.file : ICONS.mcpFileSystem;
+    button.prepend?.(icon);
+    button.title = path || 'Workspace files';
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(active));
+    button.setAttribute('aria-controls', path ? 'file-preview' : 'file-panel-list');
+    button.tabIndex = active ? 0 : -1;
+    button.addEventListener('keydown', event => {
+      const paths = [null, ...openFiles.keys()];
+      let index = paths.indexOf(path);
+      if (event.key === 'ArrowRight') index = (index + 1) % paths.length;
+      else if (event.key === 'ArrowLeft') index = (index - 1 + paths.length) % paths.length;
+      else if (event.key === 'Home') index = 0;
+      else if (event.key === 'End') index = paths.length - 1;
+      else if (event.key === 'Delete' && path) { event.preventDefault(); closeFileTab(path); return; }
+      else return;
+      event.preventDefault();
+      if (paths[index]) loadFilePreview(paths[index], openFiles.get(paths[index])?.range || '').catch(() => {});
+      else closePreview();
+      els.tabs.querySelector('.active .file-tab-select')?.focus();
+    });
+    button.addEventListener('click', () => {
+      if (path) loadFilePreview(path, openFiles.get(path)?.range || '').catch(() => {});
+      else closePreview();
+    });
+    wrapper.appendChild(button);
+    if (path) {
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'file-tab-close';
+      close.innerHTML = ICONS.close;
+      close.title = `Close ${label}`;
+      close.setAttribute('aria-label', close.title);
+      close.addEventListener('click', () => closeFileTab(path));
+      wrapper.appendChild(close);
+    }
+    els.tabs.appendChild(wrapper);
+  };
+  addTab(null, 'Files');
+  for (const path of openFiles.keys()) addTab(path, displayNameForPath(path));
+  els.tabs.querySelector('.active')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
+
+function closeFileTab(path) {
+  const paths = [...openFiles.keys()];
+  const index = paths.indexOf(path);
+  openFiles.delete(path);
+  if (selectedPath === path) {
+    const next = paths[index + 1] || paths[index - 1];
+    closePreview();
+    if (next) loadFilePreview(next, openFiles.get(next)?.range || '').catch(() => {});
+  }
+  renderTabs();
+  els.tabs?.querySelector('.active button')?.focus();
+}
+
 function resetPreview() {
+  if (selectedPath && openFiles.has(selectedPath)) openFiles.get(selectedPath).mode = renderMode;
   previewRequestId++;
   selectedPath = null;
+  renderTabs();
   setSelectedTreeRow(null);
   currentFileData = null;
   renderMode = 'render';
@@ -458,7 +531,13 @@ async function loadFilePreview(path, range = '') {
   if (!apiBase || !path) return;
   const requestId = ++previewRequestId;
   const previous = selectedPath === path && currentFileData?.previewRange === range ? currentFileData : null;
+  if (selectedPath && openFiles.has(selectedPath)) openFiles.get(selectedPath).mode = renderMode;
+  if (!openFiles.has(path)) openFiles.set(path, { mode: 'render', range });
+  renderMode = openFiles.get(path).mode;
+  openFiles.get(path).range = range;
   selectedPath = path;
+  setSelectedTreeRow(path);
+  renderTabs();
   currentFileData = previous;
   els.toggleRender.hidden = true;
   els.title.textContent = displayNameForPath(path);
@@ -478,7 +557,7 @@ async function loadFilePreview(path, range = '') {
   const data = payload.unchanged && previous ? previous : payload;
   if (data.error) {
     if (isMissingWorkspacePath(data.error)) {
-      closePreview();
+      closeFileTab(path);
       await loadFileList();
       showToast('Previewed file is no longer available');
       return false;
@@ -488,7 +567,7 @@ async function loadFilePreview(path, range = '') {
     return false;
   }
 
-  els.title.textContent = data.name || 'File';
+  els.title.textContent = (data.path || path).replace(/^\/workspace\//, '');
   els.title.title = data.path || path;
   els.download.disabled = false;
   els.download.dataset.path = data.path;
@@ -568,6 +647,7 @@ export function resetFilePanel() {
   ++listRequestId;
   ++treeRenderId;
   els.list?.replaceChildren();
+  openFiles.clear();
   expandedPaths.clear();
   expandedPaths.add(WORKSPACE_ROOT);
   closePreview();
@@ -577,6 +657,7 @@ export function resetFilePanel() {
 
 export function initFilePanel() {
   els = {
+    tabs:          document.getElementById('file-panel-tabs'),
     panel:         document.getElementById('file-panel'),
     resizer:       document.getElementById('file-panel-resizer'),
     toggle:        document.getElementById('btn-toggle-files'),
