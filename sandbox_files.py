@@ -66,7 +66,7 @@ def visual_preview(target, meta, req):
             return {**meta, 'content': None, 'previewable': False, 'preview_error': str(exc)}
         return {**meta, 'content': None, 'previewable': True, 'preview_kind': 'pdf'}
     # Load the trusted sibling explicitly: Python -I excludes the script directory.
-    spec = importlib.util.spec_from_file_location('lumen_view_worker', Path(__file__).with_name('sandbox_tools.py'))
+    spec = importlib.util.spec_from_file_location('virtus_view_worker', Path(__file__).with_name('sandbox_tools.py'))
     viewer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(viewer)
     try:

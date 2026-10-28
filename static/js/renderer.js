@@ -48,8 +48,11 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
       <div class="folder-home-title">${ICONS.folder}<span>${escapeHtml(folder.name || 'Untitled Folder')}</span></div>
     </div>` : `
     <div id="empty-state">
+      <div class="logo-mark es-brand" aria-hidden="true">
+        <img class="brand-logo-dark" src="/static/virtus-logo-dark.png" alt="" />
+        <img class="brand-logo-light" src="/static/virtus-logo-light.png" alt="" />
+      </div>
       <h1 class="es-logo">What would you like to work on?</h1>
-      <div class="es-sub">Ask a question or start a task.</div>
     </div>`;
 
   if (composer) messages.appendChild(composer);

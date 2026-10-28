@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 def _tool_timeout() -> float:
     try:
-        value = float(os.getenv("LUMEN_MCP_TOOL_TIMEOUT", "120"))
+        value = float(os.getenv("VIRTUS_MCP_TOOL_TIMEOUT", "120"))
     except (TypeError, ValueError):
         return 120.0
     return value if value > 0 else 120.0

@@ -1,4 +1,4 @@
-# Lumen architecture decisions and implementation handoff
+# Virtus architecture decisions and implementation handoff
 
 Date: 2026-10-28
 
@@ -13,7 +13,7 @@ the implementation requirements.
 
 ## 1. Product purpose and boundaries
 
-Lumen is a local, single-user agentic chat application. The model gets its own
+Virtus is a local, single-user agentic chat application. The model gets its own
 Docker computer so its commands, package installations, and ordinary filesystem
 changes do not damage the host's unrelated files or packages.
 
@@ -130,7 +130,7 @@ neither remembered context nor a memory tool to subsequent model requests.
 
 ### Canonical store and update tool
 
-- Keep the canonical memory under application control in `~/.lumen/memory.json`,
+- Keep the canonical memory under application control in `~/.virtus/memory.json`,
   as a JSON object with a string `content` field.
 - Provide a server-owned built-in tool such as `update_memory`. Its schema describes
   remembering stable user facts/preferences, correcting outdated facts, and keeping
@@ -196,7 +196,7 @@ the focus.
 
 - Remove `container_network` from advanced defaults, allowed settings, UI fields,
   frontend settings payloads, and validation.
-- Stop honoring `LUMEN_CONTAINER_NETWORK`. Ignore legacy saved values rather than
+- Stop honoring `VIRTUS_CONTAINER_NETWORK`. Ignore legacy saved values rather than
   allowing old settings to force a network override.
 - Remove `--network` from the generated `docker run` command. Docker chooses its
   normal default network, usually `bridge`.

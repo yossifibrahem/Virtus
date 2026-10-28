@@ -141,7 +141,7 @@ def test_tool_uses_structured_stdin_never_host_shell(monkeypatch):
     monkeypatch.setattr(sandbox_runtime, 'docker_operation', call)
     native.invoke('runtime', 'view', {'path': '$(touch /host);file'})
     args = call.call_args.args
-    assert args[1] == ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_tools.py']
+    assert args[1] == ['/opt/venv/bin/python', '-I', '/opt/virtus/sandbox_tools.py']
     assert json.loads(args[2])['args']['path'] == '$(touch /host);file'
 
 
@@ -153,7 +153,7 @@ def test_cancel_before_lock_does_not_execute(monkeypatch):
     call.assert_not_called()
 
 
-def test_media_conversation_scoping_and_order(tmp_lumen):
+def test_media_conversation_scoping_and_order(tmp_virtus):
     a, b = store.create(), store.create()
     import base64
     refs = tool_media.save(a['id'], [{'data': base64.b64encode(b'\xff\xd8\xfftest').decode()}])
@@ -176,7 +176,7 @@ def test_unexpected_mount_rejected(monkeypatch, tmp_path):
     assert container_service._mounts_match(mounts, tmp_path)
 
 
-def test_native_schemas_injected_without_mcp(tmp_lumen, monkeypatch):
+def test_native_schemas_injected_without_mcp(tmp_virtus, monkeypatch):
     import chat_turn_service as turns
     conv = store.create()
     observed = []
@@ -286,7 +286,7 @@ def test_runtime_locks_are_reclaimed():
     assert 'temporary-lock' not in sandbox_runtime._LOCKS
 
 
-def test_tool_media_batches_read_conversation_once(tmp_lumen, monkeypatch):
+def test_tool_media_batches_read_conversation_once(tmp_virtus, monkeypatch):
     import base64
     from unittest.mock import patch
 

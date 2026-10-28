@@ -1,4 +1,4 @@
-/* Lumen CSS entrypoint. Keep imports ordered: later modules intentionally override earlier ones. */
+/* Virtus CSS entrypoint. Keep imports ordered: later modules intentionally override earlier ones. */
 
 @import url("./modules/01-foundation.css");
 @import url("./modules/02-sidebar.css");

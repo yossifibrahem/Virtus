@@ -1,29 +1,19 @@
-"""Render the Lumen favicon geometry into a multi-resolution Windows icon."""
+"""Resize the shared Virtus logo into a multi-resolution Windows icon."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "build" / "generated" / "Lumen.ico"
+OUTPUT = ROOT / "build" / "generated" / "Virtus.ico"
+SOURCE = ROOT / "static" / "virtus-logo-dark.png"
 
 
 def render(size: int) -> Image.Image:
-    scale = size / 64
-    image = Image.new("RGBA", (size, size), "#171713")
-    draw = ImageDraw.Draw(image)
-
-    def box(values: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
-        return tuple(round(value * scale) for value in values)
-
-    draw.rectangle(box((10, 10, 54, 54)), fill="#fff3d6", outline="#120f0a", width=max(1, round(4 * scale)))
-    draw.rectangle(box((20, 24, 28, 32)), fill="#d96c4b")
-    draw.rectangle(box((36, 24, 44, 32)), fill="#d96c4b")
-    draw.rectangle(box((24, 42, 40, 46)), fill="#120f0a")
-    draw.rectangle(box((28, 4, 36, 12)), fill="#d96c4b")
-    return image
+    with Image.open(SOURCE) as image:
+        return image.convert("RGBA").resize((size, size), Image.Resampling.LANCZOS)
 
 
 def main() -> None:

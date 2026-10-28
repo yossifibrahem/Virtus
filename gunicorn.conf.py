@@ -1,4 +1,4 @@
-"""Production defaults for Lumen.
+"""Production defaults for Virtus.
 
 Stream cancellation and active SSE replay currently use in-process state in
 routes_chat.py, so multiple worker processes can route a cancel request to the wrong

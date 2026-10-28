@@ -11,7 +11,7 @@ import { showToast } from './ui.js';
 import { storage } from './storage.js';
 import { escapeHtml, formatBytes, fileExtension as ext } from './format.js';
 
-const PANEL_WIDTH_KEY = 'lumen_file_panel_width';
+const PANEL_WIDTH_KEY = 'virtus_file_panel_width';
 const MIN_PANEL_WIDTH = 280;
 const DEFAULT_PANEL_WIDTH = 380;
 const MAX_PANEL_VIEWPORT_RATIO = 0.5;
@@ -718,7 +718,7 @@ export function initFilePanel() {
     }
   });
 
-  document.addEventListener('lumen:open-workspace-file', async e => {
+  document.addEventListener('virtus:open-workspace-file', async e => {
     const path = e.detail?.path;
     if (!path) return;
     setPanelOpen(true);

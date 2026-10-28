@@ -47,14 +47,16 @@
 .logo-mark {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  color: var(--accent);
+  border-radius: 0;
+  border: 0;
   display: grid;
   place-items: center;
   flex-shrink: 0;
 }
-.logo-mark svg { width: 14px; height: 14px; }
+.logo-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.logo-mark .brand-logo-light { display: none; }
+html[data-theme="light"] .logo-mark .brand-logo-dark { display: none; }
+html[data-theme="light"] .logo-mark .brand-logo-light { display: block; }
 .logo-name {
   font-family: var(--font-tiempos);
   font-size: 1.18rem;

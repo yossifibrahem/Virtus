@@ -21,7 +21,7 @@ from mcp_adapters import ContainerConversationRequired
 
 def _mock_wrap_result(conv_id: str, command: str, args: list):
     """Canonical return value from wrap_command_for_exec."""
-    return ("docker", ["exec", "-i", f"lumen-chat-{conv_id}", command, *args])
+    return ("docker", ["exec", "-i", f"virtus-chat-{conv_id}", command, *args])
 
 
 class TestApplyWorkspaceProcessOptions:

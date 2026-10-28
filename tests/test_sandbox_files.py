@@ -50,7 +50,7 @@ def test_symlinks_never_leave_workspace(root, tmp_path):
 
 
 @pytest.mark.parametrize('low_space', [False, True])
-def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_lumen, monkeypatch, low_space):
+def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_virtus, monkeypatch, low_space):
     rid = 'storage-recovery'
     workspace = container_service.conversation_workspace(rid)
     monkeypatch.setattr(worker, 'ROOT', workspace)
@@ -83,7 +83,7 @@ def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_
     assert not (workspace / 'uploads').exists()
 
 
-def test_recovery_context_is_request_local_and_restored_after_error(tmp_lumen):
+def test_recovery_context_is_request_local_and_restored_after_error(tmp_virtus):
     from concurrent.futures import ThreadPoolExecutor
     workspace = container_service.conversation_workspace('context')
     (workspace / 'large').write_bytes(b'large')
@@ -338,7 +338,7 @@ def test_invalid_transport_response(monkeypatch, raw):
     assert container_files.operation('chat', 'list')[1] == 400
 
 
-def test_upload_host_transport_checks_size_before_docker(tmp_lumen, monkeypatch):
+def test_upload_host_transport_checks_size_before_docker(tmp_virtus, monkeypatch):
     conv = store.create()
     monkeypatch.setattr(container_files, 'file_limits', lambda: {'max_upload_bytes': 2})
     call = Mock()

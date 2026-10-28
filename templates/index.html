@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta name="lumen-csrf" content="{{ session.get('csrf', '') }}">
+  <meta name="virtus-csrf" content="{{ session.get('csrf', '') }}">
   <script src="{{ url_for('static', filename='js/request_security.js') }}"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Lumen · AI Chat</title>
-<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
-<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
+<title>Virtus · AI Chat</title>
+<link rel="icon" href="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-dark="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-light="{{ url_for('static', filename='virtus-logo-light.png') }}" type="image/png" />
+<link rel="shortcut icon" href="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-dark="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-light="{{ url_for('static', filename='virtus-logo-light.png') }}" type="image/png" />
 
 <!-- Keep the incomplete shell out of the first paint. No JS leaves it visible. -->
 <style>
@@ -33,7 +33,7 @@
   document.addEventListener('app:ready', reveal, { once: true });
 
   try {
-    var prefs = JSON.parse(localStorage.getItem('lumen_customization') || '{}');
+    var prefs = JSON.parse(localStorage.getItem('virtus_customization') || '{}');
 
     // Theme
     var theme = prefs.theme || 'auto';
@@ -45,7 +45,7 @@
     r.setAttribute('data-theme', theme);
 
     // Accent color. Light mode uses a slightly deeper version for contrast.
-    var hex = prefs.customAccentColor || prefs.accentColor || '#5B8DEF';
+    var hex = prefs.customAccentColor || prefs.accentColor || '#DDB37E';
     if (hex && /^#[0-9a-f]{6}$/i.test(hex)) {
       var m = /^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       var rr = parseInt(m[1],16), gg = parseInt(m[2],16), bb = parseInt(m[3],16);
@@ -83,7 +83,7 @@
 
     // Sidebar — collapse immediately when the last saved state is closed.
     // On first visit, default to open on desktop and closed on mobile.
-    var sidebarSaved = localStorage.getItem('lumen_sidebar');
+    var sidebarSaved = localStorage.getItem('virtus_sidebar');
     var sidebarOpen = sidebarSaved === null ? prefs.sidebarDefaultOpen !== false : sidebarSaved === 'true';
     if (isMobile || !sidebarOpen) {
       r.classList.add('sidebar-init-closed');
@@ -116,6 +116,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
 
 
+<script src="{{ url_for('static', filename='js/brand_assets.js') }}" defer></script>
 </head>
 <body>
 
@@ -124,9 +125,9 @@
   <div id="sidebar-header">
     <div class="logo">
       <div class="logo-mark">
-        <span data-icon="logo"></span>
+        <img class="brand-logo-dark" src="{{ url_for('static', filename='virtus-logo-dark.png') }}" alt="" /><img class="brand-logo-light" src="{{ url_for('static', filename='virtus-logo-light.png') }}" alt="" />
       </div>
-      <span class="logo-name">Lumen</span>
+      <span class="logo-name">Virtus</span>
     </div>
   </div>
 
@@ -476,6 +477,7 @@
         <div class="settings-section">
           <div class="section-title">Accent Color</div>
           <div class="cust-swatches" role="group" aria-label="Accent colors">
+            <button class="cust-swatch" data-color="#DDB37E" title="Virtus Beige (Default)" aria-label="Virtus beige accent (default)" style="--sw: #DDB37E;"></button>
             <button class="cust-swatch" data-color="#5B8DEF" title="Cornflower Blue" aria-label="Cornflower blue accent" style="--sw: #5B8DEF;"></button>
             <button class="cust-swatch" data-color="#2FA6A0" title="Ocean Teal" aria-label="Ocean teal accent" style="--sw: #2FA6A0;"></button>
             <button class="cust-swatch" data-color="#45A66B" title="Emerald Green" aria-label="Emerald green accent" style="--sw: #45A66B;"></button>

@@ -35,7 +35,7 @@ def _positive_float_env(name: str, default: float) -> float:
 
 MAX_TOOL_ARGUMENT_BYTES = 3 * 1024 * 1024
 
-OPENAI_TIMEOUT_SECONDS = _positive_float_env("LUMEN_OPENAI_TIMEOUT", 120.0)
+OPENAI_TIMEOUT_SECONDS = _positive_float_env("VIRTUS_OPENAI_TIMEOUT", 120.0)
 
 
 def _inject_memory(api_messages: list) -> list:

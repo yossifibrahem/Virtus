@@ -15,7 +15,7 @@ class StorageLimit(ValueError):
     pass
 
 
-_RECOVERY = ContextVar('lumen_storage_recovery', default=False)
+_RECOVERY = ContextVar('virtus_storage_recovery', default=False)
 
 
 @contextmanager

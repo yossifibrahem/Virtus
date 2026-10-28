@@ -1,4 +1,4 @@
-"""macOS menu-bar launcher for the frozen Lumen web application."""
+"""macOS menu-bar launcher for the frozen Virtus web application."""
 from __future__ import annotations
 
 import fcntl
@@ -14,7 +14,7 @@ import webbrowser
 import rumps
 from waitress import create_server
 
-import app as lumen_app
+import app as virtus_app
 import build_info
 import desktop_runtime
 import runtime_requirements
@@ -23,13 +23,13 @@ import runtime_requirements
 HOST = "127.0.0.1"
 PORT = build_info.DESKTOP_PORT
 BASE_URL = f"http://{HOST}:{PORT}"
-LUMEN_DIR = Path.home() / ".lumen"
-LOG_DIR = LUMEN_DIR / "logs"
-LOG_FILE = LOG_DIR / "lumen.log"
+VIRTUS_DIR = Path.home() / ".virtus"
+LOG_DIR = VIRTUS_DIR / "logs"
+LOG_FILE = LOG_DIR / "virtus.log"
 LOCK_FILE = Path(
-    os.getenv("LUMEN_DESKTOP_LOCK_FILE", str(LUMEN_DIR / "desktop.lock"))
+    os.getenv("VIRTUS_DESKTOP_LOCK_FILE", str(VIRTUS_DIR / "desktop.lock"))
 )
-MENU_BAR_ICON = build_info.resource_root() / "static" / "favicon.svg"
+MENU_BAR_ICON = build_info.resource_root() / "static" / "virtus-logo-dark.png"
 
 
 configure_logging = partial(desktop_runtime.configure_logging, LOG_FILE)
@@ -44,7 +44,7 @@ def _validate_frozen_runtime() -> None:
 
 class SingleInstance:
     def __init__(self) -> None:
-        LUMEN_DIR.mkdir(parents=True, exist_ok=True)
+        VIRTUS_DIR.mkdir(parents=True, exist_ok=True)
         self._handle = LOCK_FILE.open("a+")
 
     def acquire(self) -> bool:
@@ -65,10 +65,10 @@ class SingleInstance:
             self._handle.close()
 
 
-class LumenMenuBar(rumps.App):
+class VirtusMenuBar(rumps.App):
     def __init__(self, instance_lock: SingleInstance) -> None:
         super().__init__(
-            "Lumen AI Chat",
+            "Virtus AI Chat",
             icon=str(MENU_BAR_ICON),
             template=False,
             quit_button=None,
@@ -78,11 +78,11 @@ class LumenMenuBar(rumps.App):
         self._server_thread: threading.Thread | None = None
         self._server_stopping = threading.Event()
         self.menu = [
-            rumps.MenuItem("Open Lumen", callback=self.open_lumen),
+            rumps.MenuItem("Open Virtus", callback=self.open_virtus),
             rumps.MenuItem("Docker Status", callback=self.docker_status),
             rumps.MenuItem("Open Logs", callback=self.open_logs),
             None,
-            rumps.MenuItem("Quit Lumen", callback=self.quit_lumen),
+            rumps.MenuItem("Quit Virtus", callback=self.quit_virtus),
         ]
 
     def start_server(self) -> None:
@@ -93,21 +93,21 @@ class LumenMenuBar(rumps.App):
                 raise SystemExit(0)
             raise RuntimeError(
                 f"Port {PORT} is already in use by another application. "
-                "Close it or set LUMEN_DESKTOP_PORT to a stable free port."
+                "Close it or set VIRTUS_DESKTOP_PORT to a stable free port."
             )
 
-        flask_app = lumen_app.create_app()
+        flask_app = virtus_app.create_app()
         self._server = create_server(flask_app, host=HOST, port=PORT, threads=8)
         self._server_stopping.clear()
         self._server_thread = threading.Thread(
             target=self._run_server,
-            name="lumen-waitress",
+            name="virtus-waitress",
             daemon=True,
         )
         self._server_thread.start()
         if not _wait_for_health():
-            raise RuntimeError("The local Lumen server did not become ready within 30 seconds.")
-        if os.getenv("LUMEN_DESKTOP_NO_BROWSER", "") != "1":
+            raise RuntimeError("The local Virtus server did not become ready within 30 seconds.")
+        if os.getenv("VIRTUS_DESKTOP_NO_BROWSER", "") != "1":
             webbrowser.open(BASE_URL)
 
     def _run_server(self) -> None:
@@ -128,7 +128,7 @@ class LumenMenuBar(rumps.App):
         if self._server_thread is not None:
             self._server_thread.join(timeout=5)
 
-    def open_lumen(self, _sender=None) -> None:
+    def open_virtus(self, _sender=None) -> None:
         webbrowser.open(BASE_URL)
 
     def docker_status(self, _sender=None) -> None:
@@ -143,10 +143,10 @@ class LumenMenuBar(rumps.App):
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         subprocess.Popen(["/usr/bin/open", str(LOG_DIR)])
 
-    def quit_lumen(self, _sender=None) -> None:
+    def quit_virtus(self, _sender=None) -> None:
         try:
             self.stop_server()
-            lumen_app._shutdown_containers()
+            virtus_app._shutdown_containers()
         finally:
             self._instance_lock.close()
             rumps.quit_application()
@@ -160,15 +160,15 @@ def main() -> int:
             webbrowser.open(BASE_URL)
             return 0
         rumps.alert(
-            title="Lumen is starting",
-            message="Another Lumen process is already running. Try again in a moment.",
+            title="Virtus is starting",
+            message="Another Virtus process is already running. Try again in a moment.",
         )
         return 1
 
-    menu_app = LumenMenuBar(instance)
+    menu_app = VirtusMenuBar(instance)
     try:
         menu_app.start_server()
-        if os.getenv("LUMEN_DESKTOP_SMOKE_TEST", "") == "1":
+        if os.getenv("VIRTUS_DESKTOP_SMOKE_TEST", "") == "1":
             _validate_frozen_runtime()
             menu_app.stop_server()
             instance.close()
@@ -186,7 +186,7 @@ def main() -> int:
             logging.exception("desktop server cleanup failed")
         instance.close()
         rumps.alert(
-            title="Lumen could not start",
+            title="Virtus could not start",
             message=str(exc),
             ok="Close",
         )

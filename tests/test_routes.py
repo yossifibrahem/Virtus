@@ -1,5 +1,5 @@
 """
-Flask route integration tests for Lumen AI Chat.
+Flask route integration tests for Virtus AI Chat.
 
 Uses the `client` fixture (Flask test client against an isolated test app).
 Docker and OpenAI calls are mocked throughout.
@@ -30,17 +30,17 @@ from tests.conftest import make_png_b64
 
 class TestListConversations:
 
-    def test_empty_list(self, client, tmp_lumen):
+    def test_empty_list(self, client, tmp_virtus):
         resp = client.get("/api/conversations")
         assert resp.status_code == 200
         assert resp.json == []
 
-    def test_includes_created_conversation(self, client, tmp_lumen):
+    def test_includes_created_conversation(self, client, tmp_virtus):
         store.create("Alpha")
         resp = client.get("/api/conversations")
         assert any(c["title"] == "Alpha" for c in resp.json)
 
-    def test_activity_returns_only_active_ids_and_streams(self, client, tmp_lumen):
+    def test_activity_returns_only_active_ids_and_streams(self, client, tmp_virtus):
         store.create("Idle")
         active = store.create("Working")
         store.save(active["id"], {**active, "active_stream_id": "stream-1"})
@@ -53,7 +53,7 @@ class TestListConversations:
 
 class TestCreateConversation:
 
-    def test_returns_201_with_id(self, client, tmp_lumen):
+    def test_returns_201_with_id(self, client, tmp_virtus):
         resp = client.post("/api/conversations",
                            json={"title": "Named"},
                            content_type="application/json")
@@ -61,14 +61,14 @@ class TestCreateConversation:
         assert "id" in resp.json
         assert resp.json["title"] == "Named"
 
-    def test_default_title_when_missing(self, client, tmp_lumen):
+    def test_default_title_when_missing(self, client, tmp_virtus):
         resp = client.post("/api/conversations",
                            json={},
                            content_type="application/json")
         assert resp.status_code == 201
         assert resp.json.get("title")  # non-empty
 
-    def test_create_in_folder(self, client, tmp_lumen):
+    def test_create_in_folder(self, client, tmp_virtus):
         folder = store.create_folder("Shared")
         first = client.post("/api/conversations", json={"folder_id": folder["id"]}).json
         second = client.post("/api/conversations", json={"folder_id": folder["id"]}).json
@@ -77,14 +77,14 @@ class TestCreateConversation:
 
 
 class TestFolders:
-    def test_folder_routes(self, client, tmp_lumen):
+    def test_folder_routes(self, client, tmp_virtus):
         created = client.post("/api/folders", json={"name": "Project"})
         assert created.status_code == 201
         folder_id = created.json["id"]
         assert any(item["id"] == folder_id for item in client.get("/api/folders").json)
         assert client.put(f"/api/folders/{folder_id}", json={"name": "Renamed"}).json["name"] == "Renamed"
 
-    def test_folder_instructions_update_without_renaming(self, client, tmp_lumen):
+    def test_folder_instructions_update_without_renaming(self, client, tmp_virtus):
         folder = store.create_folder("Project")
         updated = client.put(
             f"/api/folders/{folder['id']}",
@@ -94,7 +94,7 @@ class TestFolders:
         assert updated.json["name"] == "Project"
         assert updated.json["system_prompt"] == "Always cite the workspace files."
 
-    def test_deleting_folder_deletes_chats_and_cleans_shared_runtime(self, client, tmp_lumen):
+    def test_deleting_folder_deletes_chats_and_cleans_shared_runtime(self, client, tmp_virtus):
         folder = store.create_folder("Shared")
         first = store.create("Delete me", folder["id"])
         second = store.create("Delete me too", folder["id"])
@@ -114,17 +114,17 @@ class TestFolders:
 
 class TestGetConversation:
 
-    def test_returns_200_for_existing(self, client, tmp_lumen):
+    def test_returns_200_for_existing(self, client, tmp_virtus):
         conv = store.create("get-me")
         resp = client.get(f"/api/conversations/{conv['id']}")
         assert resp.status_code == 200
         assert resp.json["title"] == "get-me"
 
-    def test_returns_404_for_missing(self, client, tmp_lumen):
+    def test_returns_404_for_missing(self, client, tmp_virtus):
         resp = client.get("/api/conversations/does-not-exist")
         assert resp.status_code == 404
 
-    def test_response_includes_working_directory(self, client, tmp_lumen):
+    def test_response_includes_working_directory(self, client, tmp_virtus):
         conv = store.create("wd-check")
         resp = client.get(f"/api/conversations/{conv['id']}")
         assert "working_directory" in resp.json
@@ -132,7 +132,7 @@ class TestGetConversation:
 
 class TestUpdateConversation:
 
-    def test_updates_title(self, client, tmp_lumen):
+    def test_updates_title(self, client, tmp_virtus):
         conv = store.create("old")
         resp = client.put(f"/api/conversations/{conv['id']}",
                           json={"title": "new"},
@@ -141,7 +141,7 @@ class TestUpdateConversation:
         assert resp.json["title"] == "new"
         assert resp.json["id"] == conv["id"]  # id must be preserved
 
-    def test_update_ignores_internal_field_overwrites(self, client, tmp_lumen):
+    def test_update_ignores_internal_field_overwrites(self, client, tmp_virtus):
         conv = store.create("locked")
         original_messages = [{"role": "user", "content": "safe"}]
         store.save(conv["id"], {**conv, "messages": original_messages, "active_stream_id": "stream-1"})
@@ -165,7 +165,7 @@ class TestUpdateConversation:
 
 class TestDeleteConversation:
 
-    def test_returns_ok_true(self, client, tmp_lumen):
+    def test_returns_ok_true(self, client, tmp_virtus):
         conv = store.create("delete-me")
         with patch("container_service.stop_container"), \
              patch("container_service.delete_workspace"):
@@ -173,20 +173,20 @@ class TestDeleteConversation:
         assert resp.status_code == 200
         assert resp.json["ok"] is True
 
-    def test_conversation_gone_after_delete(self, client, tmp_lumen):
+    def test_conversation_gone_after_delete(self, client, tmp_virtus):
         conv = store.create("gone")
         with patch("container_service.stop_container"), \
              patch("container_service.delete_workspace"):
             client.delete(f"/api/conversations/{conv['id']}")
         assert store.load(conv["id"]) is None
 
-    def test_returns_404_for_nonexistent(self, client, tmp_lumen):
+    def test_returns_404_for_nonexistent(self, client, tmp_virtus):
         with patch("container_service.stop_container"), \
              patch("container_service.delete_workspace"):
             resp = client.delete("/api/conversations/ghost-99")
         assert resp.status_code == 404
 
-    def test_folder_runtime_survives_deleting_all_its_chats(self, client, tmp_lumen):
+    def test_folder_runtime_survives_deleting_all_its_chats(self, client, tmp_virtus):
         folder = store.create_folder("Shared")
         first = store.create("One", folder["id"])
         second = store.create("Two", folder["id"])
@@ -201,14 +201,14 @@ class TestDeleteConversation:
 
 class TestConversationMetaRoutes:
 
-    def test_workspace_returns_absolute_path(self, client, tmp_lumen):
+    def test_workspace_returns_absolute_path(self, client, tmp_virtus):
         conv = store.create("ws")
         resp = client.get(f"/api/conversations/{conv['id']}/workspace")
         assert resp.status_code == 200
         wd = resp.json.get("working_directory", "")
         assert os.path.isabs(wd)  # must be an absolute host path (works on Windows too)
 
-    def test_container_status_for_known_conv(self, client, tmp_lumen):
+    def test_container_status_for_known_conv(self, client, tmp_virtus):
         conv = store.create("container")
         with patch("container_service.get_status", return_value="missing"):
             resp = client.get(f"/api/conversations/{conv['id']}/container")
@@ -227,12 +227,12 @@ class TestMcpConfigRoutes:
     def _isolate_mcp_json(self, tmp_path, monkeypatch):
         monkeypatch.setattr("mcp_service.MCP_CONFIG_FILE", tmp_path / "mcp.json")
 
-    def test_get_returns_empty_when_no_file(self, client, tmp_lumen):
+    def test_get_returns_empty_when_no_file(self, client, tmp_virtus):
         resp = client.get("/api/mcp/config")
         assert resp.status_code == 200
         assert resp.json == {"mcpServers": {}}
 
-    def test_post_saves_config(self, client, tmp_lumen):
+    def test_post_saves_config(self, client, tmp_virtus):
         config = {"mcpServers": {"fs": {"command": "npx", "args": []}}}
         resp = client.post("/api/mcp/config",
                            json=config,
@@ -240,26 +240,26 @@ class TestMcpConfigRoutes:
         assert resp.status_code == 200
         assert resp.json["ok"] is True
 
-    def test_post_then_get_roundtrip(self, client, tmp_lumen):
+    def test_post_then_get_roundtrip(self, client, tmp_virtus):
         config = {"mcpServers": {"bash": {"command": "bash", "args": []}}}
         client.post("/api/mcp/config", json=config, content_type="application/json")
         resp = client.get("/api/mcp/config")
         assert resp.json == config
 
-    def test_post_invalid_config_returns_400(self, client, tmp_lumen):
+    def test_post_invalid_config_returns_400(self, client, tmp_virtus):
         resp = client.post("/api/mcp/config",
                            json={"mcpServers": "not-an-object"},
                            content_type="application/json")
         assert resp.status_code == 400
         assert "error" in resp.json
 
-    def test_post_accepts_python_server_with_any_name(self, client, tmp_lumen):
+    def test_post_accepts_python_server_with_any_name(self, client, tmp_virtus):
         config = {"mcpServers": {"agent_tools": {"command": "python", "args": ["server.py"]}}}
         resp = client.post("/api/mcp/config", json=config)
         assert resp.status_code == 200
         assert client.get("/api/mcp/config").json == config
 
-    def test_no_config_discovers_no_tools_or_container(self, client, tmp_lumen, monkeypatch):
+    def test_no_config_discovers_no_tools_or_container(self, client, tmp_virtus, monkeypatch):
         from unittest.mock import Mock
 
         ensure = Mock()
@@ -275,7 +275,7 @@ class TestMcpConfigRoutes:
         stop.assert_not_called()
         fetch.assert_not_called()
 
-    def test_unconfigured_server_call_returns_404(self, client, tmp_lumen):
+    def test_unconfigured_server_call_returns_404(self, client, tmp_virtus):
         resp = client.post("/api/mcp/call", json={"server": "agent_tools", "tool": "read"})
         assert resp.status_code == 404
 
@@ -286,7 +286,7 @@ class TestMcpConfigRoutes:
 
 class TestImageRoutes:
 
-    def test_upload_valid_png_returns_ref_and_url(self, client, tmp_lumen):
+    def test_upload_valid_png_returns_ref_and_url(self, client, tmp_virtus):
         resp = client.post("/api/images",
                            json={"data": make_png_b64(), "media_type": "image/png"},
                            content_type="application/json")
@@ -294,20 +294,20 @@ class TestImageRoutes:
         assert "ref" in resp.json
         assert resp.json["url"].startswith("/api/images/")
 
-    def test_upload_invalid_base64_returns_400(self, client, tmp_lumen):
+    def test_upload_invalid_base64_returns_400(self, client, tmp_virtus):
         resp = client.post("/api/images",
                            json={"data": "not-base64!!!", "media_type": "image/png"},
                            content_type="application/json")
         assert resp.status_code == 400
         assert "error" in resp.json
 
-    def test_upload_unsupported_media_type_returns_400(self, client, tmp_lumen):
+    def test_upload_unsupported_media_type_returns_400(self, client, tmp_virtus):
         resp = client.post("/api/images",
                            json={"data": make_png_b64(), "media_type": "image/bmp"},
                            content_type="application/json")
         assert resp.status_code == 400
 
-    def test_serve_uploaded_image_200(self, client, tmp_lumen):
+    def test_serve_uploaded_image_200(self, client, tmp_virtus):
         upload = client.post("/api/images",
                              json={"data": make_png_b64(), "media_type": "image/png"},
                              content_type="application/json")
@@ -316,16 +316,16 @@ class TestImageRoutes:
         assert resp.status_code == 200
         assert resp.content_type.startswith("image/")
 
-    def test_serve_nonexistent_image_returns_404(self, client, tmp_lumen):
+    def test_serve_nonexistent_image_returns_404(self, client, tmp_virtus):
         resp = client.get("/api/images/" + "a" * 64 + ".png")
         assert resp.status_code == 404
 
-    def test_serve_unsafe_image_name_returns_404(self, client, tmp_lumen):
+    def test_serve_unsafe_image_name_returns_404(self, client, tmp_virtus):
         resp = client.get("/api/images/../../etc/passwd")
         # Flask will 404 or redirect — either way, not 200
         assert resp.status_code in (400, 404)
 
-    def test_same_content_deduplicated(self, client, tmp_lumen):
+    def test_same_content_deduplicated(self, client, tmp_virtus):
         b64 = make_png_b64()
         r1 = client.post("/api/images", json={"data": b64, "media_type": "image/png"},
                          content_type="application/json")
@@ -341,13 +341,13 @@ class TestImageRoutes:
 class TestWorkspaceFileRoutes:
 
     @pytest.fixture(autouse=True)
-    def worker_transport(self, monkeypatch, tmp_lumen):
+    def worker_transport(self, monkeypatch, tmp_virtus):
         # Exercise the actual worker and route contract with only Docker replaced.
         import sandbox_files
         import sandbox_runtime
         import json
         def transport(runtime_id, argv, payload, **kwargs):
-            root = tmp_lumen["containers_dir"] / runtime_id
+            root = tmp_virtus["containers_dir"] / runtime_id
             root.mkdir(parents=True, exist_ok=True)
             monkeypatch.setattr(sandbox_files, 'ROOT', root)
             try:
@@ -364,27 +364,27 @@ class TestWorkspaceFileRoutes:
             return 0, output.getvalue(), b''
         monkeypatch.setattr(sandbox_runtime, 'docker_operation', transport)
 
-    def _make_workspace(self, tmp_lumen) -> tuple[str, Path]:
+    def _make_workspace(self, tmp_virtus) -> tuple[str, Path]:
         conv = store.create("file-test")
         conv_id = conv["id"]
-        root = tmp_lumen["containers_dir"] / conv_id
+        root = tmp_virtus["containers_dir"] / conv_id
         root.mkdir(parents=True, exist_ok=True)
         return conv_id, root
 
-    def _make_folder_workspace(self, tmp_lumen) -> tuple[str, Path]:
+    def _make_folder_workspace(self, tmp_virtus) -> tuple[str, Path]:
         folder = store.create_folder("folder-files")
-        root = tmp_lumen["containers_dir"] / f"folder_{folder['id']}"
+        root = tmp_virtus["containers_dir"] / f"folder_{folder['id']}"
         root.mkdir(parents=True, exist_ok=True)
         return folder["id"], root
 
     @pytest.mark.parametrize('scope', ['conversation', 'folder'])
-    def test_file_download_works_above_storage_limit(self, client, tmp_lumen, scope):
+    def test_file_download_works_above_storage_limit(self, client, tmp_virtus, scope):
         import advanced_config
         if scope == 'conversation':
-            identifier, root = self._make_workspace(tmp_lumen)
+            identifier, root = self._make_workspace(tmp_virtus)
             base = f'/api/conversations/{identifier}/files'
         else:
-            identifier, root = self._make_folder_workspace(tmp_lumen)
+            identifier, root = self._make_folder_workspace(tmp_virtus)
             base = f'/api/folders/{identifier}/files'
         target = root / 'result.txt'
         target.write_text('result')
@@ -395,20 +395,20 @@ class TestWorkspaceFileRoutes:
         assert client.delete(base + '/download', query_string=query).status_code == 405
         assert client.get(base + '/download', query_string=query).data == b'result'
 
-    def test_list_unknown_conv_returns_error(self, client, tmp_lumen):
+    def test_list_unknown_conv_returns_error(self, client, tmp_virtus):
         resp = client.get("/api/conversations/ghost/files")
         # Service returns ({"error": ...}, 404) which route passes through
         assert resp.status_code in (404, 500)
 
-    def test_list_files_returns_200_with_entries(self, client, tmp_lumen):
-        conv_id, root = self._make_workspace(tmp_lumen)
+    def test_list_files_returns_200_with_entries(self, client, tmp_virtus):
+        conv_id, root = self._make_workspace(tmp_virtus)
         (root / "readme.md").write_text("# hi")
         resp = client.get(f"/api/conversations/{conv_id}/files")
         assert resp.status_code == 200
         assert "entries" in resp.json
 
-    def test_file_content_returns_text(self, client, tmp_lumen):
-        conv_id, root = self._make_workspace(tmp_lumen)
+    def test_file_content_returns_text(self, client, tmp_virtus):
+        conv_id, root = self._make_workspace(tmp_virtus)
         (root / "script.py").write_text("x = 42")
         resp = client.get(
             f"/api/conversations/{conv_id}/files/content",
@@ -420,8 +420,8 @@ class TestWorkspaceFileRoutes:
                             query_string={"path": "/workspace/script.py", "version": resp.json["version"]})
         assert cached.json == {"unchanged": True}
 
-    def test_file_download_returns_attachment(self, client, tmp_lumen):
-        conv_id, root = self._make_workspace(tmp_lumen)
+    def test_file_download_returns_attachment(self, client, tmp_virtus):
+        conv_id, root = self._make_workspace(tmp_virtus)
         (root / "data.txt").write_text("download me")
         resp = client.get(
             f"/api/conversations/{conv_id}/files/download",
@@ -431,12 +431,12 @@ class TestWorkspaceFileRoutes:
         assert b"download me" in resp.data
 
     @pytest.mark.parametrize('scope', ['conversation', 'folder'])
-    def test_pdf_preview_serves_complete_inline_file(self, client, tmp_lumen, scope):
+    def test_pdf_preview_serves_complete_inline_file(self, client, tmp_virtus, scope):
         if scope == 'conversation':
-            identifier, root = self._make_workspace(tmp_lumen)
+            identifier, root = self._make_workspace(tmp_virtus)
             base = f'/api/conversations/{identifier}'
         else:
-            identifier, root = self._make_folder_workspace(tmp_lumen)
+            identifier, root = self._make_folder_workspace(tmp_virtus)
             base = f'/api/folders/{identifier}'
         raw = b'%PDF-1.7\ncomplete PDF bytes'
         (root / 'report.pdf').write_bytes(raw)
@@ -466,13 +466,13 @@ class TestWorkspaceFileRoutes:
         assert client.get(f'{base}/files/pdf', query_string={'path': '../escape.pdf'}).status_code == 400
 
     @pytest.mark.parametrize('scope', ['conversation', 'folder'])
-    def test_notebook_preview_range_reaches_shared_renderer(self, client, tmp_lumen, scope):
+    def test_notebook_preview_range_reaches_shared_renderer(self, client, tmp_virtus, scope):
         import json
         if scope == 'conversation':
-            identifier, root = self._make_workspace(tmp_lumen)
+            identifier, root = self._make_workspace(tmp_virtus)
             base = f'/api/conversations/{identifier}'
         else:
-            identifier, root = self._make_folder_workspace(tmp_lumen)
+            identifier, root = self._make_folder_workspace(tmp_virtus)
             base = f'/api/folders/{identifier}'
         (root / 'book.ipynb').write_text(json.dumps({'cells': [
             {'cell_type': 'code', 'source': [str(n)]} for n in range(25)
@@ -482,24 +482,24 @@ class TestWorkspaceFileRoutes:
         assert response.json['preview_kind'] == 'notebook'
         assert (response.json['start'], response.json['end'], response.json['total']) == (21, 25, 25)
 
-    def test_download_nonexistent_file_returns_404(self, client, tmp_lumen):
-        conv_id, root = self._make_workspace(tmp_lumen)
+    def test_download_nonexistent_file_returns_404(self, client, tmp_virtus):
+        conv_id, root = self._make_workspace(tmp_virtus)
         resp = client.get(
             f"/api/conversations/{conv_id}/files/download",
             query_string={"path": "/workspace/ghost.txt"},
         )
         assert resp.status_code == 404
 
-    def test_list_with_traversal_path_returns_400(self, client, tmp_lumen):
-        conv_id, root = self._make_workspace(tmp_lumen)
+    def test_list_with_traversal_path_returns_400(self, client, tmp_virtus):
+        conv_id, root = self._make_workspace(tmp_virtus)
         resp = client.get(
             f"/api/conversations/{conv_id}/files",
             query_string={"path": "../escape"},
         )
         assert resp.status_code == 400
 
-    def test_folder_workspace_lists_shared_files_without_a_conversation(self, client, tmp_lumen):
-        folder_id, root = self._make_folder_workspace(tmp_lumen)
+    def test_folder_workspace_lists_shared_files_without_a_conversation(self, client, tmp_virtus):
+        folder_id, root = self._make_folder_workspace(tmp_virtus)
         (root / "shared.md").write_text("# shared")
 
         resp = client.get(f"/api/folders/{folder_id}/files")
@@ -507,8 +507,8 @@ class TestWorkspaceFileRoutes:
         assert resp.status_code == 200
         assert [entry["name"] for entry in resp.json["entries"]] == ["shared.md"]
 
-    def test_folder_workspace_previews_and_downloads_shared_file(self, client, tmp_lumen):
-        folder_id, root = self._make_folder_workspace(tmp_lumen)
+    def test_folder_workspace_previews_and_downloads_shared_file(self, client, tmp_virtus):
+        folder_id, root = self._make_folder_workspace(tmp_virtus)
         (root / "notes.txt").write_text("folder notes")
 
         preview = client.get(
@@ -525,7 +525,7 @@ class TestWorkspaceFileRoutes:
         assert download.status_code == 200
         assert download.data == b"folder notes"
 
-    def test_missing_folder_workspace_returns_404(self, client, tmp_lumen):
+    def test_missing_folder_workspace_returns_404(self, client, tmp_virtus):
         missing_id = "00000000-0000-0000-0000-000000000000"
         assert client.get(f"/api/folders/{missing_id}/files").status_code == 404
 
@@ -536,20 +536,20 @@ class TestWorkspaceFileRoutes:
 
 class TestChatStreamRoutes:
 
-    def test_cancel_unknown_stream_returns_404(self, client, tmp_lumen):
+    def test_cancel_unknown_stream_returns_404(self, client, tmp_virtus):
         resp = client.post("/api/chat/cancel",
                            json={"stream_id": "ghost-stream"},
                            content_type="application/json")
         assert resp.status_code == 404
         assert "error" in resp.json
 
-    def test_attach_to_nonexistent_stream_returns_404(self, client, tmp_lumen):
+    def test_attach_to_nonexistent_stream_returns_404(self, client, tmp_virtus):
         resp = client.post("/api/chat/stream",
                            json={"stream_id": "ghost-stream", "attach": True},
                            content_type="application/json")
         assert resp.status_code == 404
 
-    def test_approve_rejects_unknown_stream(self, client, tmp_lumen):
+    def test_approve_rejects_unknown_stream(self, client, tmp_virtus):
         # Unknown streams cannot be approved.
         resp = client.post("/api/chat/approve",
                            json={"stream_id": "ghost", "call_id": "c1", "approved": True},
@@ -563,7 +563,7 @@ class TestChatStreamRoutes:
 
 class TestModelsRoute:
 
-    def test_returns_model_list(self, client, tmp_lumen):
+    def test_returns_model_list(self, client, tmp_virtus):
         mock_model = MagicMock()
         mock_model.id = "gpt-4o"
         mock_client = MagicMock()
@@ -577,7 +577,7 @@ class TestModelsRoute:
         assert "models" in resp.json
         assert "gpt-4o" in resp.json["models"]
 
-    def test_bad_api_key_returns_400(self, client, tmp_lumen):
+    def test_bad_api_key_returns_400(self, client, tmp_virtus):
         mock_client = MagicMock()
         mock_client.models.list.side_effect = Exception("invalid api key")
 
@@ -595,7 +595,7 @@ class TestModelsRoute:
 
 class TestIndexRoute:
 
-    def test_renders_app_shell(self, client, tmp_lumen):
+    def test_renders_app_shell(self, client, tmp_virtus):
         resp = client.get("/")
         assert resp.status_code == 200
         # Must contain the top-level script tag that bootstraps the app
@@ -610,7 +610,7 @@ class TestIndexRoute:
             title="Docker is not running",
             message="Please start Docker, then click Retry.",
             action="retry",
-            image="lumen-sandbox",
+            image="virtus-sandbox",
         )
         monkeypatch.setattr(runtime_requirements, "check_requirements", lambda: missing)
 
@@ -619,7 +619,7 @@ class TestIndexRoute:
         assert resp.status_code == 200
         assert b"Docker is not running" in resp.data
         assert b"Please start Docker, then click Retry." in resp.data
-        assert b'name="lumen-startup-token"' in resp.data
+        assert b'name="virtus-startup-token"' in resp.data
 
 
 # ===========================================================================
@@ -638,11 +638,11 @@ class TestStartupRequirementRoutes:
             title="Docker is not running",
             message="Please start Docker.",
             action="start_docker",
-            image="lumen-sandbox",
+            image="virtus-sandbox",
         )
         monkeypatch.setattr(runtime_requirements, "check_requirements", lambda: missing)
         response = client.get("/")
-        match = re.search(rb'name="lumen-startup-token" content="([^"]+)"', response.data)
+        match = re.search(rb'name="virtus-startup-token" content="([^"]+)"', response.data)
         assert match is not None
         return match.group(1).decode()
 
@@ -651,14 +651,14 @@ class TestStartupRequirementRoutes:
         return {
             "Origin": origin,
             "Sec-Fetch-Site": "same-origin" if origin == "http://localhost" else "cross-site",
-            "X-Lumen-Startup-Token": token,
+            "X-Virtus-Startup-Token": token,
         }
 
-    def test_health_identifies_lumen_and_version(self, client):
+    def test_health_identifies_virtus_and_version(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json["ok"] is True
-        assert resp.json["app"] == "lumen-ai-chat"
+        assert resp.json["app"] == "virtus-ai-chat"
         assert resp.json["version"]
 
     def test_requirements_returns_503_when_not_ready(self, client, monkeypatch):
@@ -667,10 +667,10 @@ class TestStartupRequirementRoutes:
         missing = runtime_requirements.RequirementStatus(
             ok=False,
             code="sandbox_image_missing",
-            title="The Lumen sandbox image has not been built",
+            title="The Virtus sandbox image has not been built",
             message="Click Build Sandbox Image.",
             action="build",
-            image="lumen-sandbox",
+            image="virtus-sandbox",
         )
         monkeypatch.setattr(runtime_requirements, "check_requirements", lambda: missing)
 
@@ -690,7 +690,7 @@ class TestStartupRequirementRoutes:
             title="Docker is starting",
             message="Waiting for Docker.",
             action="retry",
-            image="lumen-sandbox",
+            image="virtus-sandbox",
         )
         monkeypatch.setattr(runtime_requirements, "start_docker_desktop", lambda: starting)
 
@@ -753,10 +753,10 @@ class TestStartupRequirementRoutes:
         done = runtime_requirements.RequirementStatus(
             ok=True,
             code="ok",
-            title="Lumen is ready",
+            title="Virtus is ready",
             message="Ready.",
             action="continue",
-            image="lumen-sandbox",
+            image="virtus-sandbox",
         )
         monkeypatch.setattr(
             runtime_requirements,
@@ -780,7 +780,7 @@ class TestStartupRequirementRoutes:
 
 class TestMcpToolsDiscoveryRoutes:
 
-    def test_no_conversation_uses_reusable_discovery_container(self, client, tmp_lumen):
+    def test_no_conversation_uses_reusable_discovery_container(self, client, tmp_virtus):
         config = {"mcpServers": {"fs": {"command": "npx", "args": []}}}
 
         def fake_fetch(server_name, server_config, *, conv_id=""):
@@ -820,7 +820,7 @@ class TestMcpToolsDiscoveryRoutes:
         )
         stop_container_process.assert_called_once_with("mcp-discovery")
 
-    def test_existing_conversation_keeps_real_conversation_id(self, client, tmp_lumen):
+    def test_existing_conversation_keeps_real_conversation_id(self, client, tmp_virtus):
         config = {"mcpServers": {"bash": {"command": "bash", "args": []}}}
 
         def fake_fetch(server_name, server_config, *, conv_id=""):
@@ -853,7 +853,7 @@ class TestMcpToolsDiscoveryRoutes:
             conv_id=conv["id"],
         )
 
-    def test_skipped_server_reason_is_preserved(self, client, tmp_lumen):
+    def test_skipped_server_reason_is_preserved(self, client, tmp_virtus):
         from mcp_adapters import ContainerConversationRequired
 
         config = {"mcpServers": {"remote": {"command": "npx", "args": []}}}
@@ -878,7 +878,7 @@ class TestMcpToolsDiscoveryRoutes:
         stop_container_process.assert_called_once_with("mcp-discovery")
 
 
-def test_direct_mcp_call_tracks_shared_runtime_activity(client, tmp_lumen, monkeypatch):
+def test_direct_mcp_call_tracks_shared_runtime_activity(client, tmp_virtus, monkeypatch):
     import sandbox_runtime
     conv = store.create('MCP activity')
     monkeypatch.setattr('mcp_service.find_server', lambda name: {'command': 'example'})
@@ -894,7 +894,7 @@ def test_direct_mcp_call_tracks_shared_runtime_activity(client, tmp_lumen, monke
     assert not sandbox_runtime.is_active(conv['id'])
 
 
-def test_moving_last_chat_keeps_folder_workspace(client, tmp_lumen):
+def test_moving_last_chat_keeps_folder_workspace(client, tmp_virtus):
     folder = store.create_folder('Project')
     conv = store.create('Last chat', folder['id'])
     with patch('container_service.stop_container') as stop, patch('container_service.delete_workspace') as remove:
@@ -905,7 +905,7 @@ def test_moving_last_chat_keeps_folder_workspace(client, tmp_lumen):
     assert store.get_folder(folder['id'])
 
 
-def test_delete_all_includes_empty_folders_and_removes_shared_runtime_once(client, tmp_lumen):
+def test_delete_all_includes_empty_folders_and_removes_shared_runtime_once(client, tmp_virtus):
     empty = store.create_folder('Empty')
     shared = store.create_folder('Shared')
     store.create('One', shared['id'])
@@ -938,7 +938,7 @@ def test_conversation_and_workspace_routes_read_history_once(client, monkeypatch
     {"mcp_tool_meta": [{"name": "tool", "server": "srv", "autoApprove": "false"}]},
     {"temperature": None}, {"temperature": "NaN"}, {"title": {}},
 ])
-def test_malformed_turn_rejected_before_starting_worker(client, tmp_lumen, invalid):
+def test_malformed_turn_rejected_before_starting_worker(client, tmp_virtus, invalid):
     conversation = store.create("Safe")
     with patch("routes_chat.threading.Thread") as worker:
         response = client.post("/api/chat/stream", json={"conv_id": conversation["id"], **invalid})
@@ -949,7 +949,7 @@ def test_malformed_turn_rejected_before_starting_worker(client, tmp_lumen, inval
 
 
 @pytest.mark.parametrize("folder", [False, True])
-def test_failed_container_removal_preserves_conversations_and_files(client, tmp_lumen, folder):
+def test_failed_container_removal_preserves_conversations_and_files(client, tmp_virtus, folder):
     project = store.create_folder("Project") if folder else None
     conversation = store.create("Keep", project["id"] if project else None)
     path = f"/api/folders/{project['id']}" if project else f"/api/conversations/{conversation['id']}"
@@ -963,7 +963,7 @@ def test_failed_container_removal_preserves_conversations_and_files(client, tmp_
     remove.assert_not_called()
 
 
-def test_delete_all_confirms_all_containers_removed_before_removing_files(client, tmp_lumen):
+def test_delete_all_confirms_all_containers_removed_before_removing_files(client, tmp_virtus):
     first, second = store.create("One"), store.create("Two")
     with patch("container_service.stop_container", side_effect=[None, RuntimeError("Docker unavailable")]), \
          patch("container_service.delete_workspace") as remove:
@@ -973,7 +973,7 @@ def test_delete_all_confirms_all_containers_removed_before_removing_files(client
     remove.assert_not_called()
 
 
-def test_failed_sandbox_removal_preserves_standalone_chat_when_moving(client, tmp_lumen):
+def test_failed_sandbox_removal_preserves_standalone_chat_when_moving(client, tmp_virtus):
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
     workspace = Path(conversation["working_directory"])
@@ -990,7 +990,7 @@ def test_failed_sandbox_removal_preserves_standalone_chat_when_moving(client, tm
     assert source.read_text() == "Keep source files"
 
 
-def test_standalone_move_revokes_container_before_save_and_removes_files_after(client, tmp_lumen):
+def test_standalone_move_revokes_container_before_save_and_removes_files_after(client, tmp_virtus):
     import container_service
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
@@ -1026,7 +1026,7 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
     assert not (Path(response.json["working_directory"]) / source.name).exists()
 
 
-def test_failed_move_save_preserves_source_workspace(client, tmp_lumen):
+def test_failed_move_save_preserves_source_workspace(client, tmp_virtus):
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
     source = Path(conversation["working_directory"]) / "keep.txt"

@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 SOURCE_VERSION = "0.1.0-dev"
-LOCAL_SANDBOX_IMAGE = "lumen-sandbox:latest"
+LOCAL_SANDBOX_IMAGE = "virtus-sandbox:latest"
 _SANDBOX_FIXED_INPUTS = (
     ".dockerignore",
     "Dockerfile.sandbox",
@@ -84,7 +84,7 @@ def _bundled_metadata() -> dict:
 
 _METADATA = _bundled_metadata()
 APP_VERSION = str(
-    os.getenv("LUMEN_APP_VERSION")
+    os.getenv("VIRTUS_APP_VERSION")
     or _METADATA.get("version")
     or SOURCE_VERSION
 ).strip()
@@ -92,7 +92,7 @@ DEFAULT_SANDBOX_IMAGE = str(
     _METADATA.get("sandbox_image")
     or LOCAL_SANDBOX_IMAGE
 ).strip()
-DESKTOP_PORT = int(os.getenv("LUMEN_DESKTOP_PORT", "38492"))
-APP_ID = "lumen-ai-chat"
-CONTAINER_BUILD_LABEL = "com.lumen.sandbox.image"
-CONTAINER_IDENTITY_LABEL = "com.lumen.sandbox.identity"
+DESKTOP_PORT = int(os.getenv("VIRTUS_DESKTOP_PORT", "38492"))
+APP_ID = "virtus-ai-chat"
+CONTAINER_BUILD_LABEL = "com.virtus.sandbox.image"
+CONTAINER_IDENTITY_LABEL = "com.virtus.sandbox.identity"

@@ -1,6 +1,6 @@
 """App-owned, bounded global memory with optimistic revisions and atomic writes.
 
-Memory is stored as a JSON object in ~/.lumen/memory.json.
+Memory is stored as a JSON object in ~/.virtus/memory.json.
 No container receives this path.
 The local application is single-process; one lock serializes all chats and UI edits.
 """
@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from fs_utils import atomic_replace
 
-MEMORY_FILE = Path.home() / '.lumen' / 'memory.json'
+MEMORY_FILE = Path.home() / '.virtus' / 'memory.json'
 LIMIT = 32768
 # JSON escapes can use six bytes per content byte, plus object/formatting overhead.
 FILE_LIMIT = LIMIT * 6 + 1024

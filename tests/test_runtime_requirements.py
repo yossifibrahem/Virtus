@@ -267,7 +267,7 @@ def test_build_stream_uses_bundled_context_and_identity_label(monkeypatch, tmp_p
 
     assert events[-1][0] == "done"
     assert calls[0][1] == tmp_path
-    assert "LUMEN_SANDBOX_IDENTITY=expected-identity" in calls[0][0]
+    assert "VIRTUS_SANDBOX_IDENTITY=expected-identity" in calls[0][0]
     assert "test-sandbox:latest" in calls[0][0]
 
 

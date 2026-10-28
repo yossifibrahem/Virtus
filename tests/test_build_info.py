@@ -11,16 +11,16 @@ import build_info
 
 def test_source_build_defaults_to_local_first_run_image():
     if not build_info.is_frozen():
-        assert build_info.DEFAULT_SANDBOX_IMAGE == "lumen-sandbox:latest"
+        assert build_info.DEFAULT_SANDBOX_IMAGE == "virtus-sandbox:latest"
 
 
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("lumen-sandbox", "lumen-sandbox:latest"),
-        ("lumen-sandbox:7", "lumen-sandbox:7"),
-        ("registry.example:5000/lumen/sandbox", "registry.example:5000/lumen/sandbox:latest"),
-        ("registry.example/lumen/sandbox@sha256:abc", "registry.example/lumen/sandbox@sha256:abc"),
+        ("virtus-sandbox", "virtus-sandbox:latest"),
+        ("virtus-sandbox:7", "virtus-sandbox:7"),
+        ("registry.example:5000/virtus/sandbox", "registry.example:5000/virtus/sandbox:latest"),
+        ("registry.example/virtus/sandbox@sha256:abc", "registry.example/virtus/sandbox@sha256:abc"),
     ],
 )
 def test_canonical_image_reference(value, expected):

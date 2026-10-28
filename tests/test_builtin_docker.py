@@ -1,4 +1,4 @@
-"""Opt-in real Docker integration: LUMEN_RUN_DOCKER_TESTS=1 pytest tests/test_builtin_docker.py."""
+"""Opt-in real Docker integration: VIRTUS_RUN_DOCKER_TESTS=1 pytest tests/test_builtin_docker.py."""
 import json
 import os
 import threading
@@ -12,14 +12,14 @@ import docker_cli
 import advanced_config
 import build_info
 
-pytestmark = pytest.mark.skipif(os.getenv('LUMEN_RUN_DOCKER_TESTS') != '1', reason='Opt-in Docker integration')
+pytestmark = pytest.mark.skipif(os.getenv('VIRTUS_RUN_DOCKER_TESTS') != '1', reason='Opt-in Docker integration')
 
 
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
-    image = os.getenv('LUMEN_TEST_SANDBOX_IMAGE', 'lumen-sandbox:builtins-test')
+    image = os.getenv('VIRTUS_TEST_SANDBOX_IMAGE', 'virtus-sandbox:builtins-test')
     monkeypatch.setattr(containers, 'CONTAINERS_ROOT', tmp_path / 'workspaces')
-    monkeypatch.setattr(containers, 'CONTAINER_PREFIX', 'lumen-integration-')
+    monkeypatch.setattr(containers, 'CONTAINER_PREFIX', 'virtus-integration-')
     monkeypatch.setattr(advanced_config, 'load_advanced_config', lambda: {
         'sandbox_image': image, 'container_memory': '512m', 'container_cpus': '1',
         'container_network': 'bridge', 'container_idle_timeout': 600,

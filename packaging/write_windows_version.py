@@ -18,7 +18,7 @@ def main() -> None:
     match = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
     if not match:
         raise ValueError(f"Unsupported Windows release version: {version!r}")
-    build_number = os.getenv("LUMEN_BUILD_NUMBER", "").strip()
+    build_number = os.getenv("VIRTUS_BUILD_NUMBER", "").strip()
     build = int(build_number) if build_number.isdigit() else 0
     numbers = (*[int(value) for value in match.groups()], build)
     numeric = ", ".join(str(value) for value in numbers)
@@ -38,12 +38,12 @@ def main() -> None:
     StringFileInfo([
       StringTable(
         '040904B0',
-        [StringStruct('CompanyName', 'Lumen'),
-         StringStruct('FileDescription', 'Lumen AI Chat'),
+        [StringStruct('CompanyName', 'Virtus'),
+         StringStruct('FileDescription', 'Virtus AI Chat'),
          StringStruct('FileVersion', '{dotted}'),
-         StringStruct('InternalName', 'Lumen AI Chat'),
-         StringStruct('OriginalFilename', 'Lumen AI Chat.exe'),
-         StringStruct('ProductName', 'Lumen AI Chat'),
+         StringStruct('InternalName', 'Virtus AI Chat'),
+         StringStruct('OriginalFilename', 'Virtus AI Chat.exe'),
+         StringStruct('ProductName', 'Virtus AI Chat'),
          StringStruct('ProductVersion', '{version}')])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

@@ -103,7 +103,7 @@ function enhanceWorkspaceFileLinks(root) {
     anchor.dataset.workspacePath = filePath;
     anchor.addEventListener('click', e => {
       e.preventDefault();
-      document.dispatchEvent(new CustomEvent('lumen:open-workspace-file', { detail: { path: filePath } }));
+      document.dispatchEvent(new CustomEvent('virtus:open-workspace-file', { detail: { path: filePath } }));
     });
   });
 }

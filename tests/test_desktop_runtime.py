@@ -6,7 +6,7 @@ import pytest
 import desktop_runtime
 
 
-@pytest.mark.parametrize("payload, expected", [({"app": "lumen-ai-chat"}, {"app": "lumen-ai-chat"}), ([], None), ("invalid", None)])
+@pytest.mark.parametrize("payload, expected", [({"app": "virtus-ai-chat"}, {"app": "virtus-ai-chat"}), ([], None), ("invalid", None)])
 def test_health_probe_bounds_reads_and_accepts_only_objects(monkeypatch, payload, expected):
     body = b"not json" if payload == "invalid" else json.dumps(payload).encode()
 

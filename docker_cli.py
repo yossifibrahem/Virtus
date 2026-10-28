@@ -38,7 +38,7 @@ def _windows_docker_roots() -> list[Path]:
 
 def candidate_paths() -> list[str]:
     candidates: list[str] = []
-    explicit = os.getenv("LUMEN_DOCKER_PATH", "").strip()
+    explicit = os.getenv("VIRTUS_DOCKER_PATH", "").strip()
     if explicit:
         candidates.append(explicit)
 

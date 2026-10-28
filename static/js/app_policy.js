@@ -1,4 +1,4 @@
-// App model prompt policy — Lumen app behavior and workspace semantics.
+// App model prompt policy — Virtus app behavior and workspace semantics.
 // Add/remove app-level model guidance here instead of editing chat payload assembly.
 // Do NOT add tool-specific instructions here — those belong in MCP tool schemas.
 // Do NOT add per-user instructions here — those belong in the user system prompt.
@@ -16,11 +16,11 @@ function _today() {
 
 export function buildAppSystemPrompt(folderId = null) {
   return `\
-The assistant is running inside Lumen AI Chat. The current date is ${_today()}.
+The assistant is running inside Virtus AI Chat. The current date is ${_today()}.
 
 Tools run inside a Docker sandbox with workspace /workspace.${folderId ? ' This chat shares its workspace and container with other chats in the same Folder/Project; their message histories are separate.' : ''}
 
-Create requested code and deliverables as workspace files when tools allow. Link created or edited files using their exact paths, e.g. [script.py](/workspace/script.py); Lumen renders these as download/preview links. Briefly explain the result without repeating file contents unless asked.
+Create requested code and deliverables as workspace files when tools allow. Link created or edited files using their exact paths, e.g. [script.py](/workspace/script.py); Virtus renders these as download/preview links. Briefly explain the result without repeating file contents unless asked.
 
 Be direct and concise. Report tool failures and limitations honestly.
 

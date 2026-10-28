@@ -1,28 +1,28 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-  <meta name="lumen-csrf" content="{{ session.get('csrf', '') }}">
+  <meta name="virtus-csrf" content="{{ session.get('csrf', '') }}">
   <script src="{{ url_for('static', filename='js/request_security.js') }}"></script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="lumen-startup-token" content="{{ startup_token }}" />
-<title>Lumen · Setup Required</title>
-<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
-<link rel="shortcut icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml" />
+<meta name="virtus-startup-token" content="{{ startup_token }}" />
+<title>Virtus · Setup Required</title>
+<link rel="icon" href="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-dark="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-light="{{ url_for('static', filename='virtus-logo-light.png') }}" type="image/png" />
+<link rel="shortcut icon" href="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-dark="{{ url_for('static', filename='virtus-logo-dark.png') }}" data-logo-light="{{ url_for('static', filename='virtus-logo-light.png') }}" type="image/png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
 <script>
 (function () {
   try {
-    var prefs = JSON.parse(localStorage.getItem('lumen_customization') || '{}');
+    var prefs = JSON.parse(localStorage.getItem('virtus_customization') || '{}');
     var root = document.documentElement;
     var theme = prefs.theme || 'auto';
     if (theme === 'auto') theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     theme = theme === 'light' ? 'light' : 'dark';
     root.setAttribute('data-theme', theme);
 
-    var hex = prefs.customAccentColor || prefs.accentColor || '#5B8DEF';
+    var hex = prefs.customAccentColor || prefs.accentColor || '#DDB37E';
     if (/^#[0-9a-f]{6}$/i.test(hex || '')) {
       var n = parseInt(hex.slice(1), 16);
       var rr = (n >> 16) & 255, gg = (n >> 8) & 255, bb = n & 255;
@@ -112,12 +112,13 @@
     .setup-actions { flex-direction: column; }
   }
 </style>
+<script src="{{ url_for('static', filename='js/brand_assets.js') }}" defer></script>
 </head>
 <body class="setup-page">
   <main class="setup-wrap">
-    <div class="logo setup-logo" aria-label="Lumen">
-      <div class="logo-mark">L</div>
-      <span class="logo-name">Lu<em>men</em></span>
+    <div class="logo setup-logo" aria-label="Virtus">
+      <div class="logo-mark"><img class="brand-logo-dark" src="{{ url_for('static', filename='virtus-logo-dark.png') }}" alt="" /><img class="brand-logo-light" src="{{ url_for('static', filename='virtus-logo-light.png') }}" alt="" /></div>
+      <span class="logo-name">Virtus</span>
     </div>
 
     <section class="setup-card" data-action="{{ status.action or '' }}">
@@ -129,7 +130,7 @@
       </div>
       <div class="setup-actions">
         <button id="start-docker" class="btn-secondary" type="button">Start Docker</button>
-        <button id="build" class="btn-primary" type="button">Install Lumen Tools</button>
+        <button id="build" class="btn-primary" type="button">Install Virtus Tools</button>
         <button id="retry" class="btn-primary" type="button">Retry</button>
       </div>
     </section>
@@ -143,8 +144,8 @@ const details = document.getElementById('details');
 const retry = document.getElementById('retry');
 const build = document.getElementById('build');
 const startDocker = document.getElementById('start-docker');
-const startupToken = document.querySelector('meta[name="lumen-startup-token"]').content;
-const startupHeaders = { 'X-Lumen-Startup-Token': startupToken };
+const startupToken = document.querySelector('meta[name="virtus-startup-token"]').content;
+const startupHeaders = { 'X-Virtus-Startup-Token': startupToken };
 
 function render(status) {
   if (status.ok) return location.reload();
@@ -233,7 +234,7 @@ async function buildImage() {
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.error || 'Lumen Tools installation was refused');
+      throw new Error(payload.error || 'Virtus Tools installation was refused');
     }
 
     const reader = response.body.getReader();
@@ -255,13 +256,13 @@ async function buildImage() {
   } catch (error) {
     render({
       title: 'Build failed',
-      message: 'Lumen Tools could not be installed. Reload this page before trying again.',
+      message: 'Virtus Tools could not be installed. Reload this page before trying again.',
       details: error.message,
       action: 'retry',
     });
   } finally {
     build.disabled = retry.disabled = false;
-    build.textContent = 'Install Lumen Tools';
+    build.textContent = 'Install Virtus Tools';
   }
 }
 

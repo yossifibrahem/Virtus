@@ -200,7 +200,7 @@ def write(path, content, old_text=None, replace_all=False):
     def unchanged():
         if (fingerprint(path) if path.exists() else None) != original:
             raise ValueError('File changed concurrently; reread it before editing')
-    fd, temp = tempfile.mkstemp(prefix='.lumen-', dir=path.parent)
+    fd, temp = tempfile.mkstemp(prefix='.virtus-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)

@@ -10,7 +10,7 @@ This document records historical Windows packaging attempts and their validation
 
 The intended product remains:
 
-- a consistent Lumen desktop experience on macOS and Windows;
+- a consistent Virtus desktop experience on macOS and Windows;
 - no prerequisite for normal users other than Docker Desktop and an internet connection;
 - the sandbox Dockerfile bundled with the application and built locally;
 - no separately installed Python, Node.js, MCP server, terminal, or development toolchain;
@@ -39,7 +39,7 @@ The attempt used PyInstaller `onedir`, Waitress, and `pystray` to produce a port
 
 ### 1. Shutdown lifecycle
 
-Selecting **Quit Lumen** could stop the local server while leaving the Windows process and tray icon alive for several minutes.
+Selecting **Quit Virtus** could stop the local server while leaving the Windows process and tray icon alive for several minutes.
 
 Verified contributing factors:
 
@@ -52,11 +52,11 @@ A future implementation should define one application-wide shutdown deadline, re
 
 ### 2. False sandbox-image installation prompt
 
-The Windows package sometimes displayed **Lumen tools need to be installed** even though the local image already existed and its inputs had not changed.
+The Windows package sometimes displayed **Virtus tools need to be installed** even though the local image already existed and its inputs had not changed.
 
 Two distinct causes were identified:
 
-- On the tested Docker Desktop installation, `docker image ls` showed `lumen-sandbox:latest`, `docker image inspect lumen-sandbox` reported `No such image`, and `docker image inspect lumen-sandbox:latest` succeeded. Docker image references should therefore be canonicalized explicitly before inspection and execution.
+- On the tested Docker Desktop installation, `docker image ls` showed `virtus-sandbox:latest`, `docker image inspect virtus-sandbox` reported `No such image`, and `docker image inspect virtus-sandbox:latest` succeeded. Docker image references should therefore be canonicalized explicitly before inspection and execution.
 - Sandbox compatibility was tied to the desktop application version. That is a cross-platform design problem: a packaging-only release could unnecessarily invalidate the same Docker/MCP image on either Windows or macOS.
 
 A future implementation should identify the sandbox by a stable content digest derived only from inputs that affect the image, such as:
@@ -111,13 +111,13 @@ Before committing a new Windows implementation, verify all of the following from
 5. Discover and invoke both bundled and configured external MCP servers.
 6. Confirm that no terminal windows flash during Docker or MCP operations.
 7. Quit with zero, one, and multiple active MCP sessions; the tray icon should remain during cleanup and the process should exit within the documented deadline.
-8. Confirm that no Lumen process, listening port, owned container, or stale instance lock remains after Quit.
+8. Confirm that no Virtus process, listening port, owned container, or stale instance lock remains after Quit.
 9. Run the complete automated test suite on Windows and the macOS launcher contract tests.
 10. Confirm that macOS packaging files and native behavior have no unintended diff.
 
 ## Evidence retained
 
-During the reverted attempt, the final experimental package passed 416 tests with one skipped. A real packaged startup followed by the internal Quit path exited with code `0`, left zero Lumen processes, and completed in 8.66 seconds. These results demonstrate useful techniques, but they do not justify retaining the broader experimental source changes; the next implementation should reproduce the behavior through the narrower boundaries above.
+During the reverted attempt, the final experimental package passed 416 tests with one skipped. A real packaged startup followed by the internal Quit path exited with code `0`, left zero Virtus processes, and completed in 8.66 seconds. These results demonstrate useful techniques, but they do not justify retaining the broader experimental source changes; the next implementation should reproduce the behavior through the narrower boundaries above.
 
 ## Rollback verification
 
@@ -137,7 +137,7 @@ unchanged. Shared changes are limited to image identity/classification, Docker
 process discovery, MCP stderr/session cleanup, and the application shutdown
 coordinator.
 
-The sandbox now uses the explicit `lumen-sandbox:latest` reference and a
+The sandbox now uses the explicit `virtus-sandbox:latest` reference and a
 platform-independent SHA-256 over only the Docker/MCP build inputs. A legacy
 version-labelled image produced one `sandbox_image_outdated` state. After one
 content-identity build it returned `ok`; a separately frozen desktop
@@ -150,7 +150,7 @@ Acceptance evidence from a clean extracted Windows ZIP:
 
 - PyInstaller produced a complete `onedir` archive and SHA-256; the extracted
   executable passed frozen-resource and server smoke mode.
-- The executable PE subsystem is Windows GUI (`2`), and Lumen-owned Docker
+- The executable PE subsystem is Windows GUI (`2`), and Virtus-owned Docker
   launches use `CREATE_NO_WINDOW`. MCP 2.0's Windows launcher retains its Job
   Object process-tree cleanup and also uses `CREATE_NO_WINDOW`.
 - Docker-running startup returned `ok`. Docker-stopped startup returned
@@ -161,8 +161,8 @@ Acceptance evidence from a clean extracted Windows ZIP:
   successfully invoked `create_file` through each entirely inside Docker.
 - Real Windows tray-loop Quit runs with zero, one, and three live persistent
   MCP pools completed in 1.219, 1.891, and 1.781 seconds. All runs reacquired
-  the named mutex, kept stopped containers reusable, and left zero Lumen
-  processes, listeners on port `38492`, and running Lumen containers.
+  the named mutex, kept stopped containers reusable, and left zero Virtus
+  processes, listeners on port `38492`, and running Virtus containers.
 - The final Windows test run collected 415 passing tests with the macOS-only
   launcher module skipped on Windows. Python compilation, frontend JavaScript
   syntax, extracted-package smoke, Docker/MCP smoke, and whitespace checks also

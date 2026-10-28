@@ -17,10 +17,10 @@ from docker_path_utils import host_path_to_docker_src  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image", default="lumen-sandbox:latest")
+    parser.add_argument("--image", default="virtus-sandbox:latest")
     args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory(prefix="lumen-sandbox-smoke-") as workspace:
+    with tempfile.TemporaryDirectory(prefix="virtus-sandbox-smoke-") as workspace:
         completed = docker_cli.run([
             "run", "--rm",
             "--volume", f"{host_path_to_docker_src(workspace)}:/workspace:rw",
@@ -29,12 +29,12 @@ def main() -> int:
                 "from pathlib import Path; "
                 "import httpx, pandas, requests; "
                 "assert Path.cwd() == Path('/workspace'); "
-                "Path('/workspace/lumen-smoke.txt').write_text('sandbox-ok')"
+                "Path('/workspace/virtus-smoke.txt').write_text('sandbox-ok')"
             ),
         ])
         if completed.returncode != 0:
             raise RuntimeError((completed.stderr or completed.stdout or "Sandbox smoke failed").strip())
-        if (Path(workspace) / "lumen-smoke.txt").read_text() != "sandbox-ok":
+        if (Path(workspace) / "virtus-smoke.txt").read_text() != "sandbox-ok":
             raise RuntimeError("Sandbox workspace write did not reach the host mount")
 
     print(json.dumps({"image": args.image, "python_runtime": True, "workspace_write": True}, indent=2))

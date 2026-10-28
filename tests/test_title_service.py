@@ -3,7 +3,7 @@ Tests for title_service.py — stateless, independently importable.
 
 title_service was split out of chat_turn_service.py.  It has no Flask context,
 no DB, and no network dependency, so it can be imported and unit-tested in
-isolation without any other Lumen module.
+isolation without any other Virtus module.
 
 Functions under test:
   _messages_to_text  — converts message history to a compact plain-text block
@@ -322,7 +322,7 @@ def test_rejects_reasoning_or_invalid_text(content):
 
 
 @pytest.mark.parametrize("mode", ["generated", "fallback", "disabled"])
-def test_title_is_published_persisted_and_turn_finalized(tmp_lumen, monkeypatch, mode):
+def test_title_is_published_persisted_and_turn_finalized(tmp_virtus, monkeypatch, mode):
     import threading
 
     import chat_turn_service

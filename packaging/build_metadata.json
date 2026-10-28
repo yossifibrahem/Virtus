@@ -2,5 +2,5 @@
   "version": "0.1.0-alpha.1",
   "bundle_short_version": "0.1.0",
   "bundle_version": "0.1.0a1",
-  "sandbox_image": "lumen-sandbox:latest"
+  "sandbox_image": "virtus-sandbox:latest"
 }

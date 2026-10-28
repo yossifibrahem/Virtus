@@ -49,7 +49,7 @@ def test_shutdown_is_idempotent(monkeypatch):
     assert sorted(calls) == ["docker", "mcp"]
 
 
-def test_startup_keeps_runtime_for_empty_folder(tmp_lumen, monkeypatch):
+def test_startup_keeps_runtime_for_empty_folder(tmp_virtus, monkeypatch):
     import store
     folder = store.create_folder('Project')
     known = []

@@ -18,16 +18,16 @@ from mcp_adapters import apply_workspace_process_options
 from fs_utils import atomic_replace
 from mcp_session_pool import McpSessionPool
 
-_MCP_CONFIG_DIR = Path.home() / ".lumen"
+_MCP_CONFIG_DIR = Path.home() / ".virtus"
 _MCP_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-MCP_CONFIG_FILE = Path(os.getenv("LUMEN_MCP_CONFIG_FILE", str(_MCP_CONFIG_DIR / "mcp.json")))
+MCP_CONFIG_FILE = Path(os.getenv("VIRTUS_MCP_CONFIG_FILE", str(_MCP_CONFIG_DIR / "mcp.json")))
 log = logging.getLogger(__name__)
 
 _config_cache: dict | None = None
 _config_cache_at = 0.0
 _config_cache_path: Path | None = None
 _config_cache_lock = threading.Lock()
-_CONFIG_TTL_SECONDS = float(os.getenv("LUMEN_MCP_CONFIG_CACHE_TTL", "5"))
+_CONFIG_TTL_SECONDS = float(os.getenv("VIRTUS_MCP_CONFIG_CACHE_TTL", "5"))
 _mcp_stderr_handle = None
 _mcp_stderr_lock = threading.Lock()
 
@@ -52,7 +52,7 @@ def _stdio_client(params):
 
 def _mcp_timeout_seconds() -> float:
     try:
-        value = float(os.getenv("LUMEN_MCP_TOOL_TIMEOUT", "120"))
+        value = float(os.getenv("VIRTUS_MCP_TOOL_TIMEOUT", "120"))
     except (TypeError, ValueError):
         value = 120.0
     return value if value > 0 else 120.0

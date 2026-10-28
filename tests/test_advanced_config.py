@@ -19,10 +19,10 @@ def test_uses_local_sandbox_default_when_file_is_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(
         advanced_config.build_info,
         "DEFAULT_SANDBOX_IMAGE",
-        "lumen-sandbox:latest",
+        "virtus-sandbox:latest",
     )
 
-    assert advanced_config.load_advanced_config()["sandbox_image"] == "lumen-sandbox:latest"
+    assert advanced_config.load_advanced_config()["sandbox_image"] == "virtus-sandbox:latest"
 
 
 def test_uses_stored_sandbox_image_verbatim(tmp_path, monkeypatch):

@@ -1,8 +1,8 @@
-# Lumen developer guide
+# Virtus developer guide
 
 ## Application model
 
-Lumen gives the model a local computer inside Docker, separate from the machine
+Virtus gives the model a local computer inside Docker, separate from the machine
 running Flask. The browser and Flask manage chats, settings, approvals, and file
 transfers. Model commands and MCP server processes execute inside the container.
 Relative tool paths start at `/workspace`; absolute tool paths refer to the
@@ -51,9 +51,9 @@ tests are opt-in and create disposable containers; the package installation test
 uses apt/pip/npm registries:
 
 ```sh
-docker build --build-arg LUMEN_SANDBOX_IDENTITY="$(python -c 'import build_info; print(build_info.sandbox_identity())')" -f Dockerfile.sandbox -t lumen-sandbox:builtins-test .
-LUMEN_RUN_DOCKER_TESTS=1 python -m pytest tests/test_builtin_docker.py
-python packaging/smoke_sandbox.py --image lumen-sandbox:builtins-test
+docker build --build-arg VIRTUS_SANDBOX_IDENTITY="$(python -c 'import build_info; print(build_info.sandbox_identity())')" -f Dockerfile.sandbox -t virtus-sandbox:builtins-test .
+VIRTUS_RUN_DOCKER_TESTS=1 python -m pytest tests/test_builtin_docker.py
+python packaging/smoke_sandbox.py --image virtus-sandbox:builtins-test
 ```
 
 ## Code map
@@ -188,7 +188,7 @@ cross-process stream broker, or persistent background job service is present.
 
 ## MCP configuration and session ownership
 
-Configure servers in the UI or `~/.lumen/mcp.json`:
+Configure servers in the UI or `~/.virtus/mcp.json`:
 
 ```json
 {
@@ -216,7 +216,7 @@ failed session is discarded and a later request can open a fresh connection.
 
 ## Storage, configuration, and releases
 
-User state is under `~/.lumen/`: conversations, folders, images, workspaces,
+User state is under `~/.virtus/`: conversations, folders, images, workspaces,
 `config.json`, `advanced_config.json`, `mcp.json`, and `memory.json`. File paths can
 be overridden by the environment variables documented in README. API keys remain
 server-side; browser settings and model request bodies do not carry them.
@@ -234,7 +234,7 @@ context during smoke checks. Installation retains only the last 50 diagnostic lo
 lines on the server, bounded to 8 KiB per line; the setup page uses the same
 bounded log window. Cleanup always releases the build lock, including failures.
 
-Lumen is a trusted local application, not an authenticated multi-user service.
+Virtus is a trusted local application, not an authenticated multi-user service.
 Docker runs model processes as container root with reduced capabilities,
 no-new-privileges, CPU/memory limits, and a 256-process limit. Shared workspaces
 are writable by their runtimes; global memory is app-owned. Storage checks are
@@ -250,7 +250,7 @@ Folder instructions replace the global custom prompt only inside a Folder, and t
 sentence appears only there. Each turn captures its Folder identity and custom instructions before
 asynchronous work so navigating to another chat cannot change its context.
 
-Memory defaults enabled. `memory_service` owns `~/.lumen/memory.json`, with SHA-256 content revisions,
+Memory defaults enabled. `memory_service` owns `~/.virtus/memory.json`, with SHA-256 content revisions,
 a process-wide lock, atomic replacement, a 32 KiB limit and eight prior versions in
 `memory.history.json`. `/api/memory` supports inspection, version-checked edits/clears and a
 persisted boolean in `memory.settings.json`. The JSON store contains a string `content` field. Oversized content is preserved; explicit
@@ -263,7 +263,7 @@ subordinate remembered data. Disabled requests read no memory and receive no mem
 saved chat history can still contain facts. Conflicts return current content/revision for merging.
 
 Advanced limits: `turn_timeout_seconds=900`, `turn_tool_limit=100`, `min_free_disk_bytes=536870912`,
-`max_workspace_bytes=10737418240`; corresponding env vars are `LUMEN_` + uppercase key. Settings
+`max_workspace_bytes=10737418240`; corresponding env vars are `VIRTUS_` + uppercase key. Settings
 validate positive integer values. Runtime operations check storage before execution; Docker exec
 and MCP wait loops check about every two seconds. Accounting never follows workspace symlinks.
 Docker free/used storage is queried with in-container disk_usage when available, separately from

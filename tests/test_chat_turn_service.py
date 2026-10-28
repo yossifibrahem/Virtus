@@ -257,7 +257,7 @@ class TestTurnRecorder:
     """
 
     @pytest.fixture(autouse=True)
-    def _isolate_store(self, tmp_lumen):
+    def _isolate_store(self, tmp_virtus):
         pass
 
     def _make_recorder(self, conv_id: str) -> svc.TurnRecorder:
@@ -265,14 +265,14 @@ class TestTurnRecorder:
         store.create("stub")  # ensure conv exists on disk
         return svc.TurnRecorder(conv_id="stub", title="T", messages=[], stream_id="s1")
 
-    def test_force_true_always_saves(self, tmp_lumen):
+    def test_force_true_always_saves(self, tmp_virtus):
         recorder = self._make_recorder("stub")
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)
             recorder.save([], force=True)
         assert mock_save.call_count == 2
 
-    def test_rapid_small_saves_throttled(self, tmp_lumen):
+    def test_rapid_small_saves_throttled(self, tmp_virtus):
         """Calls within the 0.75s window with no size growth must be skipped."""
         recorder = self._make_recorder("stub")
         with patch("chat_turn_service._save_turn") as mock_save:
@@ -282,7 +282,7 @@ class TestTurnRecorder:
         # Only the forced first call should have persisted
         assert mock_save.call_count == 1
 
-    def test_large_chunks_do_not_bypass_throttle(self, tmp_lumen):
+    def test_large_chunks_do_not_bypass_throttle(self, tmp_virtus):
         """Large chunks still respect the 0.75s persistence window."""
         recorder = self._make_recorder("stub")
         big_text = "x" * 600
@@ -291,7 +291,7 @@ class TestTurnRecorder:
             recorder.save([], text=big_text)
         assert mock_save.call_count == 1
 
-    def test_finalize_calls_save_turn_without_stream_id(self, tmp_lumen):
+    def test_finalize_calls_save_turn_without_stream_id(self, tmp_virtus):
         recorder = self._make_recorder("stub")
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.finalize([])
@@ -299,7 +299,7 @@ class TestTurnRecorder:
         # _save_turn(conv_id, title, messages, display_log) — no stream_id kwarg
         assert "stream_id" not in kwargs or kwargs.get("stream_id") == ""
 
-    def test_update_title_changes_saved_title(self, tmp_lumen):
+    def test_update_title_changes_saved_title(self, tmp_virtus):
         recorder = self._make_recorder("stub")
         recorder.update_title("New Title")
         with patch("chat_turn_service._save_turn") as mock_save:
@@ -308,7 +308,7 @@ class TestTurnRecorder:
         assert title_arg == "New Title"
 
 
-def test_model_error_preserves_partial_response_and_closes_client(tmp_lumen, monkeypatch):
+def test_model_error_preserves_partial_response_and_closes_client(tmp_virtus, monkeypatch):
     import threading
     import store
     conv = store.create()
@@ -330,7 +330,7 @@ def test_model_error_preserves_partial_response_and_closes_client(tmp_lumen, mon
 
 
 @pytest.mark.parametrize('phase', ['headers', 'body', 'title'])
-def test_cancel_interrupts_http_and_saves_partial_history(tmp_lumen, monkeypatch, phase):
+def test_cancel_interrupts_http_and_saves_partial_history(tmp_virtus, monkeypatch, phase):
     import asyncio
     import threading
     import time
@@ -386,7 +386,7 @@ def test_cancel_interrupts_http_and_saves_partial_history(tmp_lumen, monkeypatch
         assert saved['messages'][-1]['content'] == 'Partial'
 
 
-def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch):
+def test_one_api_client_is_reused_across_tool_iterations(tmp_virtus, monkeypatch):
     import threading
     import store
     conv = store.create()
@@ -411,7 +411,7 @@ def test_one_api_client_is_reused_across_tool_iterations(tmp_lumen, monkeypatch)
 
 
 @pytest.mark.parametrize('mode', ['cancel_native', 'cancel_approval', 'runtime_failure', 'invalid_native', 'invalid_mcp'])
-def test_tool_batches_always_have_matching_results(tmp_lumen, monkeypatch, mode):
+def test_tool_batches_always_have_matching_results(tmp_virtus, monkeypatch, mode):
     import threading
     import store
     from contextlib import contextmanager
@@ -477,7 +477,7 @@ def test_tool_batches_always_have_matching_results(tmp_lumen, monkeypatch, mode)
     client.close.assert_called_once()
 
 
-def test_unexpected_stream_exception_keeps_partial_text(tmp_lumen, monkeypatch):
+def test_unexpected_stream_exception_keeps_partial_text(tmp_virtus, monkeypatch):
     import threading
     import store
     conv = store.create()
@@ -491,7 +491,7 @@ def test_unexpected_stream_exception_keeps_partial_text(tmp_lumen, monkeypatch):
     assert store.load(conv['id'])['messages'] == [{'role': 'assistant', 'content': 'Keep this'}]
 
 
-def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_lumen):
+def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_virtus):
     import store
     import tool_media
     from conftest import make_png_b64

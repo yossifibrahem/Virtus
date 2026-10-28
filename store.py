@@ -19,12 +19,12 @@ from pathlib import Path
 from fs_utils import atomic_replace
 from mcp_adapters import conversation_working_directory
 
-CONVERSATIONS_DIR = Path.home() / ".lumen" / "conversations"
+CONVERSATIONS_DIR = Path.home() / ".virtus" / "conversations"
 CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-FOLDERS_FILE = Path.home() / ".lumen" / "folders.json"
+FOLDERS_FILE = Path.home() / ".virtus" / "folders.json"
 
-IMAGES_DIR = Path.home() / ".lumen" / "images"
+IMAGES_DIR = Path.home() / ".virtus" / "images"
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 

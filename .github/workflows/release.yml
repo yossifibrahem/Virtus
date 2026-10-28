@@ -58,13 +58,13 @@ jobs:
           file: Dockerfile.sandbox
           platforms: ${{ matrix.platform }}
           load: true
-          tags: lumen-sandbox:latest
-          build-args: LUMEN_SANDBOX_IDENTITY=${{ steps.sandbox-identity.outputs.value }}
+          tags: virtus-sandbox:latest
+          build-args: VIRTUS_SANDBOX_IDENTITY=${{ steps.sandbox-identity.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke-test sandbox runtime
-        run: python3 packaging/smoke_sandbox.py --image lumen-sandbox:latest
+        run: python3 packaging/smoke_sandbox.py --image virtus-sandbox:latest
 
   macos:
     needs: [metadata, sandbox]
@@ -94,32 +94,32 @@ jobs:
         if: env.MACOS_CERTIFICATE_P12 != ''
         run: |
           echo "${MACOS_CERTIFICATE_P12}" | base64 --decode > "${RUNNER_TEMP}/certificate.p12"
-          security create-keychain -p actions "${RUNNER_TEMP}/lumen.keychain-db"
-          security set-keychain-settings -lut 21600 "${RUNNER_TEMP}/lumen.keychain-db"
-          security unlock-keychain -p actions "${RUNNER_TEMP}/lumen.keychain-db"
+          security create-keychain -p actions "${RUNNER_TEMP}/virtus.keychain-db"
+          security set-keychain-settings -lut 21600 "${RUNNER_TEMP}/virtus.keychain-db"
+          security unlock-keychain -p actions "${RUNNER_TEMP}/virtus.keychain-db"
           security import "${RUNNER_TEMP}/certificate.p12" \
             -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 \
-            -k "${RUNNER_TEMP}/lumen.keychain-db"
-          security list-keychain -d user -s "${RUNNER_TEMP}/lumen.keychain-db"
+            -k "${RUNNER_TEMP}/virtus.keychain-db"
+          security list-keychain -d user -s "${RUNNER_TEMP}/virtus.keychain-db"
 
       - name: Build Apple Silicon DMG
         env:
-          LUMEN_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
-          LUMEN_BUILD_NUMBER: ${{ github.run_number }}
+          VIRTUS_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
+          VIRTUS_BUILD_NUMBER: ${{ github.run_number }}
         run: packaging/build_macos.sh
 
       - name: Smoke-test frozen app without system Python
         env:
-          LUMEN_DESKTOP_SMOKE_TEST: "1"
-          LUMEN_DESKTOP_NO_BROWSER: "1"
-        run: "dist/Lumen AI Chat.app/Contents/MacOS/Lumen AI Chat"
+          VIRTUS_DESKTOP_SMOKE_TEST: "1"
+          VIRTUS_DESKTOP_NO_BROWSER: "1"
+        run: "dist/Virtus AI Chat.app/Contents/MacOS/Virtus AI Chat"
 
       - name: Notarize when Apple credentials are configured
         if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.APPLE_APP_PASSWORD != '' && env.MACOS_SIGN_IDENTITY != ''
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
-          dmg="dist/Lumen-AI-Chat-${VERSION}-apple-silicon.dmg"
+          dmg="dist/Virtus-AI-Chat-${VERSION}-apple-silicon.dmg"
           xcrun notarytool submit "${dmg}" \
             --apple-id "${APPLE_ID}" \
             --team-id "${APPLE_TEAM_ID}" \
@@ -132,7 +132,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Lumen-AI-Chat-${{ needs.metadata.outputs.version }}-apple-silicon
+          name: Virtus-AI-Chat-${{ needs.metadata.outputs.version }}-apple-silicon
           path: |
             dist/*.dmg
             dist/*.sha256
@@ -165,14 +165,14 @@ jobs:
 
       - name: Build and smoke-test Windows x64 onedir package
         env:
-          LUMEN_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
-          LUMEN_BUILD_NUMBER: ${{ github.run_number }}
+          VIRTUS_BUILD_VERSION: ${{ needs.metadata.outputs.version }}
+          VIRTUS_BUILD_NUMBER: ${{ github.run_number }}
         shell: pwsh
         run: .\packaging\build_windows.ps1
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Lumen-AI-Chat-${{ needs.metadata.outputs.version }}-windows-x64
+          name: Virtus-AI-Chat-${{ needs.metadata.outputs.version }}-windows-x64
           path: |
             dist/*-windows-x64.zip
             dist/*-windows-x64.zip.sha256

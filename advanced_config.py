@@ -2,7 +2,7 @@
 
 Values are resolved in priority order:
   1. Environment variable (highest — never overwritten by the UI)
-  2. ~/.lumen/advanced_config.json  (written by the UI)
+  2. ~/.virtus/advanced_config.json  (written by the UI)
   3. Hardcoded default              (lowest)
 
 The public_advanced_config() helper marks every env-locked key so the browser
@@ -21,14 +21,14 @@ from pathlib import Path
 import build_info
 from fs_utils import atomic_replace
 
-CONFIG_DIR = Path.home() / ".lumen"
+CONFIG_DIR = Path.home() / ".virtus"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 ADVANCED_CONFIG_FILE = Path(
-    os.getenv("LUMEN_ADVANCED_CONFIG_FILE", str(CONFIG_DIR / "advanced_config.json"))
+    os.getenv("VIRTUS_ADVANCED_CONFIG_FILE", str(CONFIG_DIR / "advanced_config.json"))
 )
 
-_CACHE_TTL = float(os.getenv("LUMEN_CONFIG_CACHE_TTL", "5"))
+_CACHE_TTL = float(os.getenv("VIRTUS_CONFIG_CACHE_TTL", "5"))
 _cache: dict | None = None
 _cache_at: float = 0.0
 _cache_lock = threading.RLock()
@@ -63,16 +63,16 @@ _ALLOWED_KEYS: frozenset[str] = frozenset(_HARDCODED_DEFAULTS.keys())
 
 # Env-var names that map to each allowed key.
 _ENV_NAMES: dict[str, str] = {
-    "sandbox_image":          "LUMEN_SANDBOX_IMAGE",
-    "container_memory":       "LUMEN_CONTAINER_MEMORY",
-    "container_cpus":         "LUMEN_CONTAINER_CPUS",
-    "container_idle_timeout": "LUMEN_CONTAINER_IDLE_TIMEOUT",
-    "max_file_preview_bytes": "LUMEN_MAX_FILE_PREVIEW_BYTES",
-    "max_file_list_entries":  "LUMEN_MAX_FILE_LIST_ENTRIES",
-    "max_upload_bytes":       "LUMEN_MAX_UPLOAD_BYTES",
+    "sandbox_image":          "VIRTUS_SANDBOX_IMAGE",
+    "container_memory":       "VIRTUS_CONTAINER_MEMORY",
+    "container_cpus":         "VIRTUS_CONTAINER_CPUS",
+    "container_idle_timeout": "VIRTUS_CONTAINER_IDLE_TIMEOUT",
+    "max_file_preview_bytes": "VIRTUS_MAX_FILE_PREVIEW_BYTES",
+    "max_file_list_entries":  "VIRTUS_MAX_FILE_LIST_ENTRIES",
+    "max_upload_bytes":       "VIRTUS_MAX_UPLOAD_BYTES",
 }
 
-_ENV_NAMES.update({key: "LUMEN_" + key.upper() for key in ("turn_timeout_seconds", "turn_tool_limit", "min_free_disk_bytes", "max_workspace_bytes")})
+_ENV_NAMES.update({key: "VIRTUS_" + key.upper() for key in ("turn_timeout_seconds", "turn_tool_limit", "min_free_disk_bytes", "max_workspace_bytes")})
 
 # Snapshot env values at import time so we know which keys are "locked" by
 # the operator.  These are never overwritten by UI saves.

@@ -109,7 +109,7 @@ def valid_runtime(workspace):
     ('Devices', [{'PathOnHost': '/dev/sda'}]), ('PidMode', 'host'),
     ('IpcMode', 'host'), ('UTSMode', 'host'), ('UsernsMode', 'host'), ('CgroupnsMode', 'host'),
     ('DeviceRequests', [{'Count': -1}]), ('SecurityOpt', ['no-new-privileges', 'seccomp=unconfined'])])
-def test_effective_configuration_rejected_in_both_reuse_paths(tmp_lumen, monkeypatch, key, value):
+def test_effective_configuration_rejected_in_both_reuse_paths(tmp_virtus, monkeypatch, key, value):
     rid = 'test'
     workspace = containers.conversation_workspace(rid)
     info = valid_runtime(workspace)
@@ -127,7 +127,7 @@ def test_effective_configuration_rejected_in_both_reuse_paths(tmp_lumen, monkeyp
     assert removed == [(rid, True)]
 
 
-def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_lumen, monkeypatch):
+def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_virtus, monkeypatch):
     workspace = containers.conversation_workspace('test')
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
@@ -139,7 +139,7 @@ def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_lumen, monk
 
 
 @pytest.mark.parametrize('user', ['', 'root', '0', '0:0', 'root:root', 'root:0', '0:root'])
-def test_equivalent_root_users_do_not_reset_the_environment(tmp_lumen, monkeypatch, user):
+def test_equivalent_root_users_do_not_reset_the_environment(tmp_virtus, monkeypatch, user):
     workspace = containers.conversation_workspace('root-user')
     info = valid_runtime(workspace)
     info['Config']['User'] = user
@@ -149,7 +149,7 @@ def test_equivalent_root_users_do_not_reset_the_environment(tmp_lumen, monkeypat
     assert not containers._runtime_matches(info, workspace)
 
 
-def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(tmp_lumen, monkeypatch):
+def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(tmp_virtus, monkeypatch):
     rid = 'creation-reuse'
     workspace = containers.conversation_workspace(rid)
     inspected = None
@@ -178,7 +178,7 @@ def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(
     removed.assert_not_called()
 
 
-def test_reconciliation_never_interrupts_other_active_operations(tmp_lumen, monkeypatch):
+def test_reconciliation_never_interrupts_other_active_operations(tmp_virtus, monkeypatch):
     import sandbox_runtime
     workspace = containers.conversation_workspace('test')
     info = valid_runtime(workspace); info['HostConfig']['Memory'] = 0
@@ -198,7 +198,7 @@ def test_reconciliation_never_interrupts_other_active_operations(tmp_lumen, monk
         finish.set(); worker.join(2)
 
 
-def test_disk_accounting_skips_symlinks_and_checks_docker_fs(tmp_lumen, monkeypatch, tmp_path):
+def test_disk_accounting_skips_symlinks_and_checks_docker_fs(tmp_virtus, monkeypatch, tmp_path):
     workspace = containers.conversation_workspace('test')
     (workspace / 'owned').write_bytes(b'abc')
     external = tmp_path / 'external'; external.mkdir(); (external / 'other').write_bytes(b'x'*2000)
@@ -234,7 +234,7 @@ def test_mcp_cancellation_stops_actual_coroutine(monkeypatch):
     assert not pool._thread.is_alive()
 
 
-def test_turn_tool_budget_keeps_coherent_history(tmp_lumen, monkeypatch):
+def test_turn_tool_budget_keeps_coherent_history(tmp_virtus, monkeypatch):
     conv = store.create()
     advanced_config.save_advanced_config({'turn_tool_limit': 1})
     monkeypatch.setattr(turns, 'openai_client', lambda body: MagicMock())
@@ -272,7 +272,7 @@ def test_replay_is_bounded_and_requests_authoritative_history():
         routes_chat._cancel_events.pop('test-bounded', None)
 
 
-def test_memory_disable_takes_effect_in_an_ongoing_loop(tmp_lumen, monkeypatch):
+def test_memory_disable_takes_effect_in_an_ongoing_loop(tmp_virtus, monkeypatch):
     conv = store.create()
     memory.update('Remembered', memory.snapshot()['revision'])
     observed = []
@@ -295,7 +295,7 @@ def test_memory_disable_takes_effect_in_an_ongoing_loop(tmp_lumen, monkeypatch):
     assert 'update_memory' not in str(observed[1]['tools'])
 
 
-def test_turn_wall_budget_actually_cancels_wait(tmp_lumen, monkeypatch):
+def test_turn_wall_budget_actually_cancels_wait(tmp_virtus, monkeypatch):
     conv = store.create()
     advanced_config.save_advanced_config({'turn_timeout_seconds': 1})
     client = MagicMock()
@@ -355,7 +355,7 @@ def test_persistent_anyio_session_scopes_survive_calls_and_cancel(monkeypatch):
     assert not pool._thread.is_alive()
 
 
-def test_low_disk_interrupts_running_command_without_waiting_for_exit(tmp_lumen, monkeypatch):
+def test_low_disk_interrupts_running_command_without_waiting_for_exit(tmp_virtus, monkeypatch):
     import sys
     import sandbox_runtime
     import docker_cli

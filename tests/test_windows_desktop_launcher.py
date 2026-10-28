@@ -32,7 +32,7 @@ def test_named_mutex_is_exclusive_and_reusable():
         first.close()
 
 
-def test_port_collision_with_lumen_reopens_existing_app(monkeypatch):
+def test_port_collision_with_virtus_reopens_existing_app(monkeypatch):
     opened = []
     monkeypatch.setattr(launcher, "_port_available", lambda: False)
     monkeypatch.setattr(launcher, "_health_payload", lambda: {"app": launcher.build_info.APP_ID})
@@ -84,7 +84,7 @@ def test_tray_remains_visible_until_cleanup_finishes(monkeypatch):
         def stop(self):
             events.append("stop-icon")
 
-    tray = object.__new__(launcher.LumenTray)
+    tray = object.__new__(launcher.VirtusTray)
     tray._icon = FakeIcon()
     tray._instance_lock = SimpleNamespace(close=lambda: events.append("unlock"))
 
@@ -95,7 +95,7 @@ def test_tray_remains_visible_until_cleanup_finishes(monkeypatch):
 
     tray.stop_server = stop_server
     monkeypatch.setattr(
-        launcher.lumen_app,
+        launcher.virtus_app,
         "_shutdown_containers",
         lambda *, deadline: events.append("stop-containers"),
     )
@@ -137,12 +137,12 @@ def test_smoke_mode_uses_windows_host_without_tray_loop(monkeypatch):
         def run(self):
             raise AssertionError("tray loop must not run in smoke mode")
 
-    monkeypatch.setenv("LUMEN_DESKTOP_SMOKE_TEST", "1")
+    monkeypatch.setenv("VIRTUS_DESKTOP_SMOKE_TEST", "1")
     monkeypatch.setattr(launcher, "configure_logging", lambda: None)
     monkeypatch.setattr(launcher, "SingleInstance", FakeInstance)
-    monkeypatch.setattr(launcher, "LumenTray", FakeTray)
+    monkeypatch.setattr(launcher, "VirtusTray", FakeTray)
     monkeypatch.setattr(launcher, "_validate_frozen_runtime", lambda: events.append("validate"))
-    monkeypatch.setattr(launcher.lumen_app, "_shutdown_done", False)
+    monkeypatch.setattr(launcher.virtus_app, "_shutdown_done", False)
 
     assert launcher.main() == 0
     assert events == ["lock", "start", "validate", "stop", "unlock"]

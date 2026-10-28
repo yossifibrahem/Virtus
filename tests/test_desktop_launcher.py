@@ -13,21 +13,21 @@ import desktop_launcher
 
 
 def _bare_menu():
-    return object.__new__(desktop_launcher.LumenMenuBar)
+    return object.__new__(desktop_launcher.VirtusMenuBar)
 
 
-def test_desktop_lock_defaults_to_lumen_data_directory():
-    assert desktop_launcher.LOCK_FILE == Path.home() / ".lumen" / "desktop.lock"
+def test_desktop_lock_defaults_to_virtus_data_directory():
+    assert desktop_launcher.LOCK_FILE == Path.home() / ".virtus" / "desktop.lock"
 
 
-def test_menu_bar_uses_bundled_lumen_artwork():
-    menu = desktop_launcher.LumenMenuBar(object())
+def test_menu_bar_uses_bundled_virtus_artwork():
+    menu = desktop_launcher.VirtusMenuBar(object())
     assert desktop_launcher.MENU_BAR_ICON.is_file()
     assert menu.icon == str(desktop_launcher.MENU_BAR_ICON)
     assert menu.title is None
 
 
-def test_port_collision_with_lumen_reopens_existing_app(monkeypatch):
+def test_port_collision_with_virtus_reopens_existing_app(monkeypatch):
     opened = []
     monkeypatch.setattr(desktop_launcher, "_port_available", lambda: False)
     monkeypatch.setattr(
@@ -99,7 +99,7 @@ def test_smoke_mode_starts_then_stops_without_entering_menu_loop(monkeypatch):
         def run(self):
             raise AssertionError("menu loop must not run during a smoke test")
 
-    monkeypatch.setenv("LUMEN_DESKTOP_SMOKE_TEST", "1")
+    monkeypatch.setenv("VIRTUS_DESKTOP_SMOKE_TEST", "1")
     monkeypatch.setattr(desktop_launcher, "configure_logging", lambda: None)
     monkeypatch.setattr(
         desktop_launcher,
@@ -107,7 +107,7 @@ def test_smoke_mode_starts_then_stops_without_entering_menu_loop(monkeypatch):
         lambda: events.append("validate"),
     )
     monkeypatch.setattr(desktop_launcher, "SingleInstance", FakeInstance)
-    monkeypatch.setattr(desktop_launcher, "LumenMenuBar", FakeMenu)
+    monkeypatch.setattr(desktop_launcher, "VirtusMenuBar", FakeMenu)
 
     assert desktop_launcher.main() == 0
     assert events == ["lock", "start", "validate", "stop", "unlock"]

@@ -38,12 +38,12 @@ def macos_bundle_versions(version: str, build_number: str = "") -> tuple[str, st
 
 def main() -> None:
     data = json.loads(DEFAULT.read_text(encoding="utf-8"))
-    version = os.getenv("LUMEN_BUILD_VERSION", "").strip()
+    version = os.getenv("VIRTUS_BUILD_VERSION", "").strip()
     if version:
         data["version"] = version
     short_version, bundle_version = macos_bundle_versions(
         str(data["version"]),
-        os.getenv("LUMEN_BUILD_NUMBER", ""),
+        os.getenv("VIRTUS_BUILD_NUMBER", ""),
     )
     data["bundle_short_version"] = short_version
     data["bundle_version"] = bundle_version

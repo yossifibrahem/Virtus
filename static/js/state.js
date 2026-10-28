@@ -20,20 +20,20 @@ export const CUSTOMIZATION_DEFAULTS = {
   fontSize:              'medium',    // 'small' | 'medium' | 'large'
   fontFamily:            'geist',     // 'geist' | 'system'
   theme:                 'auto',      // 'dark' | 'light' | 'auto'
-  accentColor:           '#5B8DEF',   // preset swatch
+  accentColor:           '#DDB37E',   // preset swatch
   customAccentColor:     '',          // user custom hex
 };
 
 export const STORAGE_KEYS = {
-  settings:          'lumen_settings',
-  mcpTools:          'lumen_mcp_tools',
-  mcpServerSettings: 'lumen_mcp_server_settings',
-  models:            'lumen_models',
-  lastConv:          'lumen_last_conv',
-  sidebar:           'lumen_sidebar',
-  expandedFolders:   'lumen_expanded_folders',
-  filePanelOpen:     'lumen_file_panel_open',
-  customization:     'lumen_customization',
+  settings:          'virtus_settings',
+  mcpTools:          'virtus_mcp_tools',
+  mcpServerSettings: 'virtus_mcp_server_settings',
+  models:            'virtus_models',
+  lastConv:          'virtus_last_conv',
+  sidebar:           'virtus_sidebar',
+  expandedFolders:   'virtus_expanded_folders',
+  filePanelOpen:     'virtus_file_panel_open',
+  customization:     'virtus_customization',
 };
 
 // Single mutable state object shared across all modules.

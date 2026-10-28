@@ -15,7 +15,7 @@ _pending_approvals_lock = threading.Lock()
 
 def _approval_timeout() -> float:
     try:
-        value = float(os.getenv("LUMEN_TOOL_APPROVAL_TIMEOUT", "600"))
+        value = float(os.getenv("VIRTUS_TOOL_APPROVAL_TIMEOUT", "600"))
     except (TypeError, ValueError):
         return 600.0
     return value if value > 0 else 600.0

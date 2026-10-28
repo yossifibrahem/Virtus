@@ -7,7 +7,7 @@ import pytest
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "packaging" / "write_build_metadata.py"
-SPEC = importlib.util.spec_from_file_location("lumen_write_build_metadata", MODULE_PATH)
+SPEC = importlib.util.spec_from_file_location("virtus_write_build_metadata", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 metadata = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(metadata)

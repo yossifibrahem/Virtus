@@ -14,6 +14,6 @@ export function bindNativeActions(element, name, args) {
   if (!adapter) return;
   const path = workspacePath(args.path);
   if (path) element.querySelector('[data-native-open]')?.addEventListener('click', () => {
-    document.dispatchEvent(new CustomEvent('lumen:open-workspace-file', { detail: { path, reveal: true } }));
+    document.dispatchEvent(new CustomEvent('virtus:open-workspace-file', { detail: { path, reveal: true } }));
   });
 }

@@ -1,20 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
-import json
 from pathlib import Path
 
 ROOT = Path(SPECPATH).parent
 METADATA = ROOT / "build" / "generated" / "build_metadata.json"
-ICON = ROOT / "build" / "generated" / "Lumen.icns"
-BUILD_METADATA = json.loads(METADATA.read_text(encoding="utf-8"))
+ICON = ROOT / "build" / "generated" / "Virtus.ico"
+VERSION_INFO = ROOT / "build" / "generated" / "windows_version_info.txt"
 
 a = Analysis(
-    [str(ROOT / "desktop_launcher.py")],
+    [str(ROOT / "windows_desktop_launcher.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=[
         (str(ROOT / "templates"), "templates"),
         (str(ROOT / "static"), "static"),
         (str(METADATA), "."),
+        (str(ICON), "."),
         (str(ROOT / "Dockerfile.sandbox"), "."),
         (str(ROOT / "sandbox_tools.py"), "."),
         (str(ROOT / "sandbox_files.py"), "."),
@@ -22,13 +22,18 @@ a = Analysis(
     ],
     hiddenimports=[
         "mcp.client.stdio",
+        "mcp.os.win32.utilities",
         "mcp.types",
-        "rumps",
+        "pystray._win32",
+        "pywintypes",
         "waitress",
+        "win32api",
+        "win32con",
+        "win32job",
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter"],
+    excludes=["rumps", "tkinter"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -38,13 +43,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Lumen AI Chat",
+    name="Virtus AI Chat",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,
-    target_arch="arm64",
+    icon=str(ICON),
+    version=str(VERSION_INFO),
 )
 
 coll = COLLECT(
@@ -53,20 +59,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="Lumen AI Chat",
-)
-
-app = BUNDLE(
-    coll,
-    name="Lumen AI Chat.app",
-    icon=str(ICON),
-    bundle_identifier="com.lumen.chat",
-    info_plist={
-        "CFBundleDisplayName": "Lumen AI Chat",
-        "CFBundleShortVersionString": BUILD_METADATA["bundle_short_version"],
-        "CFBundleVersion": BUILD_METADATA["bundle_version"],
-        "LSMinimumSystemVersion": "14.0",
-        "LSUIElement": True,
-        "NSHighResolutionCapable": True,
-    },
+    name="Virtus AI Chat",
 )

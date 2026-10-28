@@ -1,4 +1,4 @@
-// Lumen's icon catalog: soft, rounded, and readable at small sizes.
+// Virtus's icon catalog: soft, rounded, and readable at small sizes.
 
 import { icon, smallIcon } from './svg.js';
 
@@ -29,9 +29,6 @@ export const DEFAULT_ICONS = Object.freeze({
   folder: icon('<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'),
   folderOpen: icon('<path d="M3 17.5V7a2 2 0 0 1 2-2h5l2 2h6.5a2 2 0 0 1 2 2v1"/><path d="M4.5 10h16.25a1.25 1.25 0 0 1 1.2 1.6l-2 6.75A2.25 2.25 0 0 1 17.8 20H5.2a2.25 2.25 0 0 1-2.15-2.9l1.45-5.35A2.5 2.5 0 0 1 6.9 10z"/>'),
   folderPlus: icon('<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'),
-
-  // ── Brand / logo ───────────────────────────────────────────────────────────
-  logo: icon('<path d="M7 4v13a3 3 0 0 0 3 3h9"/><path d="M12 4v10a1 1 0 0 0 1 1h6"/><path d="M17 4v5h3"/>', 'stroke-width="2.3"'),
 
   // ── Input toolbar ──────────────────────────────────────────────────────────
   send: icon('<path d="M12 19V5M6 11l6-6 6 6"/>', 'stroke-width="2.2"'),

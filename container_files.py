@@ -48,7 +48,7 @@ def operation(runtime_id, action, path='', *, data=None, **kwargs):
         with storage_safeguards.recovery_operation() if recovery else nullcontext():
             with sandbox_runtime.runtime_operation(runtime_id):
                 code, raw, error = sandbox_runtime.docker_operation(runtime_id,
-                    ['/opt/venv/bin/python', '-I', '/opt/lumen/sandbox_files.py'],
+                    ['/opt/venv/bin/python', '-I', '/opt/virtus/sandbox_files.py'],
                     payload,
                     timeout=60, limit=response_limit)
         if code:

@@ -13,7 +13,7 @@ def test_explicit_docker_path_has_priority(tmp_path, monkeypatch):
     explicit = tmp_path / "docker"
     explicit.write_text("#!/bin/sh\n")
     explicit.chmod(0o755)
-    monkeypatch.setenv("LUMEN_DOCKER_PATH", str(explicit))
+    monkeypatch.setenv("VIRTUS_DOCKER_PATH", str(explicit))
     monkeypatch.setattr(docker_cli.shutil, "which", lambda _name: "/another/docker")
     assert docker_cli.resolve() == str(explicit)
 

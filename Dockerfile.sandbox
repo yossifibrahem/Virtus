@@ -1,8 +1,8 @@
-# Lumen model computer for standalone chats and shared Folder/Project runtimes.
+# Virtus model computer for standalone chats and shared Folder/Project runtimes.
 #
 # First-run/developer build:
-#   docker build --build-arg LUMEN_SANDBOX_IDENTITY=<content-sha256> \
-#     -f Dockerfile.sandbox -t lumen-sandbox:latest .
+#   docker build --build-arg VIRTUS_SANDBOX_IDENTITY=<content-sha256> \
+#     -f Dockerfile.sandbox -t virtus-sandbox:latest .
 
 FROM ubuntu:24.04
 
@@ -10,7 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
 # Support user-configured Node MCP servers and the optional mcp-remote bridge.
-# Lumen does not bundle or automatically launch an MCP server.
+# Virtus does not bundle or automatically launch an MCP server.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
@@ -71,12 +71,12 @@ RUN pip3 install --no-cache-dir uv \
 RUN npm install -g mcp-remote@0.1.38 \
     && npm cache clean --force
 
-ARG LUMEN_SANDBOX_IDENTITY=unidentified
-LABEL org.opencontainers.image.title="Lumen MCP Sandbox" \
-      org.opencontainers.image.source="https://github.com/yossifibrahem/lumen-ai-chat" \
-      com.lumen.sandbox.identity="${LUMEN_SANDBOX_IDENTITY}"
+ARG VIRTUS_SANDBOX_IDENTITY=unidentified
+LABEL org.opencontainers.image.title="Virtus MCP Sandbox" \
+      org.opencontainers.image.source="https://github.com/yossifibrahem/virtus-ai-chat" \
+      com.virtus.sandbox.identity="${VIRTUS_SANDBOX_IDENTITY}"
 
-COPY sandbox_tools.py /opt/lumen/sandbox_tools.py
-COPY sandbox_files.py /opt/lumen/sandbox_files.py
+COPY sandbox_tools.py /opt/virtus/sandbox_tools.py
+COPY sandbox_files.py /opt/virtus/sandbox_files.py
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

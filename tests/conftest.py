@@ -1,9 +1,9 @@
 """
-Shared pytest fixtures for Lumen AI Chat tests.
+Shared pytest fixtures for Virtus AI Chat tests.
 
 Key responsibilities:
   - Redirect all filesystem paths (conversations, images, containers) to tmp_path
-    so tests never touch ~/.lumen.
+    so tests never touch ~/.virtus.
   - Create a Flask test app with runtime requirement checks mocked as ready.
   - Expose a `client` fixture for HTTP integration tests.
 """
@@ -35,9 +35,9 @@ def _clear_persistent_pools(monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def tmp_lumen(tmp_path, monkeypatch):
+def tmp_virtus(tmp_path, monkeypatch):
     """
-    Redirect every Lumen storage path to an isolated temp directory.
+    Redirect every Virtus storage path to an isolated temp directory.
 
     Patches module-level constants in `store` and `container_service` so that
     all fixture-scoped tests read and write to `tmp_path` only.
@@ -72,7 +72,7 @@ def tmp_lumen(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def app(tmp_lumen, monkeypatch):
+def app(tmp_virtus, monkeypatch):
     """
     Create a Flask test application with Docker-backed startup checks mocked out.
 
@@ -86,10 +86,10 @@ def app(tmp_lumen, monkeypatch):
     ready_status = app_module.runtime_requirements.RequirementStatus(
         ok=True,
         code="ok",
-        title="Lumen is ready",
+        title="Virtus is ready",
         message="Docker is running and the sandbox image is available.",
         action="continue",
-        image="lumen-sandbox",
+        image="virtus-sandbox",
     )
 
     monkeypatch.setattr(

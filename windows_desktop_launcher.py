@@ -1,4 +1,4 @@
-"""Windows tray launcher for the frozen Lumen web application."""
+"""Windows tray launcher for the frozen Virtus web application."""
 from __future__ import annotations
 
 import ctypes
@@ -16,7 +16,7 @@ import pystray
 from PIL import Image, ImageDraw
 from waitress import create_server
 
-import app as lumen_app
+import app as virtus_app
 import build_info
 import desktop_runtime
 import runtime_requirements
@@ -25,11 +25,11 @@ import runtime_requirements
 HOST = "127.0.0.1"
 PORT = build_info.DESKTOP_PORT
 BASE_URL = f"http://{HOST}:{PORT}"
-LUMEN_DIR = Path(os.getenv("LUMEN_DESKTOP_DATA_DIR", str(Path.home() / ".lumen")))
-LOG_DIR = LUMEN_DIR / "logs"
-LOG_FILE = LOG_DIR / "lumen.log"
-WINDOWS_ICON = build_info.resource_root() / "Lumen.ico"
-MUTEX_NAME = r"Local\com.lumen.chat.desktop"
+VIRTUS_DIR = Path(os.getenv("VIRTUS_DESKTOP_DATA_DIR", str(Path.home() / ".virtus")))
+LOG_DIR = VIRTUS_DIR / "logs"
+LOG_FILE = LOG_DIR / "virtus.log"
+WINDOWS_ICON = build_info.resource_root() / "Virtus.ico"
+MUTEX_NAME = r"Local\com.virtus.chat.desktop"
 QUIT_DEADLINE_SECONDS = 15.0
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -89,21 +89,21 @@ class DesktopServer:
                 raise SystemExit(0)
             raise RuntimeError(
                 f"Port {PORT} is already in use by another application. "
-                "Close it or set LUMEN_DESKTOP_PORT to a stable free port."
+                "Close it or set VIRTUS_DESKTOP_PORT to a stable free port."
             )
 
-        flask_app = lumen_app.create_app()
+        flask_app = virtus_app.create_app()
         self._server = create_server(flask_app, host=HOST, port=PORT, threads=8)
         self._server_stopping.clear()
         self._server_thread = threading.Thread(
             target=self._run_server,
-            name="lumen-waitress",
+            name="virtus-waitress",
             daemon=True,
         )
         self._server_thread.start()
         if not _wait_for_health():
-            raise RuntimeError("The local Lumen server did not become ready within 30 seconds.")
-        if os.getenv("LUMEN_DESKTOP_NO_BROWSER", "") != "1":
+            raise RuntimeError("The local Virtus server did not become ready within 30 seconds.")
+        if os.getenv("VIRTUS_DESKTOP_NO_BROWSER", "") != "1":
             webbrowser.open(BASE_URL)
 
     def _run_server(self) -> None:
@@ -125,7 +125,7 @@ class DesktopServer:
         if self._server_thread is not None:
             self._server_thread.join(timeout=max(0.0, stop_deadline - time.monotonic()))
 
-    def open_lumen(self, *_args) -> None:
+    def open_virtus(self, *_args) -> None:
         webbrowser.open(BASE_URL)
 
 
@@ -151,22 +151,22 @@ def _force_exit(code: int) -> None:
     os._exit(code)
 
 
-class LumenTray(DesktopServer):
+class VirtusTray(DesktopServer):
     def __init__(self, instance_lock: SingleInstance) -> None:
         super().__init__(instance_lock)
         self._quit_requested = threading.Event()
         self._process_exit_ready = threading.Event()
         self._shutdown_thread: threading.Thread | None = None
         self._icon = pystray.Icon(
-            "lumen-ai-chat",
+            "virtus-ai-chat",
             _windows_icon_image(),
-            "Lumen AI Chat",
+            "Virtus AI Chat",
             menu=pystray.Menu(
-                pystray.MenuItem("Open Lumen", self.open_lumen, default=True),
+                pystray.MenuItem("Open Virtus", self.open_virtus, default=True),
                 pystray.MenuItem("Docker Status", self.docker_status),
                 pystray.MenuItem("Open Logs", self.open_logs),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Quit Lumen", self.quit_lumen),
+                pystray.MenuItem("Quit Virtus", self.quit_virtus),
             ),
         )
 
@@ -197,7 +197,7 @@ class LumenTray(DesktopServer):
             logging.info("desktop shutdown: stopping local server")
             self.stop_server(deadline=deadline)
             logging.info("desktop shutdown: closing MCP sessions and containers")
-            lumen_app._shutdown_containers(deadline=deadline)
+            virtus_app._shutdown_containers(deadline=deadline)
         except Exception:
             logging.exception("desktop shutdown cleanup failed")
         finally:
@@ -209,7 +209,7 @@ class LumenTray(DesktopServer):
             logging.info("desktop shutdown: cleanup complete; stopping tray")
             self._icon.stop()
 
-    def quit_lumen(self, *_args) -> None:
+    def quit_virtus(self, *_args) -> None:
         if self._quit_requested.is_set():
             return
         self._quit_requested.set()
@@ -217,13 +217,13 @@ class LumenTray(DesktopServer):
         threading.Thread(
             target=self._watch_shutdown,
             args=(deadline,),
-            name="lumen-shutdown-watchdog",
+            name="virtus-shutdown-watchdog",
             daemon=True,
         ).start()
         self._shutdown_thread = threading.Thread(
             target=self._finish_shutdown,
             args=(deadline,),
-            name="lumen-windows-shutdown",
+            name="virtus-windows-shutdown",
             daemon=True,
         )
         self._shutdown_thread.start()
@@ -237,20 +237,20 @@ def main() -> int:
             webbrowser.open(BASE_URL)
             return 0
         _windows_alert(
-            "Lumen is starting",
-            "Another Lumen process is already running. Try again in a moment.",
+            "Virtus is starting",
+            "Another Virtus process is already running. Try again in a moment.",
         )
         return 1
 
     tray = None
     try:
-        tray = LumenTray(instance)
+        tray = VirtusTray(instance)
         tray.start_server()
-        if os.getenv("LUMEN_DESKTOP_SMOKE_TEST", "") == "1":
+        if os.getenv("VIRTUS_DESKTOP_SMOKE_TEST", "") == "1":
             _validate_frozen_runtime()
             tray.stop_server()
             instance.close()
-            lumen_app._shutdown_done = True
+            virtus_app._shutdown_done = True
             return 0
         tray.run()
         if tray._shutdown_thread is not None:
@@ -267,7 +267,7 @@ def main() -> int:
             except Exception:
                 logging.exception("desktop server cleanup failed")
         instance.close()
-        _windows_alert("Lumen could not start", str(exc))
+        _windows_alert("Virtus could not start", str(exc))
         return 1
 
 

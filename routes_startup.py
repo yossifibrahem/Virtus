@@ -27,8 +27,8 @@ import runtime_requirements
 import build_info
 
 blueprint = Blueprint("startup", __name__)
-_STARTUP_TOKEN_KEY = "_lumen_startup_token"
-_STARTUP_TOKEN_ISSUED_KEY = "_lumen_startup_token_issued"
+_STARTUP_TOKEN_KEY = "_virtus_startup_token"
+_STARTUP_TOKEN_ISSUED_KEY = "_virtus_startup_token_issued"
 _STARTUP_TOKEN_TTL_SECONDS = 30 * 60
 
 
@@ -85,9 +85,9 @@ def _issue_startup_token() -> str:
 def _validate_startup_action() -> str | None:
     """Return an error string unless this is a confirmed same-origin action."""
     if not _is_same_loopback_origin():
-        return "Startup actions are allowed only from Lumen's local setup page."
+        return "Startup actions are allowed only from Virtus's local setup page."
 
-    supplied = request.headers.get("X-Lumen-Startup-Token", "")
+    supplied = request.headers.get("X-Virtus-Startup-Token", "")
     expected = session.get(_STARTUP_TOKEN_KEY, "")
     try:
         age = time.time() - float(session.get(_STARTUP_TOKEN_ISSUED_KEY, 0))

@@ -4,8 +4,7 @@
 #sidebar { background: var(--bg); border-right-color: var(--border); }
 #sidebar-header { min-height: 54px; padding: 10px 12px; }
 .logo { gap: 8px; }
-.logo-mark { width: 24px; height: 24px; border: 0; border-radius: 0; color: var(--text); }
-.logo-mark svg { width: 23px; height: 23px; }
+.logo-mark { width: 32px; height: 32px; border: 0; border-radius: 0; color: var(--text); }
 .logo-name { font-family: var(--font-roman); font-size: 1.05rem; font-weight: 500; letter-spacing: -.035em; }
 #sidebar-primary-actions { padding: 2px 8px 6px; gap: 1px; }
 .sidebar-action { min-height: 34px; padding: 7px 10px; border-radius: 5px; font-family: var(--font-roman); font-size: .74rem; }
@@ -46,6 +45,7 @@
 #messages .tc-item-row { flex-wrap: wrap; }
 #messages .group-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.es-brand { width: clamp(64px, 10vw, 96px); height: clamp(64px, 10vw, 96px); margin-bottom: 18px; }
 .es-logo { font-family: var(--font-roman); font-size: 1.5rem; font-weight: 400; letter-spacing: -.025em; opacity: 1; margin-bottom: 8px; }
 .es-sub { font-family: var(--font-roman); font-size: .78rem; line-height: 1.6; letter-spacing: 0; }
 .suggestion-chip { font-family: var(--font-roman); border-color: transparent; padding: 6px 10px; border-radius: 5px; }

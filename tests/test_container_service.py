@@ -166,7 +166,7 @@ class TestIsNameConflict:
 
     def test_already_in_use_detected(self):
         assert container_service._is_name_conflict(
-            'Error response from daemon: Conflict. The container name "/lumen-chat-abc" is already in use'
+            'Error response from daemon: Conflict. The container name "/virtus-chat-abc" is already in use'
         )
 
     def test_conflict_keyword_detected(self):
@@ -179,7 +179,7 @@ class TestIsNameConflict:
     def test_unrelated_error_not_detected(self):
         assert not container_service._is_name_conflict("OCI runtime error: exec failed")
         assert not container_service._is_name_conflict("")
-        assert not container_service._is_name_conflict("No such image: lumen-sandbox")
+        assert not container_service._is_name_conflict("No such image: virtus-sandbox")
 
 
 # ---------------------------------------------------------------------------
@@ -211,12 +211,12 @@ class TestVolumeArgs:
         monkeypatch.setattr(docker_path_utils.sys, "platform", "win32")
 
         result = container_service._volume_args(
-            PureWindowsPath(r"C:\Users\User\.lumen\containers\abc"),
+            PureWindowsPath(r"C:\Users\User\.virtus\containers\abc"),
         )
 
         assert result == [
             "--volume",
-            "C:/Users/User/.lumen/containers/abc:/workspace",
+            "C:/Users/User/.virtus/containers/abc:/workspace",
         ]
 
 
@@ -224,15 +224,15 @@ class TestContainerImageIdentity:
     def test_run_command_labels_container_with_configured_image(self, tmp_path, monkeypatch):
         monkeypatch.setattr(container_service.build_info, "sandbox_identity", lambda: "sandbox-digest")
         monkeypatch.setattr(container_service._adv_cfg, "load_advanced_config", lambda: {
-            "sandbox_image": "registry.example/lumen:1.2.3",
+            "sandbox_image": "registry.example/virtus:1.2.3",
             "container_memory": "512m",
             "container_cpus": "1",
             "container_network": "bridge",
         })
 
-        command = container_service._docker_run_command("lumen-chat-test", tmp_path)
+        command = container_service._docker_run_command("virtus-chat-test", tmp_path)
 
-        label = f"{container_service.build_info.CONTAINER_BUILD_LABEL}=registry.example/lumen:1.2.3"
+        label = f"{container_service.build_info.CONTAINER_BUILD_LABEL}=registry.example/virtus:1.2.3"
         assert ["--label", label] == command[command.index("--label"):command.index("--label") + 2]
         identity_label = f"{container_service.build_info.CONTAINER_IDENTITY_LABEL}=sandbox-digest"
         assert identity_label in command
@@ -243,7 +243,7 @@ class TestContainerImageIdentity:
         monkeypatch.setattr(container_service.build_info, 'sandbox_identity', lambda: 'identity')
         monkeypatch.setattr(container_service.build_info, 'APP_VERSION', '99.0.0-desktop-only')
         monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {
-            'sandbox_image': 'lumen-sandbox', 'container_memory': '512m',
+            'sandbox_image': 'virtus-sandbox', 'container_memory': '512m',
             'container_cpus': '1', 'container_network': 'bridge'})
         info = {
             'State': {'Status': 'running'}, 'Image': 'sha256:current',
@@ -252,7 +252,7 @@ class TestContainerImageIdentity:
                 'CapAdd': ['CHOWN', 'DAC_OVERRIDE', 'SETUID', 'SETGID'],
                 'SecurityOpt': ['no-new-privileges']},
             'Config': {'WorkingDir': '/workspace', 'Labels': {
-                container_service.build_info.CONTAINER_BUILD_LABEL: 'lumen-sandbox:latest',
+                container_service.build_info.CONTAINER_BUILD_LABEL: 'virtus-sandbox:latest',
                 container_service.build_info.CONTAINER_IDENTITY_LABEL: 'identity'}},
             'Mounts': [{'Type': 'bind', 'RW': True, 'Source': str(tmp_path), 'Destination': '/workspace'}],
         }

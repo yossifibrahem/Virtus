@@ -21,10 +21,10 @@ from docker_path_utils import host_path_to_docker_src, parse_volume_source
 
 log = logging.getLogger(__name__)
 
-CONTAINERS_ROOT = Path(os.path.expanduser(os.getenv("LUMEN_CONTAINERS_ROOT", "~/.lumen/containers")))
+CONTAINERS_ROOT = Path(os.path.expanduser(os.getenv("VIRTUS_CONTAINERS_ROOT", "~/.virtus/containers")))
 CONTAINERS_ROOT.mkdir(parents=True, exist_ok=True)
 
-CONTAINER_PREFIX = os.getenv("LUMEN_CONTAINER_PREFIX", "lumen-chat-")
+CONTAINER_PREFIX = os.getenv("VIRTUS_CONTAINER_PREFIX", "virtus-chat-")
 DISCOVERY_CONTAINER_ID = "mcp-discovery"
 DOCKER_SHUTDOWN_TIMEOUT_SECONDS = 5
 
@@ -392,7 +392,7 @@ def _remaining_shutdown_timeout(deadline: float | None) -> float:
 
 
 def stop_all_containers(*, deadline: float | None = None) -> list[str]:
-    """Kill every running lumen-chat-* container.
+    """Kill every running virtus-chat-* container.
 
     Called on app shutdown so containers are not left running indefinitely
     after the process exits.  Uses ``docker kill`` (immediate SIGKILL) rather

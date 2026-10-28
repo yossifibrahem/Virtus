@@ -42,7 +42,7 @@ svg { flex-shrink: 0; }
 [hidden] { display: none !important; }
 
 /* Highlight.js themes ship their own code background. Keep syntax colors, but
-   let Lumen's own code surfaces control the block color consistently. */
+   let Virtus's own code surfaces control the block color consistently. */
 .hljs { background: transparent; }
 
 

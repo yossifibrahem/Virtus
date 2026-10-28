@@ -66,7 +66,7 @@ def _docker_unavailable(image: str, details: str) -> RequirementStatus:
         ok=False,
         code="docker_unavailable",
         title="Docker is not available",
-        message="Install Docker Desktop, then return to Lumen and click Retry.",
+        message="Install Docker Desktop, then return to Virtus and click Retry.",
         action="retry",
         image=image,
         details=details,
@@ -75,7 +75,7 @@ def _docker_unavailable(image: str, details: str) -> RequirementStatus:
 
 def _image_check_failed(image: str, details: str) -> RequirementStatus:
     return RequirementStatus(
-        False, "sandbox_image_check_failed", "Lumen could not check its tools",
+        False, "sandbox_image_check_failed", "Virtus could not check its tools",
         "Docker returned a temporary error while checking the sandbox. Click Retry.",
         "retry", image, details,
     )
@@ -158,9 +158,9 @@ def check_sandbox_image() -> RequirementStatus:
         return RequirementStatus(
             ok=False,
             code="sandbox_image_missing",
-            title="Lumen tools need to be installed",
+            title="Virtus tools need to be installed",
             message=(
-                "Click Install Lumen Tools. Docker will download the required "
+                "Click Install Virtus Tools. Docker will download the required "
                 "components and build the sandbox on this device."
             ),
             action="build",
@@ -188,8 +188,8 @@ def check_sandbox_image() -> RequirementStatus:
         return RequirementStatus(
             ok=False,
             code="sandbox_image_check_failed",
-            title="Lumen's bundled tools are incomplete",
-            message="Required sandbox build files could not be read. Reinstall Lumen.",
+            title="Virtus's bundled tools are incomplete",
+            message="Required sandbox build files could not be read. Reinstall Virtus.",
             action="retry",
             image=image,
             details=str(exc),
@@ -199,8 +199,8 @@ def check_sandbox_image() -> RequirementStatus:
         return RequirementStatus(
             ok=False,
             code="sandbox_image_outdated",
-            title="Lumen tools need to be updated",
-            message="Click Install Lumen Tools to rebuild them from the bundled Dockerfile.",
+            title="Virtus tools need to be updated",
+            message="Click Install Virtus Tools to rebuild them from the bundled Dockerfile.",
             action="build",
             image=image,
             details=(
@@ -212,7 +212,7 @@ def check_sandbox_image() -> RequirementStatus:
     return RequirementStatus(
         ok=True,
         code="ok",
-        title="Lumen is ready",
+        title="Virtus is ready",
         message="Docker is running and the sandbox image is available.",
         action="continue",
         image=image,
@@ -236,7 +236,7 @@ def build_sandbox_image_stream():
         yield "error", RequirementStatus(
             ok=False,
             code="sandbox_image_build_in_progress",
-            title="Lumen tools are already being installed",
+            title="Virtus tools are already being installed",
             message="Wait for the current installation to finish, then click Retry.",
             action="retry",
             image=_image_name(),
@@ -260,8 +260,8 @@ def build_sandbox_image_stream():
             yield "error", RequirementStatus(
                 ok=False,
                 code="sandbox_image_build_failed",
-                title="Lumen's bundled tools are incomplete",
-                message="Required sandbox build files could not be read. Reinstall Lumen.",
+                title="Virtus's bundled tools are incomplete",
+                message="Required sandbox build files could not be read. Reinstall Virtus.",
                 action="retry",
                 image=image,
                 details=str(exc),
@@ -270,7 +270,7 @@ def build_sandbox_image_stream():
         cmd = [
             "build",
             "--progress=plain",
-            "--build-arg", f"LUMEN_SANDBOX_IDENTITY={identity}",
+            "--build-arg", f"VIRTUS_SANDBOX_IDENTITY={identity}",
             "-f", "Dockerfile.sandbox",
             "-t", image,
             ".",
@@ -362,7 +362,7 @@ def start_docker_desktop() -> RequirementStatus:
         ok=False,
         code="docker_starting",
         title="Docker is starting",
-        message="Lumen is waiting for Docker Desktop to become ready.",
+        message="Virtus is waiting for Docker Desktop to become ready.",
         action="retry",
         image=image,
     )

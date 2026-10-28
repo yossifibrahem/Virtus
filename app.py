@@ -1,5 +1,5 @@
 """
-Lumen Chatbot — Flask entry point.
+Virtus Chatbot — Flask entry point.
 
 Wires together the app factory, CORS, and route blueprints. Docker
 availability and the sandbox image are checked at startup, but unmet
@@ -48,15 +48,15 @@ def create_app() -> Flask:
         static_folder=str(assets_root / "static"),
     )
     app.config.update(
-        SECRET_KEY=os.getenv("LUMEN_SECRET_KEY") or secrets.token_bytes(32),
+        SECRET_KEY=os.getenv("VIRTUS_SECRET_KEY") or secrets.token_bytes(32),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
     )
-    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("LUMEN_MAX_CONTENT_LENGTH", str(60 * 1024 * 1024)))
+    app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("VIRTUS_MAX_CONTENT_LENGTH", str(60 * 1024 * 1024)))
     allowed_origins = [
         origin.strip()
         for origin in os.getenv(
-            "LUMEN_CORS_ORIGINS",
+            "VIRTUS_CORS_ORIGINS",
             "http://localhost:8080,http://127.0.0.1:8080,"
             "http://localhost:38492,http://127.0.0.1:38492",
         ).split(",")
@@ -115,7 +115,7 @@ def _log_startup_requirement_status(status) -> None:
 
 
 def _cleanup_stale_containers() -> None:
-    """Remove lumen-chat-* Docker containers whose conversation no longer exists."""
+    """Remove virtus-chat-* Docker containers whose conversation no longer exists."""
     try:
         import store
         known_ids = list({store.runtime_id(c["id"], c) for c in store.list_all()}
@@ -128,7 +128,7 @@ def _cleanup_stale_containers() -> None:
 
 
 def _shutdown_containers(*, deadline: float | None = None) -> None:
-    """Kill all running lumen-chat-* containers on app shutdown.
+    """Kill all running virtus-chat-* containers on app shutdown.
 
     Non-fatal: a failure to reach Docker (e.g. Docker daemon itself was
     stopped) is logged as a warning and does not prevent the process from
@@ -158,8 +158,8 @@ def _shutdown_containers(*, deadline: float | None = None) -> None:
             log.warning("[shutdown] container stop failed: %s", exc)
 
     workers = [
-        threading.Thread(target=_close_mcp, name="lumen-shutdown-mcp", daemon=True),
-        threading.Thread(target=_stop_containers, name="lumen-shutdown-containers", daemon=True),
+        threading.Thread(target=_close_mcp, name="virtus-shutdown-mcp", daemon=True),
+        threading.Thread(target=_stop_containers, name="virtus-shutdown-containers", daemon=True),
     ]
     for worker in workers:
         worker.start()
@@ -172,7 +172,7 @@ def _shutdown_containers(*, deadline: float | None = None) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    host = os.getenv("LUMEN_HOST", "127.0.0.1")
-    port = int(os.getenv("LUMEN_PORT", "8080"))
-    debug = os.getenv("LUMEN_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+    host = os.getenv("VIRTUS_HOST", "127.0.0.1")
+    port = int(os.getenv("VIRTUS_PORT", "8080"))
+    debug = os.getenv("VIRTUS_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     create_app().run(debug=debug, host=host, port=port, threaded=True)

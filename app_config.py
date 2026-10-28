@@ -14,16 +14,16 @@ from pathlib import Path
 
 from fs_utils import atomic_replace
 
-CONFIG_DIR = Path.home() / ".lumen"
+CONFIG_DIR = Path.home() / ".virtus"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-CONFIG_FILE = Path(os.getenv("LUMEN_CONFIG_FILE", str(CONFIG_DIR / "config.json")))
+CONFIG_FILE = Path(os.getenv("VIRTUS_CONFIG_FILE", str(CONFIG_DIR / "config.json")))
 
 DEFAULT_API_BASE = "https://api.openai.com/v1"
 
 _ALLOWED_KEYS = {"api_base", "api_key"}
 
 # Cache provider settings between requests while picking up manual file edits.
-_CONFIG_TTL = float(os.getenv("LUMEN_CONFIG_CACHE_TTL", "5"))
+_CONFIG_TTL = float(os.getenv("VIRTUS_CONFIG_CACHE_TTL", "5"))
 _config_cache: dict | None = None
 _config_cache_at: float = 0.0
 _config_cache_env: tuple[str, str, str] | None = None  # snapshot of env vars at cache time

@@ -13,7 +13,7 @@ def install(app):
         if app.config.get('DISABLE_REQUEST_SECURITY', False):
             return None
         host = (urlsplit(request.host_url).hostname or '').lower()
-        allowed = {'localhost', '127.0.0.1', '::1', *filter(None, os.getenv('LUMEN_ALLOWED_HOSTS', '').split(','))}
+        allowed = {'localhost', '127.0.0.1', '::1', *filter(None, os.getenv('VIRTUS_ALLOWED_HOSTS', '').split(','))}
         if host not in allowed:
             return jsonify({'error': 'Untrusted Host header'}), 403
         origin = request.headers.get('Origin')
@@ -28,7 +28,7 @@ def install(app):
             if not session.get('client_id'):
                 return jsonify({'error': 'Open the application before using its API'}), 403
             if request.method not in ('GET', 'HEAD', 'OPTIONS'):
-                token = request.headers.get('X-Lumen-CSRF', '')
+                token = request.headers.get('X-Virtus-CSRF', '')
                 if not hmac.compare_digest(token, session.get('csrf', 'invalid')):
                     return jsonify({'error': 'Invalid request token; reload the application'}), 403
 

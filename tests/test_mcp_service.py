@@ -479,9 +479,9 @@ class TestMcpSessionPool:
     ):
         created_stdio, created_sessions = self._install_fake_mcp(monkeypatch)
         if configured_timeout is None:
-            monkeypatch.delenv("LUMEN_MCP_TOOL_TIMEOUT", raising=False)
+            monkeypatch.delenv("VIRTUS_MCP_TOOL_TIMEOUT", raising=False)
         else:
-            monkeypatch.setenv("LUMEN_MCP_TOOL_TIMEOUT", configured_timeout)
+            monkeypatch.setenv("VIRTUS_MCP_TOOL_TIMEOUT", configured_timeout)
 
         if operation == "fetch_tools":
             result = mcp_service.run_async(mcp_service.fetch_tools("srv", {}))
@@ -792,7 +792,7 @@ server.run(transport="stdio")
 ''')
     params = StdioServerParameters(command=sys.executable, args=[str(script), str(started)])
     monkeypatch.setattr(mcp_service, '_build_server_params', lambda *args, **kwargs: params)
-    monkeypatch.setenv('LUMEN_MCP_TOOL_TIMEOUT', '4')
+    monkeypatch.setenv('VIRTUS_MCP_TOOL_TIMEOUT', '4')
     tools = mcp_service.run_async(mcp_service.fetch_tools('local', {}))
     assert [tool['name'] for tool in tools] == ['echo']
     assert mcp_service.run_async(mcp_service.invoke_tool('local', {}, 'echo', {'text': 'one-shot'})) == 'one-shot'

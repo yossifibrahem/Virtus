@@ -119,7 +119,7 @@ export async function regenerateFrom(logIndex, deps) {
     }
   }
   if (turnStart < 0) {
-    console.warn('[Lumen] Cannot regenerate: no user message found before assistant turn.', { logIndex, displayLog: state.displayLog });
+    console.warn('[Virtus] Cannot regenerate: no user message found before assistant turn.', { logIndex, displayLog: state.displayLog });
     return;
   }
 
