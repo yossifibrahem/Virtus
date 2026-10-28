@@ -85,7 +85,8 @@ svg { flex-shrink: 0; }
   border: none;
 }
 
-:is(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #msg-action-btn, .file-panel-actions button, .file-preview-actions button, .tc-allow, .tc-deny, .modal-tab, .model-refresh-btn, .eye-btn) {
+/* Keep the reset weaker than component hover and selection rules. */
+:where(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #msg-action-btn, .file-panel-actions button, .file-preview-actions button, .tc-allow, .tc-deny, .modal-tab, .model-refresh-btn, .eye-btn) {
   background: none;
 }
 

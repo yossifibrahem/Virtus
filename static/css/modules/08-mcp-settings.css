@@ -222,7 +222,7 @@
   cursor: pointer;
   transition: border-color .15s, background .15s, color .15s;
 }
-.server-icon-btn:hover { border-color: var(--accent); background: var(--surface); color: var(--accent); }
+.server-icon-btn:hover { border-color: var(--accent); background: var(--interaction-bg); color: var(--accent); }
 .server-icon-btn .server-icon-current { display: inline-flex; pointer-events: none; }
 .server-icon-btn svg { width: 14px; height: 14px; }
 
@@ -255,8 +255,8 @@
   transition: border-color .12s, background .12s, color .12s;
 }
 .icon-option svg { width: 15px; height: 15px; pointer-events: none; }
-.icon-option:hover { background: var(--surface2); color: var(--text); border-color: var(--border); }
-.icon-option.selected { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-border); }
+.icon-option:hover { background: var(--interaction-bg); color: var(--text); border-color: var(--border); }
+.icon-option.selected { background: var(--interaction-bg); color: var(--accent); border-color: var(--accent-border); }
 
 /* "Follow server" reset option in tool icon picker */
 .icon-option-reset {

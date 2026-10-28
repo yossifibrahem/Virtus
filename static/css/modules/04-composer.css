@@ -92,7 +92,7 @@
   border-radius: 8px;
   color: var(--text3);
 }
-#attach-btn:hover { color: var(--text); background: var(--surface); }
+#attach-btn:hover { color: var(--text); background: var(--interaction-bg); }
 #attach-btn svg { width: 15px; height: 15px; }
 
 #mic-btn {
@@ -101,7 +101,7 @@
   border-radius: 8px;
   color: var(--text3);
 }
-#mic-btn:hover { color: var(--text); background: var(--surface); }
+#mic-btn:hover { color: var(--text); background: var(--interaction-bg); }
 #mic-btn svg { width: 15px; height: 15px; }
 #mic-btn.recording {
   color: var(--accent);
@@ -131,8 +131,8 @@
   max-width: 200px;
   transition: color var(--fast), background var(--fast);
 }
-#model-badge:hover { color: var(--text); background: var(--surface); }
-#model-badge.open { color: var(--text); background: var(--accent-dim); }
+#model-badge:hover { color: var(--text); background: var(--interaction-bg); }
+#model-badge.open { color: var(--text); background: var(--interaction-bg); }
 #model-badge-label { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 #model-badge-chevron { display: inline-flex; transition: transform .18s; }
 #model-badge-chevron svg { width: 11px; height: 11px; }
@@ -194,8 +194,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mp-chip:hover { background: var(--surface); color: var(--text); }
-:is(.mp-chip, .model-chip).selected { background: var(--surface); color: var(--text);}
+.mp-chip:hover { background: var(--interaction-bg); color: var(--text); }
+:is(.mp-chip, .model-chip).selected { background: var(--interaction-bg); color: var(--text);}
 .mp-empty { display: block; padding: 10px; color: var(--text3); font-size: .7rem; text-align: center; }
 
 /* ─── Send / stop buttons ─────────────────────────────────────────────────── */
@@ -253,7 +253,7 @@
   white-space: nowrap;
 }
 .suggestion-chip:hover {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .suggestion-chip svg { width: 12px; height: 12px; opacity: .6; }

@@ -71,7 +71,7 @@
   display: grid;
   place-items: center;
 }
-.msg-action-btn:hover { background: var(--surface); border-color: var(--border); color: var(--text2); }
+.msg-action-btn:hover { background: var(--interaction-bg); border-color: var(--border); color: var(--text2); }
 .msg-action-btn svg { width: 14px; height: 14px; }
 .msg-branch-label { min-width: 26px; padding: 0 3px; color: var(--text3); font-family: var(--font-mono); font-size: .68rem; line-height: 20px; text-align: center; }
 
@@ -123,7 +123,7 @@
   background: transparent;
 }
 .code-copy svg { width: 12px; height: 12px; }
-.code-copy:hover { color: var(--text); background: var(--surface); border-color: var(--border); }
+.code-copy:hover { color: var(--text); background: var(--interaction-bg); border-color: var(--border); }
 .inline-error { color: var(--red); }
 
 .msg-content a,

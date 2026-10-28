@@ -2,7 +2,7 @@
 
 /* ─── Sidebar ─────────────────────────────────────────────────────────────── */
 #btn-toggle-sidebar { color: var(--text2); }
-#btn-toggle-sidebar:hover { color: var(--text); background: var(--surface); }
+#btn-toggle-sidebar:hover { color: var(--text); background: var(--interaction-bg); }
 #btn-toggle-sidebar svg { width: 16px; height: 16px; }
 
 #sidebar {
@@ -116,23 +116,24 @@
   letter-spacing: .08em;
 }
 .folder-group {
+  --tree-indent: 14px;
   position: relative;
   margin: 1px 0;
 }
 .folder-header {
   display: flex;
   align-items: center;
-  min-height: 36px;
-  padding: 0 5px;
+  min-height: 34px;
+  padding: 0 9px 0 4px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--text2);
   transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .folder-group.active .folder-header,
 .folder-header:hover,
 .folder-group.folder-menu-open .folder-header {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .folder-open {
@@ -148,14 +149,28 @@
   color: inherit;
   text-align: left;
 }
-.folder-icon { display: flex; margin: 0 8px 0 3px; color: var(--text3); }
-.folder-icon svg { width: 14px; height: 14px; }
+.folder-icon {
+  width: 18px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  margin-right: 7px;
+  color: inherit;
+  opacity: .72;
+}
+.folder-icon svg { width: 17px; height: 17px; }
 .folder-chats {
-  margin: 0 0 4px 24px;
+  position: relative;
+  margin: 0 0 4px var(--tree-indent);
 }
 .folder-chats[hidden] { display: none; }
-.folder-chats .conv-item { min-height: 34px; }
-.folder-chats .conv-open { min-height: 32px; }
+.folder-chats .conv-item {
+  width: calc(100% + var(--tree-indent));
+  margin-left: calc(0px - var(--tree-indent));
+  padding-left: calc(4px + var(--tree-indent));
+}
+.folder-header:hover .folder-icon { opacity: 1; }
 .folder-chats-empty { padding: 8px 12px; color: var(--text3); font-size: .7rem; }
 .folder-header:focus-within .conv-menu-btn,
 .folder-header:hover .folder-new-chat { opacity: 1; pointer-events: auto; }
@@ -180,7 +195,7 @@
   pointer-events: auto;
 }
 .folder-group.folder-menu-open .folder-menu-btn {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text2);
 }
 .folder-group.folder-menu-open .folder-menu { display: block; }
@@ -207,11 +222,11 @@
   transition: color var(--fast), background var(--fast), border-color var(--fast);
 }
 .conv-item:hover {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .conv-item.active {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .conv-item.active .conv-menu-btn,
@@ -273,7 +288,7 @@
 .conv-menu-btn:focus-visible { opacity: 1; }
 .conv-menu-btn:hover,
 .conv-item.menu-open .conv-menu-btn {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text2);
 }
 .conv-menu-btn svg { width: 16px; height: 16px; }
@@ -305,7 +320,7 @@
   text-align: left;
 }
 .conv-menu-item:hover {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .conv-menu-item.danger:hover { color: var(--red); }
@@ -337,7 +352,7 @@
   transition: color var(--fast), background var(--fast), width var(--fast), padding var(--fast), border-radius var(--fast);
 }
 .sidebar-action:hover {
-  background: var(--surface);
+  background: var(--interaction-bg);
   color: var(--text);
 }
 .sidebar-action svg {

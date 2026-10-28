@@ -170,12 +170,12 @@
   color: inherit;
   text-align: left;
 }
-.folder-home-chat:hover { background: var(--surface); color: var(--text); }
+.folder-home-chat:hover { background: var(--interaction-bg); color: var(--text); }
 .folder-home-chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
 .folder-home-chat time { flex-shrink: 0; color: var(--text3); font-family: var(--font-mono); font-size: .64rem; }
 .folder-home-chat > .conv-menu-wrap { position: absolute; right: 8px; }
 .folder-home-chat:hover .conv-menu-btn,
 .folder-home-chat.menu-open .conv-menu-btn { opacity: 1; }
-.folder-home-chat.menu-open .conv-menu-btn { background: var(--surface); color: var(--text2); }
+.folder-home-chat.menu-open .conv-menu-btn { background: var(--interaction-bg); color: var(--text2); }
 .folder-home-chat.menu-open .conv-menu { display: block; }
 .folder-home-no-chats { padding: 18px 12px; color: var(--text3); font-family: var(--font-mono); font-size: .7rem; }

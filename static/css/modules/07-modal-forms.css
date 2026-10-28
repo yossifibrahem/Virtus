@@ -20,12 +20,12 @@
 .modal-header .section-title { margin: 0; font-size: .9rem; }
 .modal-tabs { display: flex; flex: 1; gap: 4px; flex-wrap: wrap; min-width: 0; }
 .modal-tab { position: relative; padding: 6px 8px; border: none; border-radius: 6px; color: var(--text3); font-size: .82rem; font-weight: 500; background: none; white-space: nowrap; flex-shrink: 0; }
-.modal-tab:hover, .modal-tab.active { color: var(--text); background: var(--surface2); }
+.modal-tab:hover, .modal-tab.active { color: var(--text); background: var(--interaction-bg); }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 .modal-close { color: var(--text3); }
-.modal-close:hover { background: var(--surface); color: var(--text); }
+.modal-close:hover { background: var(--interaction-bg); color: var(--text); }
 .modal-close svg { width: 16px; height: 16px; }
 .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
 .modal-footer { justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
@@ -98,7 +98,7 @@
 .btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-primary:hover { opacity: .9; }
 .btn-secondary { border: 1px solid var(--border); background: var(--surface2); color: var(--text2); }
-.btn-secondary:hover { border-color: var(--border2); background: var(--surface); color: var(--text); }
+.btn-secondary:hover { border-color: var(--border2); background: var(--interaction-bg); color: var(--text); }
 .btn-secondary:disabled, .btn-danger:disabled { cursor: wait; opacity: .65; }
 .status-msg { display: none; margin-top: 12px; padding: 8px 12px; border-radius: 7px; font-size: .72rem; font-family: var(--font-mono); }
 .status-msg strong, .status-msg span { display: block; }
@@ -108,7 +108,7 @@
 .model-box { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface2); overflow: hidden; }
 .model-box-header { min-height: 34px; padding: 0 7px 0 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; color: var(--text3); font-size: .66rem; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .45px; }
 .model-refresh-btn { border: 1px solid transparent; background: transparent; color: var(--text3); cursor: pointer; }
-.model-refresh-btn:hover { border-color: var(--border2); color: var(--text); background: var(--surface); }
+.model-refresh-btn:hover { border-color: var(--border2); color: var(--text); background: var(--interaction-bg); }
 .model-refresh-btn:disabled { cursor: wait; opacity: .55; }
 .model-refresh-btn svg { width: 14px; height: 14px; }
 
@@ -122,8 +122,8 @@
 .model-list { flex-direction: column; gap: 2px; max-height: 220px; margin: 0; padding: 6px; border: 0; border-radius: 0; background: transparent; display: flex; overflow-y: auto; }
 .model-empty { padding: 12px 8px; color: var(--text3); font-size: .7rem; font-family: var(--font-mono); text-align: center; }
 .model-row { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text2); font-size: .72rem; font-family: var(--font-mono); text-align: left; cursor: pointer; }
-.model-row:hover { background: var(--surface); color: var(--text); }
-.model-row.selected { color: var(--text); background: var(--surface); border-color: var(--border2); }
+.model-row:hover { background: var(--interaction-bg); color: var(--text); }
+.model-row.selected { color: var(--text); background: var(--interaction-bg); border-color: var(--border2); }
 .model-row span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-chip { padding: 5px 11px; border: 1px solid var(--border); border-radius: 20px; font-size: .68rem; font-family: var(--font-mono); }
 .model-chip:hover { border-color: var(--accent); color: var(--accent); }
@@ -171,7 +171,7 @@
 .memory-row-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .memory-icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--text3); cursor: pointer; }
 .memory-icon svg { width: 16px; height: 16px; }
-.memory-icon:hover { color: var(--text); background: var(--surface2); }
+.memory-icon:hover { color: var(--text); background: var(--interaction-bg); }
 .memory-icon.memory-delete:hover { color: var(--red); }
 .memory-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .memory-icon:disabled { opacity: .35; cursor: default; }
@@ -195,7 +195,7 @@
 .danger-zone-desc { margin: 0 0 14px; color: var(--text2); font-size: .75rem; line-height: 1.55; }
 .danger-zone-row { display: flex; align-items: center; gap: 10px; }
 .btn-danger { border: 1px solid rgba(196, 78, 66, .45); background: var(--surface2); color: var(--red); }
-.btn-danger:hover:not(:disabled) { border-color: rgba(196, 78, 66, .65); background: var(--surface); color: var(--red); }
+.btn-danger:hover:not(:disabled) { border-color: rgba(196, 78, 66, .65); background: var(--interaction-bg); color: var(--red); }
 .danger-status {
   margin-top: 10px;
   font-size: .72rem;

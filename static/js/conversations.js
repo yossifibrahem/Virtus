@@ -135,7 +135,7 @@ function _buildFolderGroup(folder, conversationIds) {
     expandedFolderIds = new Set(Array.isArray(saved) ? saved.filter(id => typeof id === 'string') : []);
   }
   const group = document.createElement('section');
-  group.className = `folder-group${folder.id === state.folderId ? ' active' : ''}`;
+  group.className = `folder-group${!state.convId && folder.id === state.folderId ? ' active' : ''}`;
   group.dataset.folderId = folder.id;
   group.innerHTML = `
     <div class="folder-header">
@@ -375,7 +375,7 @@ function updateConversationListTitle(convId, title) {
 
 function setActiveConversationItem(convId) {
   document.querySelectorAll('.folder-group').forEach(group => {
-    group.classList.toggle('active', group.dataset.folderId === state.folderId);
+    group.classList.toggle('active', !convId && group.dataset.folderId === state.folderId);
     if (group.dataset.folderId === state.folderId) setFolderExpanded(group, true);
   });
   document.querySelectorAll('.conv-item.active').forEach(item => {

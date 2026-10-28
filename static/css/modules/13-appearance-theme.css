@@ -23,7 +23,7 @@
   background: none; border: none; color: var(--text3); cursor: pointer;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
-.eye-btn:hover { color: var(--text); background: var(--surface); }
+.eye-btn:hover { color: var(--text); background: var(--interaction-bg); }
 
 /* Range slider */
 .range-slider {
@@ -139,6 +139,10 @@
   /* Semantic colour — same across themes */
   --green: #4f8f5f;
   --red: #c44e42;
+
+  /* Shared neutral hover / selection fill. Move toward the foreground in both
+     themes, independent of the panel surface underneath the control. */
+  --interaction-bg: color-mix(in srgb, var(--bg), var(--text) 12%);
 
   /* Layout */
   --radius: 12px;

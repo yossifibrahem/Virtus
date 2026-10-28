@@ -2,7 +2,7 @@
 
 /* ─── Workspace files panel ──────────────────────────────────────────────── */
 #btn-toggle-files { color: var(--text2); }
-#btn-toggle-files:hover { color: var(--text); background: var(--surface); }
+#btn-toggle-files:hover { color: var(--text); background: var(--interaction-bg); }
 #btn-toggle-files svg { width: 16px; height: 16px; }
 
 #file-panel {
@@ -76,7 +76,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   color: var(--text3);
 }
 .file-panel-actions button:hover,
-.file-preview-actions button:hover:not(:disabled) { color: var(--text); background: var(--surface); }
+.file-preview-actions button:hover:not(:disabled) { color: var(--text); background: var(--interaction-bg); }
 .file-preview-actions button:disabled { opacity: .35; cursor: not-allowed; }
 .file-panel-actions svg,
 .file-preview-actions svg { width: 14px; height: 14px; }
@@ -133,12 +133,12 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
 }
 .file-row:hover {
   color: var(--text);
-  background: var(--surface2);
+  background: var(--interaction-bg);
 }
 .file-row.active {
   color: var(--text);
   border-color: var(--border2);
-  background: var(--surface2);
+  background: var(--interaction-bg);
 }
 .file-row-icon {
   width: 18px;
@@ -304,7 +304,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   color: var(--text3);
   transition: color var(--fast), background var(--fast);
 }
-#btn-toggle-render:hover { color: var(--text); background: var(--surface); }
+#btn-toggle-render:hover { color: var(--text); background: var(--interaction-bg); }
 #btn-toggle-render.active { color: var(--accent); }
 #btn-toggle-render svg { width: 14px; height: 14px; }
 
@@ -361,8 +361,8 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   color: var(--text3);
   transition: background var(--fast), color var(--fast);
 }
-.file-panel-tab.active { background: var(--surface2); color: var(--text); }
-.file-panel-tab:hover { color: var(--text); background: var(--surface2); }
+.file-panel-tab.active { background: var(--interaction-bg); color: var(--text); }
+.file-panel-tab:hover { color: var(--text); background: var(--interaction-bg); }
 .file-panel-tab button {
   appearance: none;
   border: 0;
@@ -399,6 +399,6 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
 .file-tab-close svg { width: 12px; height: 12px; }
 .file-panel-tab:hover .file-tab-close,
 .file-panel-tab .file-tab-close:focus-visible { opacity: 1; }
-.file-panel-tab .file-tab-close:hover { background: var(--border); }
+.file-panel-tab .file-tab-close:hover { background: var(--interaction-bg); }
 .file-panel-tab button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 @media (hover: none) { .file-panel-tab .file-tab-close { opacity: 1; } }

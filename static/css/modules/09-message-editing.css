@@ -8,7 +8,7 @@
 .msg-edit-save { background: var(--accent); color: var(--on-accent); }
 .msg-edit-save:hover { opacity: .9; transform: translateY(-1px); }
 .msg-edit-cancel { border-color: var(--border); background: var(--surface2); color: var(--text2); }
-.msg-edit-cancel:hover { border-color: var(--border2); background: var(--surface); color: var(--text); }
+.msg-edit-cancel:hover { border-color: var(--border2); background: var(--interaction-bg); color: var(--text); }
 .msg-edit-attachments { margin-top: 0; margin-bottom: 0; }
 .msg-edit-image-card, .msg-edit-file-card { opacity: .9; }
 .msg-edit-image-thumb { opacity: .86; }
