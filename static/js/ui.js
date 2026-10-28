@@ -175,37 +175,3 @@ export function updateCharCount() {
   const len   = input.value.length;
   count.textContent = len > 0 ? `${len} chars` : '';
 }
-
-// ── Mobile keyboard handling ──────────────────────────────────────────────────
-
-export function initMobileKeyboardHandling() {
-  if (!window.visualViewport) return;
-
-  const root     = document.documentElement;
-  const messages = document.getElementById('messages');
-  let   rafId    = null;
-
-  function applyVVH() {
-    rafId  = null;
-    const h = window.visualViewport.height;
-    const atBottom = messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight <= 32;
-    root.style.setProperty('--vvh', `${h}px`);
-
-    if (atBottom) {
-      requestAnimationFrame(() => {
-        messages.scrollTop = messages.scrollHeight;
-      });
-    }
-  }
-
-  function schedule() {
-    if (rafId !== null) return;          // already queued
-    rafId = requestAnimationFrame(applyVVH);
-  }
-
-  window.visualViewport.addEventListener('resize', schedule);
-  window.visualViewport.addEventListener('scroll', schedule);
-
-  // Set the initial value so the variable is defined before any paint.
-  applyVVH();
-}

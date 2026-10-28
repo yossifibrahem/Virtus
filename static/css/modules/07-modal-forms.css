@@ -7,7 +7,7 @@
 .modal {
   width: 100%;
   max-width: 400px;
-  max-height: calc(var(--vvh, 100dvh) - 32px);
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border2);
@@ -15,7 +15,7 @@
   background: var(--bg);
   box-shadow: var(--shadow);
 }
-.modal-wide { max-width: 560px; max-height: min(560px, calc(var(--vvh, 100dvh) - 32px)); }
+.modal-wide { max-width: 560px; max-height: min(560px, calc(100dvh - 32px)); }
 .modal-header { justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
 .modal-header .section-title { margin: 0; font-size: .9rem; }
 .modal-tabs { display: flex; flex: 1; gap: 4px; flex-wrap: wrap; min-width: 0; }
@@ -214,7 +214,7 @@
 .modal-header, .modal-footer { flex-shrink: 0; }
 
 /* Folder settings reuse the settings shell and theme tokens. */
-.folder-settings-modal { max-width: 640px; max-height: min(720px, calc(var(--vvh, 100dvh) - 32px)); }
+.folder-settings-modal { max-width: 640px; max-height: min(720px, calc(100dvh - 32px)); }
 .folder-settings-modal .modal-body { padding: 24px; }
 .folder-settings-modal > .modal-header, .folder-settings-modal > .modal-footer { padding: 14px 24px; }
 .folder-editor-error { margin: 12px 0 0; color: var(--red); font-size: .78rem; line-height: 1.5; overflow-wrap: anywhere; }

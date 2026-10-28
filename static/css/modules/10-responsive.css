@@ -7,7 +7,7 @@
 @media (max-width: 768px) {
   :root { --sidebar-w: 280px; }
   /* On mobile, fully slide off-screen instead of icon-rail collapse */
-  #sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; height: var(--vvh, 100dvh); width: var(--sidebar-w) !important; min-width: var(--sidebar-w) !important; transition: transform .28s var(--ease); }
+  #sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; height: 100dvh; width: var(--sidebar-w) !important; min-width: var(--sidebar-w) !important; transition: transform .28s var(--ease); }
   #sidebar:not(.collapsed) { transform: translateX(0); box-shadow: 8px 0 24px rgba(0,0,0,.16); }
   #sidebar.collapsed { transform: translateX(-100%); }
   /* Make sure labels are always visible on mobile (no icon-rail state) */
@@ -47,7 +47,7 @@
   #btn-toggle-sidebar, #btn-toggle-files { width: 36px; height: 36px; }
   #btn-toggle-sidebar svg { width: 20px; height: 20px; }
   .modal-overlay { padding: 12px; }
-  .modal, .modal-wide { max-height: calc(var(--vvh, 100dvh) - 24px); }
+  .modal, .modal-wide { max-height: calc(100dvh - 24px); }
   .modal-close { min-width: 36px; min-height: 36px; }
   .field :is(input:not([type="range"]), select, textarea) { padding: 9px 10px; font-size: 0.94rem; }
   .btn-primary, .btn-secondary, .btn-danger { min-height: 36px; padding: 8px 12px; }

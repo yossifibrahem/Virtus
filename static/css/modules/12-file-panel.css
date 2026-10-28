@@ -11,7 +11,7 @@
   min-width: 0;
   flex-shrink: 0;
   max-width: min(50vw, 920px);
-  height: var(--vvh, 100dvh);
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -317,7 +317,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
     width: min(460px, 94vw) !important;
     min-width: min(460px, 94vw);
     max-width: 94vw;
-    height: var(--vvh, 100dvh);
+    height: 100dvh;
     margin-right: 0;
     box-shadow: -8px 0 24px rgba(0,0,0,.16);
     transform: translateX(105%);

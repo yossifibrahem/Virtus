@@ -1042,7 +1042,7 @@ for (const fail of [false, true]) {
     Event: class {constructor(type) {this.type = type;}},
     console: {error() {}}, showToast() {},
     state: {}, STORAGE_KEYS: {lastConv: 'last'}, storage: {get: () => 'saved'},
-    initIcons() {}, initFilePanel() {}, initMobileKeyboardHandling() {},
+    initIcons() {}, initFilePanel() {},
     bindEvents() {}, loadSettings() {}, loadCustomization() {},
     initSidebar: () => {sidebarReady = true;}, loadCachedTools() {},
     loadMemorySettings: () => pending,
