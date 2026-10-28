@@ -25,16 +25,16 @@ export const DEFAULT_ICONS = Object.freeze({
   menu: icon('<path d="M4.5 7h15M4.5 12h15M4.5 17h15"/>', 'stroke-width="2.6"'),
   settings: icon('<path d="M4 7h9"/><path d="M17 7h3"/><circle cx="15" cy="7" r="2"/><path d="M4 17h3"/><path d="M11 17h9"/><circle cx="9" cy="17" r="2"/>'),
   plus: icon('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.7"'),
-  chatPlus: icon('<path d="M6.5 4h11A3.5 3.5 0 0 1 21 7.5v6A3.5 3.5 0 0 1 17.5 17H12l-5 4v-4h-.5A3.5 3.5 0 0 1 3 13.5v-6A3.5 3.5 0 0 1 6.5 4z"/><path d="M12 7.5v6M9 10.5h6"/>'),
+  chatPlus: icon('<path d="M6.5 4h11A3.5 3.5 0 0 1 21 7.5v6A3.5 3.5 0 0 1 17.5 17H12l-5 4v-4h-.5A3.5 3.5 0 0 1 3 13.5v-6A3.5 3.5 0 0 1 6.5 4z"/>'),
   folder: icon('<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'),
   folderOpen: icon('<path d="M3 17.5V7a2 2 0 0 1 2-2h5l2 2h6.5a2 2 0 0 1 2 2v1"/><path d="M4.5 10h16.25a1.25 1.25 0 0 1 1.2 1.6l-2 6.75A2.25 2.25 0 0 1 17.8 20H5.2a2.25 2.25 0 0 1-2.15-2.9l1.45-5.35A2.5 2.5 0 0 1 6.9 10z"/>'),
-  folderPlus: icon('<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M12 11v5M9.5 13.5h5"/>'),
+  folderPlus: icon('<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>'),
 
   // ── Brand / logo ───────────────────────────────────────────────────────────
-  logo: icon('<path d="M7.5 4h9A3.5 3.5 0 0 1 20 7.5v9a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 16.5v-9A3.5 3.5 0 0 1 7.5 4z"/><path d="M12 4V2.5"/><path d="M9 2.5h6"/><path d="M8.7 10h.01M15.3 10h.01"/><path d="M9 14.75c1.9 1.25 4.1 1.25 6 0"/>'),
+  logo: icon('<path d="M7 4v13a3 3 0 0 0 3 3h9"/><path d="M12 4v10a1 1 0 0 0 1 1h6"/><path d="M17 4v5h3"/>', 'stroke-width="2.3"'),
 
   // ── Input toolbar ──────────────────────────────────────────────────────────
-  send: icon('<path d="M4 5.25 21 12 4 18.75 7.25 12 4 5.25z"/><path d="M7.25 12H14"/>', 'stroke-width="2.2"'),
+  send: icon('<path d="M12 19V5M6 11l6-6 6 6"/>', 'stroke-width="2.2"'),
   stop: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/></svg>',
   mic: icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/>'),
   file: icon('<path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/><path d="M8.5 13h7M8.5 17h5"/>'),

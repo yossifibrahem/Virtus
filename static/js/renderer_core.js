@@ -58,14 +58,9 @@ export function createMessageRow({ avatarClass, avatarIcon, roleLabel, isUser = 
   if (input) input.placeholder = 'Ask anything…';
 
   const row = createElement('div', { className: `msg-row${isUser ? ' user-row' : ''}` });
-  const metaHtml = isUser
-    ? `<span class="msg-role-label">${roleLabel}</span><div class="msg-avatar ${avatarClass}">${avatarIcon}</div>`
-    : `<div class="msg-avatar ${avatarClass}">${avatarIcon}</div><span class="msg-role-label">${roleLabel}</span>`;
-
-  row.innerHTML = `
-    <div class="msg-meta">
-      ${metaHtml}
-    </div>`;
+  // Keep speaker identity accessible without repeating decorative avatars.
+  row.setAttribute('aria-label', isUser ? 'Your message' : 'Assistant message');
+  row.innerHTML = `<div class="msg-meta"><span class="msg-role-label">${roleLabel}</span></div>`;
 
   messagesEl().appendChild(row);
   return row;

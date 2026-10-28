@@ -1,0 +1,65 @@
+/* Restrained chat refinements. Sidebar rows use the file browser's surface,
+   borders, density, and selection treatment. File-panel styles stay untouched. */
+:root { --sidebar-w: 240px; }
+#sidebar { background: var(--bg); border-right-color: var(--border); }
+#sidebar-header { min-height: 54px; padding: 10px 12px; }
+.logo { gap: 8px; }
+.logo-mark { width: 24px; height: 24px; border: 0; border-radius: 0; color: var(--text); }
+.logo-mark svg { width: 23px; height: 23px; }
+.logo-name { font-family: var(--font-roman); font-size: 1.05rem; font-weight: 500; letter-spacing: -.035em; }
+#sidebar-primary-actions { padding: 2px 8px 6px; gap: 1px; }
+.sidebar-action { min-height: 34px; padding: 7px 10px; border-radius: 5px; font-family: var(--font-roman); font-size: .74rem; }
+#btn-new-chat { font-family: var(--font-roman); }
+#conv-list { padding: 3px 7px 10px; }
+.conv-section-label { padding: 8px 9px 5px; font-family: var(--font-roman); font-size: .65rem; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.conv-item { min-height: 34px; margin-block: 1px; border-radius: 5px; }
+.conv-open { min-height: 32px; padding: 6px 8px; }
+.conv-title, .folder-name { font-size: .74rem; }
+#sidebar-footer { padding: 6px 8px 8px; border-top: 1px solid var(--border); }
+#sidebar.collapsed #sidebar-header { padding: 10px 0; }
+
+#chat-title-input:focus-visible { outline: 2px solid var(--accent-border); outline-offset: 3px; border-radius: 3px; }
+.msg-row { max-width: calc(var(--content-w) + 48px); padding: 18px 24px 6px; }
+.msg-row:first-child { padding-top: 26px; }
+.msg-meta { margin-bottom: 7px; }
+.msg-role-label { font-family: var(--font-roman); font-size: .68rem; font-weight: 400; text-transform: none; letter-spacing: 0; }
+#messages .user-row .msg-meta { display: none; }
+.user-row .msg-content { width: fit-content; max-width: 85%; padding: 10px 14px; border-radius: 9px; border-color: transparent; background: var(--surface2); }
+.msg-content { overflow-wrap: anywhere; }
+.msg-content pre code { padding-right: 38px; }
+.msg-content code:not(pre code) { color: var(--text); background: var(--code-bg); border-color: var(--border); }
+
+/* Compact composer: no shadow, glow, dividers, or additional caption row. */
+#composer-input-panel { border-radius: 11px; border-color: var(--border); background: var(--surface2); }
+#composer-input-panel:focus-within { border-color: var(--border2); }
+#user-input { min-height: 46px; padding: 12px 14px 6px; line-height: 1.6; }
+.input-toolbar { padding: 3px 8px 8px; }
+#model-badge { font-family: var(--font-roman); font-size: .7rem; }
+#send-btn, #stop-btn { width: 30px; height: 30px; border-radius: 7px; }
+#send-btn svg { width: 16px; height: 16px; }
+.mp-header, .mp-chip, .mp-empty { font-family: var(--font-roman); }
+.mp-header { text-transform: none; letter-spacing: 0; }
+
+/* Keep activity as a quiet disclosure line, with details available on demand. */
+#messages :is(.thinking-header, .tr-summary, .group-header, .tool-strip-using, .tool-strip-running, .tc-item-header) { font-family: var(--font-roman); font-size: .73rem; }
+#messages .thinking-body { font-family: var(--font-roman); line-height: 1.6; }
+#messages .tc-item-row { flex-wrap: wrap; }
+#messages .group-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.es-logo { font-family: var(--font-roman); font-size: 1.5rem; font-weight: 400; letter-spacing: -.025em; opacity: 1; margin-bottom: 8px; }
+.es-sub { font-family: var(--font-roman); font-size: .78rem; line-height: 1.6; letter-spacing: 0; }
+.suggestion-chip { font-family: var(--font-roman); border-color: transparent; padding: 6px 10px; border-radius: 5px; }
+
+@media (max-width: 768px) {
+  #sidebar-header, #sidebar.collapsed #sidebar-header { min-height: 50px; padding: 9px 12px; }
+  /* Retain larger touch targets without increasing desktop row density. */
+  .sidebar-action, #sidebar.collapsed .sidebar-action { min-height: 40px; }
+  .conv-item { min-height: 40px; }
+  .conv-open { min-height: 38px; }
+  .msg-row { padding: 14px 14px 4px; }
+  .msg-row:first-child { padding-top: 20px; }
+  .user-row .msg-content { max-width: 92%; }
+  #user-input { font-size: 16px; }
+  #attach-btn, #mic-btn, #send-btn, #stop-btn { min-width: 36px; min-height: 36px; }
+  .es-sub { max-width: 280px; }
+}
