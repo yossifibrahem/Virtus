@@ -8,6 +8,7 @@ export const DEFAULT_ICONS = Object.freeze({
   ai: icon('<path d="M8 5h8a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-1.8L12 21.25 9.8 19H8a4 4 0 0 1-4-4V9a4 4 0 0 1 4-4z"/><path d="M12 5V2.75"/><path d="M9 2.75h6"/><path d="M8.75 11h.01M15.25 11h.01"/><path d="M9.5 14.5h5"/>'),
 
   // ── Actions ────────────────────────────────────────────────────────────────
+  panelLeft: icon('<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/>'),
   check: icon('<path d="M20 6.5 9.4 17.1 4 11.7"/>', 'stroke-width="2.7"'),
   close: icon('<path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5"/>', 'stroke-width="2.5"'),
   moreVertical: icon('<circle cx="12" cy="5" r="1.65" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.65" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.65" fill="currentColor" stroke="none"/>'),

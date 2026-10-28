@@ -41,10 +41,7 @@ function workspaceApiBase() {
 }
 
 function maxPanelWidth() {
-  // Keep this in sync with the desktop max-width in 12-file-panel.css. The
-  // same value drives the panel's negative closing margin, so allowing the
-  // custom property to exceed the rendered width can push the header controls
-  // past the right edge of the viewport when the panel closes.
+  // Keep the saved preview width within the desktop CSS viewport limit.
   const viewportLimit = Math.floor(window.innerWidth * MAX_PANEL_VIEWPORT_RATIO);
   return Math.max(MIN_PANEL_WIDTH, Math.min(viewportLimit, 920));
 }

@@ -7,22 +7,28 @@
 
 #file-panel {
   --file-panel-w: 380px;
-  width: var(--file-panel-w);
-  min-width: 280px;
+  width: 0;
+  min-width: 0;
+  flex-shrink: 0;
   max-width: min(50vw, 920px);
   height: var(--vvh, 100dvh);
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-left: 1px solid var(--border);
-  transform: translateX(100%);
-  margin-right: calc(-1 * var(--file-panel-w));
-  transition: transform .28s var(--ease), margin-right .28s var(--ease), width .12s linear;
+  border-left: 0 solid var(--border);
+  visibility: hidden;
+  transition: width .28s var(--ease), transform .28s var(--ease), visibility 0s linear .28s;
   position: relative;
   overflow-x: hidden;
   z-index: 20;
 }
-#file-panel.open { transform: translateX(0); margin-right: 0; }
+#file-panel.open {
+  width: var(--file-panel-w);
+  min-width: 280px;
+  border-left-width: 1px;
+  visibility: visible;
+  transition-delay: 0s;
+}
 #file-panel.resizing { transition: none; user-select: none; }
 
 #file-panel-resizer {
