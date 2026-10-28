@@ -44,7 +44,7 @@ def operation(runtime_id, action, path='', *, data=None, **kwargs):
             if not isinstance(data, bytes) or len(data) > limits['max_upload_bytes']:
                 raise ValueError('Invalid or oversized upload')
             payload = (payload + b'\n', data)
-        recovery = action in {'list', 'preview', 'download', 'pdf', 'delete'}
+        recovery = action in {'list', 'preview', 'download', 'pdf'}
         with storage_safeguards.recovery_operation() if recovery else nullcontext():
             with sandbox_runtime.runtime_operation(runtime_id):
                 code, raw, error = sandbox_runtime.docker_operation(runtime_id,

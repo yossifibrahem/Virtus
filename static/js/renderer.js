@@ -11,7 +11,6 @@
 
 import { applyMarkdown } from './markdown.js';
 import { createElement } from './dom.js';
-import { initTabs } from './ui.js';
 import { ICONS } from './icons.js';
 import { escapeHtml, formatConversationDate } from './format.js';
 import { workingTitleAttributes } from './conversation_activity.js';
@@ -61,11 +60,8 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
     const history = document.createElement('section');
     history.id = 'folder-home-chats';
     history.innerHTML = `
-      <div class="folder-home-tabs" role="tablist" aria-label="Folder content">
-        <button class="folder-home-tab active" type="button" role="tab" aria-selected="true" id="folder-tab-chats" aria-controls="folder-panel-chats" data-folder-tab="chats">Chats</button>
-        <button class="folder-home-tab" type="button" role="tab" aria-selected="false" id="folder-tab-instructions" aria-controls="folder-panel-instructions" data-folder-tab="instructions">Instructions</button>
-      </div>
-      <div class="folder-home-panel" role="tabpanel" id="folder-panel-chats" aria-labelledby="folder-tab-chats" data-folder-panel="chats">
+      <h2 class="folder-home-heading">Chats</h2>
+      <div class="folder-home-panel">
         <div class="folder-home-list">
         ${conversations.length ? conversations.map(conv => `
           <div class="folder-home-chat" data-conv-id="${escapeHtml(conv.id)}">
@@ -89,18 +85,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
           </div>`).join('') : '<div class="folder-home-no-chats">No chats in this folder yet</div>'}
         </div>
       </div>
-      <div class="folder-home-panel folder-instructions-panel" role="tabpanel" id="folder-panel-instructions" aria-labelledby="folder-tab-instructions" data-folder-panel="instructions" hidden>
-        <div class="folder-instructions-heading">
-          <div class="section-title">Folder instructions</div>
-          <p class="tool-card-desc">Guide how the assistant should respond in every chat in this folder.</p>
-        </div>
-        <textarea id="folder-instructions-input" class="msg-edit-textarea" aria-label="Folder instructions" placeholder="Be concise and cite workspace files.">${escapeHtml(folder.system_prompt || '')}</textarea>
-        <div class="folder-instructions-actions">
-          <span class="field-note">Overrides the global system prompt when it isn’t empty.</span>
-          <span class="folder-instructions-status" role="status"></span>
-          <button class="btn-secondary" type="button" data-save-folder-instructions>Save</button>
-        </div>
-      </div>`;
+      `;
     history.querySelectorAll('.folder-home-chat').forEach(item => {
       const convId = item.dataset.convId;
       item.querySelector('.folder-home-chat-open').addEventListener('click', () => document.dispatchEvent(new CustomEvent(
@@ -131,26 +116,7 @@ export function clearMessages({ folder = null, conversations = [] } = {}) {
         ));
       });
     });
-    const instructionsInput = history.querySelector('#folder-instructions-input');
-    const saveInstructions = history.querySelector('[data-save-folder-instructions]');
-    const instructionsStatus = history.querySelector('.folder-instructions-status');
-    saveInstructions.addEventListener('click', () => {
-      saveInstructions.disabled = true;
-      instructionsStatus.textContent = 'Saving…';
-      document.dispatchEvent(new CustomEvent('chat:update-folder-instructions-requested', {
-        detail: {
-          folderId: folder.id,
-          systemPrompt: instructionsInput.value.trim(),
-          done: error => {
-            saveInstructions.disabled = false;
-            instructionsStatus.textContent = error ? `Could not save: ${error}` : 'Saved';
-            instructionsStatus.classList.toggle('error', Boolean(error));
-          },
-        },
-      }));
-    });
     messages.appendChild(history);
-    initTabs(history.querySelector('[role="tablist"]'));
   }
 
   const suggestionsBar = document.getElementById('suggestions-bar');

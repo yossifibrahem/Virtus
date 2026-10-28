@@ -417,10 +417,8 @@ The file panel transfers files through the container rather than following sandb
 After updating, rebuild the sandbox image through the startup screen. Helper sources participate in the sandbox identity, so older containers are recreated automatically. Native tool names `bash`, `view`, `write`, and `edit` are reserved; rename conflicting MCP tools.
 
 If a workspace reaches a storage limit, the file panel remains available for browsing,
-downloads, and explicit deletion of managed files or directories. Delete asks for
-confirmation and does not follow symlinks. Uploads
-and ordinary agent execution remain blocked until space is recovered. Rebuild the
-sandbox image after updating the file worker to enable this recovery action.
+previews, and downloads. Uploads and ordinary agent execution remain blocked until
+space is recovered.
 
 ---
 

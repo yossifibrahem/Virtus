@@ -269,13 +269,10 @@ and MCP wait loops check about every two seconds. Accounting never follows works
 Docker free/used storage is queried with in-container disk_usage when available, separately from
 host workspace storage. This is a safeguard, not a reliable hard quota.
 
-File-panel list/preview/download/PDF/delete operations use a request-local recovery
+File-panel list/preview/download/PDF operations use a request-local recovery
 context so they remain available over storage limits. Only these known worker actions
 can bypass growth checks; uploads, Bash, MCP calls and normal turns still enforce them.
-Deletion is a confirmed DELETE request, runs inside Docker using descriptor-relative
-paths, and rejects the workspace root. Symlinks are unlinked
-or refused as parents rather than followed. The context is reset on errors and does
-not propagate to unrelated request threads.
+The context is reset on errors and does not propagate to unrelated request threads.
 
 A turn watchdog cancels approval waits, HTTP streaming and MCP work at its deadline. Native command
 cleanup stops container descendants; MCP cancellation runs in its owning AnyIO task, unwinds sessions,

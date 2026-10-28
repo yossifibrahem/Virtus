@@ -605,6 +605,7 @@ function openFolderEditor(folder = null) {
   const title = document.getElementById('folder-modal-title');
   const confirm = document.getElementById('folder-modal-confirm');
   input.value = folder?.name || '';
+  document.getElementById('folder-instructions-input').value = folder?.system_prompt || '';
   title.textContent = folder ? 'Folder settings' : 'New folder';
   confirm.textContent = folder ? 'Save' : 'Create';
   updateFolderEditorControls();
@@ -623,7 +624,7 @@ function openFolderEditor(folder = null) {
 }
 
 function updateFolderEditorControls() {
-  document.querySelectorAll('#folder-modal .modal-body input, #folder-modal .modal-body button').forEach(control => {
+  document.querySelectorAll('#folder-modal .modal-body input, #folder-modal .modal-body textarea, #folder-modal .modal-body button').forEach(control => {
     control.disabled = folderEditorBusy;
   });
   document.getElementById('folder-modal-confirm').disabled = folderEditorBusy;
@@ -634,6 +635,7 @@ async function submitFolderEditor() {
   const input = document.getElementById('folder-name-input');
   const name = input.value.trim();
   if (!name) return;
+  const system_prompt = document.getElementById('folder-instructions-input').value.trim();
   const folder = editingFolder;
   const version = folderEditorVersion;
   const error = document.getElementById('folder-editor-error');
@@ -642,8 +644,8 @@ async function submitFolderEditor() {
   error.textContent = '';
   try {
     const updated = folder
-      ? await api.put(`/api/folders/${folder.id}`, { name })
-      : await api.post('/api/folders', { name });
+      ? await api.put(`/api/folders/${folder.id}`, { name, system_prompt })
+      : await api.post('/api/folders', { name, system_prompt });
     if (updated.error) { if (version === folderEditorVersion) error.textContent = updated.error; return; }
     if (version === folderEditorVersion) closeModal('folder-modal');
     await loadConversationList();
@@ -747,20 +749,4 @@ document.addEventListener('chat:delete-conversation-requested', event => {
     closeConversationMenus();
     deleteConversation(convId);
   }
-});
-
-document.addEventListener('chat:update-folder-instructions-requested', async event => {
-  const { folderId, systemPrompt, done } = event.detail || {};
-  if (!folderId) return;
-
-  const updated = await api.put(`/api/folders/${folderId}`, { system_prompt: systemPrompt || '' });
-  if (updated.error) {
-    done?.(updated.error);
-    return;
-  }
-
-  const index = folders.findIndex(folder => folder.id === folderId);
-  if (index >= 0) folders[index] = updated;
-  if (activeFolderId === folderId) state.folderSystemPrompt = updated.system_prompt || '';
-  done?.(null, updated);
 });

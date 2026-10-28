@@ -644,6 +644,11 @@
         <label for="folder-name-input">Name</label>
         <input id="folder-name-input" type="text" class="input-base" placeholder="Folder name" autocomplete="off" />
       </div>
+      <div class="field">
+        <label for="folder-instructions-input">Instructions</label>
+        <textarea id="folder-instructions-input" class="input-base textarea-tall" rows="5" aria-describedby="folder-instructions-note" placeholder="Be concise and cite workspace files."></textarea>
+        <p id="folder-instructions-note" class="field-note">Guide how the assistant should respond in every chat in this folder. Overrides the global system prompt when it isn’t empty.</p>
+      </div>
       <p id="folder-editor-error" class="folder-editor-error" role="alert"></p>
     </div>
     <div class="modal-footer">

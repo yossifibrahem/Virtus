@@ -20,7 +20,7 @@ _RECOVERY = ContextVar('lumen_storage_recovery', default=False)
 
 @contextmanager
 def recovery_operation():
-    """Permit app-owned read/delete workers to recover an over-limit workspace.
+    """Permit app-owned read workers to recover an over-limit workspace.
 
     Callers must restrict this to known non-growing operations, never arbitrary
     Bash or MCP execution. The context is local to the request and always reset.
@@ -41,7 +41,7 @@ def check(runtime_id, *, docker=False):
     maximum = cfg.get('max_workspace_bytes', 10 * 1024**3)
     free = shutil.disk_usage(root).free
     if free < minimum:
-        raise StorageLimit('Managed workspace filesystem has critically low free space. Use the file panel to download or delete managed workspace files before continuing; existing files were retained.')
+        raise StorageLimit('Managed workspace filesystem has critically low free space. Free managed workspace storage before continuing; existing files were retained.')
     # Do not follow symlinks or traverse external host shares.
     total = 0
     workspace = root / container_service._safe_id(runtime_id)
@@ -53,7 +53,7 @@ def check(runtime_id, *, docker=False):
             except FileNotFoundError:
                 continue
             if total > maximum:
-                raise StorageLimit('Managed workspace storage limit reached. Use the file panel to download or delete managed workspace files before continuing; existing files were retained.')
+                raise StorageLimit('Managed workspace storage limit reached. Free managed workspace storage before continuing; existing files were retained.')
     result = {'workspace_bytes': total, 'workspace_free_bytes': free}
     if docker:
         # Docker Desktop may use a separate VM disk. Query that filesystem too.

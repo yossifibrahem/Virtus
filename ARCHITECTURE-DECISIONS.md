@@ -338,9 +338,7 @@ The follow-up review findings are fixed:
 - Container creation explicitly selects root UID/GID and private IPC/cgroup
   namespaces. Reuse accepts equivalent root-user representations, preventing
   repeated environment resets caused by image or daemon defaults.
-- Storage recovery remains available through file-panel reads/downloads and
-  confirmed deletion of managed workspace files/directories. The workspace root
-  and symlink targets are protected. Normal agent
+- Storage recovery remains available through file-panel reads/downloads. Normal agent
   execution and uploads remain storage-limited; recovery does not enable arbitrary
   Bash/MCP bypasses.
 - Failed authoritative-history reloads block turn and branch saves and new edits

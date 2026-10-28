@@ -3,7 +3,6 @@ import base64
 import io
 import json
 import os
-import shutil
 from unittest.mock import Mock
 
 import pytest
@@ -50,36 +49,6 @@ def test_symlinks_never_leave_workspace(root, tmp_path):
     assert worker.execute({'action': 'list'})['entries'] == []
 
 
-@pytest.mark.skipif(not shutil.rmtree.avoids_symlink_attacks, reason='Container deletion uses Linux descriptor-relative operations')
-def test_delete_managed_files_and_directories_without_following_links(root, tmp_path):
-    external = tmp_path / 'host-originals'
-    external.mkdir()
-    original = external / 'keep.txt'
-    original.write_text('host data')
-    (root / 'file.txt').write_text('managed')
-    assert worker.execute({'action': 'delete', 'path': '/workspace/file.txt'})['deleted'] == '/workspace/file.txt'
-    assert not (root / 'file.txt').exists()
-    folder = root / 'cache'
-    folder.mkdir()
-    (folder / 'data').write_text('cache')
-    (folder / 'external').symlink_to(external, target_is_directory=True)
-    worker.execute({'action': 'delete', 'path': '/workspace/cache'})
-    assert not folder.exists()
-    assert original.read_text() == 'host data'
-    (root / 'alias').symlink_to(external, target_is_directory=True)
-    with pytest.raises(OSError):
-        worker.execute({'action': 'delete', 'path': '/workspace/alias/keep.txt'})
-    worker.execute({'action': 'delete', 'path': '/workspace/alias'})
-    assert original.exists() and not (root / 'alias').is_symlink()
-
-
-@pytest.mark.parametrize('path', ['', '.', '/workspace', '/workspace/', '/workspace/../outside'])
-def test_delete_rejects_workspace_root_and_escaping_paths(root, path):
-    with pytest.raises(ValueError):
-        worker.execute({'action': 'delete', 'path': path})
-
-
-@pytest.mark.skipif(not shutil.rmtree.avoids_symlink_attacks, reason='Container deletion uses Linux descriptor-relative operations')
 @pytest.mark.parametrize('low_space', [False, True])
 def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_lumen, monkeypatch, low_space):
     rid = 'storage-recovery'
@@ -112,9 +81,6 @@ def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_
     assert 'storage' in result['error'].lower() or 'free space' in result['error']
     assert len(checks) == before_upload
     assert not (workspace / 'uploads').exists()
-    deleted, status = container_files.operation(rid, 'delete', '/workspace/report.txt')
-    assert status == 200 and deleted['deleted'] == '/workspace/report.txt'
-    assert not (workspace / 'report.txt').exists()
 
 
 def test_recovery_context_is_request_local_and_restored_after_error(tmp_lumen):

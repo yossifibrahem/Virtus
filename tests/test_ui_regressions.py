@@ -995,49 +995,6 @@ assert.equal(writes.length,2);
 ''')
 
 
-def test_workspace_delete_requires_confirmation_and_keeps_original_scope_on_navigation():
-    run_node(r'''
-import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
-const state={convId:'original'},requests=[],prompts=[],notices=[];
-let confirmed=false;
-const noop=()=>{};
-const overrides={
- './api.js':{api:{delete:async url=>{requests.push(url);state.convId='other';return {deleted:true};}}},
- './state.js':{state},'./ui.js':{showToast:message=>notices.push(message)},
-};
-const context=vm.createContext({window:{confirm:message=>{prompts.push(message);return confirmed;}},console});
-const source=readFileSync('static/js/file_panel.js','utf8');
-const names=new Map();
-for(const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'/gs)){
- const exports=names.get(match[2])||new Set();
- for(const name of match[1].split(','))exports.add(name.trim().split(/\s+as\s+/)[0]);
- names.set(match[2],exports);
-}
-const module=new vm.SourceTextModule(source+'\nexport {deleteWorkspaceEntry,isManagedPath};',{context});
-await module.link(specifier=>new vm.SyntheticModule([...names.get(specifier)],function(){
- for(const name of names.get(specifier))this.setExport(name,overrides[specifier]?.[name]??noop);
-},{context}));
-await module.evaluate();
-const {deleteWorkspaceEntry:remove,isManagedPath}=module.namespace;
-const button={disabled:false},entry={name:'cache',path:'/workspace/cache',type:'directory'};
-await remove(entry,button);
-assert.equal(requests.length,0,'Cancelling must not send a delete request');
-assert(prompts[0].includes('and all its contents'));
-for(const path of ['/workspace','/workspace/','/workspace/../outside']){
- assert(!isManagedPath(path));
- await remove({path},button);
-}
-assert.equal(prompts.length,1,'Protected paths must not offer deletion');
-confirmed=true;
-await remove(entry,button);
-assert.deepEqual(requests,['/api/conversations/original/files/delete?path=%2Fworkspace%2Fcache']);
-assert.equal(button.disabled,false);
-assert.equal(notices.length,0,'Navigation must not refresh or notify the wrong workspace');
-''')
-
-
 def test_initial_paint_waits_for_restoration_and_recovers_from_boot_failure():
     run_node(r'''
 import assert from 'node:assert/strict';
