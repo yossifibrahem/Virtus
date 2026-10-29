@@ -337,7 +337,8 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--border);
 }
-.file-panel-toolbar .file-panel-actions {
+.file-panel-toolbar .file-panel-actions,
+.terminal-toolbar .file-panel-actions {
   flex-shrink: 0;
   padding: 0 8px;
 }

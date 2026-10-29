@@ -17,6 +17,18 @@ export function initTerminalPanel() {
   const workspace = () => state.convId ? `/api/conversations/${encodeURIComponent(state.convId)}`
     : state.folderId ? `/api/folders/${encodeURIComponent(state.folderId)}` : null;
 
+  function terminalTheme() {
+    const css = window.getComputedStyle?.(document.documentElement);
+    const value = (name, fallback) => css?.getPropertyValue(name).trim() || fallback;
+    return { background: value('--bg', '#20201e'), foreground: value('--text', '#e4e4e7'),
+      cursor: value('--accent', '#DDB37E'), selectionBackground: value('--interaction-bg', '#444444') };
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => {
+      for (const target of tabs) target.term.options.theme = terminalTheme();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'style'] });
+  }
+
   const savedKey = 'virtus_terminal_sessions';
   let restored = false, leaving = false;
   function saveTabs() {
@@ -179,7 +191,7 @@ export function initTerminalPanel() {
     mount.setAttribute('aria-labelledby', `terminal-tab-${number}`);
     screen.append(mount);
     const term = new window.Terminal({ cursorBlink: true, fontSize: 13, scrollback: 3000,
-      fontFamily: '"JetBrains Mono", monospace', theme: { background: '#17191c', foreground: '#e4e4e7' } });
+      fontFamily: '"JetBrains Mono", monospace', theme: terminalTheme() });
     const fit = new window.FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(mount);
