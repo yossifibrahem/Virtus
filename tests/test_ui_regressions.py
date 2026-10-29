@@ -1083,8 +1083,9 @@ function element() { return {hidden:true, style:{setProperty(){}}, classList:{to
 const base='/api/conversations/chat';
 let saved=JSON.stringify({base,open:true,active:1,tabs:[{number:1,url:base+'/terminal/existing',output:'old output'}]});
 const posts=[], deletes=[], reads=[], output=[];
+let chatCreations=0;
 const context=vm.createContext({
-  ICONS:{}, state:{convId:'chat'}, createNewConversation(){throw Error('Unexpected new chat');},
+  ICONS:{}, state:{convId:'chat'}, createNewConversation(){chatCreations++; throw Error('Unexpected new chat');},
   refreshFilePanel:async()=>{},
   api:{get:async url=>{reads.push(url);return {output:'new output'};},
     post:async (...args)=>{posts.push(args);return {};}, delete:async url=>deletes.push(url)},
@@ -1092,7 +1093,7 @@ const context=vm.createContext({
   document:{hidden:false,getElementById:id=>{if(!elements.has(id)) elements.set(id,element());return elements.get(id);},
     createElement:element,addEventListener:(name,fn)=>handlers.set(name,fn)},
   window:{innerHeight:900, addEventListener:(name,fn)=>windowHandlers.set(name,fn),
-    Terminal:class {cols=80;rows=24;loadAddon(){}open(){}onData(){}focus(){}write(s){output.push(s);}},
+    Terminal:class {cols=80;rows=24;loadAddon(){}open(){}onData(){}focus(){}dispose(){}write(s){output.push(s);}},
     FitAddon:{FitAddon:class {fit(){}}}},
   ResizeObserver:class {observe(){}},setTimeout:()=>1,clearTimeout(){},console,
 });
@@ -1108,4 +1109,15 @@ assert.equal(reads.length,1,'Boot events must not restore sessions twice');
 windowHandlers.get('pagehide')();
 assert.equal(deletes.length,0,'Reload must not disconnect the shell');
 assert.equal(JSON.parse(saved).tabs[0].url,base+'/terminal/existing');
+// Keeping the panel open while repeatedly starting new chats must not allocate runtimes.
+context.state.convId=null;
+handlers.get('chat:conversation-opened')();
+handlers.get('chat:conversation-opened')();
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(chatCreations,0,'Navigation must not create an empty conversation');
+assert.equal(posts.length,0,'Navigation must not start terminal sessions');
+assert.deepEqual(deletes,[base+'/terminal/existing']);
+assert.equal(elements.get('terminal-panel').hidden,false,'Panel can stay open without a shell');
+assert.equal(JSON.parse(saved).tabs.length,0);
+
 ''')

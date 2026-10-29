@@ -250,7 +250,8 @@ export function initTerminalPanel() {
   document.addEventListener('chat:conversation-opened', () => {
     if (!restored) { restoreTabs(); return; }
     for (const target of [...tabs]) closeTab(target);
-    if (!panel.hidden) start();
+    // Navigation alone must never allocate a shell or create an empty chat.
+    renderTabs();
   });
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && !panel.hidden && !document.querySelector('.modal-overlay.open')) {
