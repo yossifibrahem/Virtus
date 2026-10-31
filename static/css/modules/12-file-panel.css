@@ -328,8 +328,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
 }
 
 /* Keep panel actions visible while the tabs scroll independently. */
-.file-panel-toolbar,
-.terminal-toolbar {
+.file-panel-toolbar {
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -337,13 +336,11 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid var(--border);
 }
-.file-panel-toolbar .file-panel-actions,
-.terminal-toolbar .file-panel-actions {
+.file-panel-toolbar .file-panel-actions {
   flex-shrink: 0;
   padding: 0 8px;
 }
-#file-panel-tabs,
-#terminal-tabs {
+#file-panel-tabs {
   display: flex;
   flex: 1;
   min-width: 0;
@@ -353,8 +350,7 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
   padding: 5px 8px;
   scrollbar-width: none;
 }
-#file-panel-tabs::-webkit-scrollbar,
-#terminal-tabs::-webkit-scrollbar { display: none; }
+#file-panel-tabs::-webkit-scrollbar { display: none; }
 .file-panel-tab {
   position: relative;
   display: flex;

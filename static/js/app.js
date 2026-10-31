@@ -17,7 +17,6 @@ import { clearMessages } from './renderer.js';
 import { initIcons } from './icons.js';
 import { loadCustomization, saveCustomization, initSwatchPicker, syncCustomizationUI } from './customization.js';
 import { initFilePanel } from './file_panel.js';
-import { initTerminalPanel } from './terminal_panel.js';
 import { loadMemorySettings } from './memory_settings.js';
 import { deleteAllData } from './workspace_settings.js';
 import { switchBranch } from './chat_branches.js';
@@ -260,8 +259,6 @@ function bindInputEvents() {
 
 function bindKeyboardEvents() {
   document.addEventListener('keydown', e => {
-    // Shell shortcuts (e.g. Ctrl+K to erase a line) belong to the terminal.
-    if (e.key !== 'Escape' && e.target.closest?.('#terminal-panel')) return;
     if (e.key === 'Escape') {
       document.querySelectorAll('.modal-overlay.open').forEach(modal => dismissModal(modal.id));
     }
@@ -287,7 +284,6 @@ function bindEvents() {
   try {
     initIcons();
     initFilePanel();
-    initTerminalPanel();
     bindEvents();
     loadSettings();
     loadCustomization();
