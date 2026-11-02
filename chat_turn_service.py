@@ -210,6 +210,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     session_pool: mcp_service.McpSessionPool | None = None
     client = None
     acc_text = acc_reasoning = ""
+    text_only = False
 
     def finalize_partial_answer(reasoning: str, text: str) -> bool:
         nonlocal assistant_completed
@@ -267,11 +268,21 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
             acc_text = ""
             acc_reasoning = ""
             tool_calls = []
+            retry_without_images = False
+            output_started = False
+            provider_messages = tool_media.expand(_inject_memory(api_messages), conv_id)
+            has_images = any(
+                isinstance(message.get('content'), list)
+                and any(part.get('type') == 'image_url' for part in message['content'])
+                for message in provider_messages
+            )
+            if text_only:
+                provider_messages = tool_media.without_images(provider_messages)
 
             for raw in stream_module.stream_chat_completion(
                 client,
                 model=body.get("model", "gpt-4o"),
-                messages=tool_media.expand(_inject_memory(api_messages), conv_id),
+                messages=provider_messages,
                 tools=tools + builtin_tools.available_schemas(),
                 cancel_event=cancel_event,
                 temperature=float(body.get("temperature", 0.7)),
@@ -282,9 +293,24 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     continue
                 etype = event.get("type")
                 if etype == "error":
+                    if (event.get('code') == 'image_inputs_unsupported' and has_images
+                            and not text_only and not output_started and not cancel_event.is_set()
+                            and time.monotonic() < deadline):
+                        text_only = True
+                        retry_without_images = True
+                        notice = {
+                            'type': 'status',
+                            'presentation': 'toast',
+                            'content': 'This model does not support image inputs. Continuing without images.',
+                        }
+                        display_log.append(notice)
+                        recorder.save(display_log, force=True)
+                        publish(notice)
+                        break
                     raise RuntimeError(event.get("message", "Model request failed"))
                 if etype == "done":
                     break
+                output_started = True
                 if etype == "tool_calls":
                     tool_calls = event.get("calls") or []
                     continue
@@ -302,6 +328,9 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                     recorder.save(display_log, acc_reasoning, acc_text)
 
                 publish(event)
+
+            if retry_without_images:
+                continue
 
             if cancel_event.is_set():
                 if finalize_partial_answer(acc_reasoning, acc_text):

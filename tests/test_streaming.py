@@ -18,6 +18,30 @@ import pytest
 import streaming
 
 
+@pytest.mark.parametrize('status,message,expected', [
+    (400, 'The provided messages contain images, but current_model does not support image inputs.', True),
+    (400, 'Image inputs are not supported by this model.', True),
+    (422, 'This model does not support images.', True),
+    (400, 'Invalid image data.', False),
+    (400, 'Image exceeds maximum size.', False),
+    (400, 'Invalid messages.', False),
+    (401, 'This model does not support image inputs.', False),
+    (500, 'This model does not support image inputs.', False),
+])
+def test_image_capability_error_code(status, message, expected):
+    import httpx
+    from openai import APIStatusError
+    client = MagicMock()
+    client.chat.completions.create.side_effect = APIStatusError(
+        message, response=httpx.Response(status, request=httpx.Request('POST', 'http://model.test')),
+        body={'error': {'message': message, 'type': 'invalid_request_error'}},
+    )
+    events = list(streaming.stream_chat_completion(client, 'local', [], [], threading.Event()))
+    assert events[0]['type'] == 'error'
+    assert (events[0].get('code') == 'image_inputs_unsupported') is expected
+    assert events[-1] == {'type': 'done'}
+
+
 @pytest.fixture(autouse=True)
 def mock_provider_chunks(monkeypatch):
     """These unit tests cover event parsing; transport cancellation is tested separately."""

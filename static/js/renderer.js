@@ -21,7 +21,7 @@ import { getRawText, appendContentParts, createAttachmentsGrid } from './rendere
 import { appendThinkingBlock } from './renderer_thinking.js';
 import { appendToolResultInline } from './renderer_tools.js';
 import { addUserFooter, addAssistantFooter } from './renderer_actions.js';
-import { assistantFooterHostIndex } from './chat_log_utils.js';
+import { assistantFooterHostIndex, isTransientStatus } from './chat_log_utils.js';
 
 export { createThinkingBlock, updateThinkingBlock, finalizeThinkingBlock } from './renderer_thinking.js';
 export { createToolStrip, toolStripSetApproval, toolStripSetRunning, toolStripFinalize } from './renderer_tools.js';
@@ -262,7 +262,7 @@ export function renderAllMessages(displayLog) {
     }
     if (entry.type === 'tool_result') appendToolResultInline(entry.name, entry.args, entry.media?.length ? { text: entry.result, media: entry.media } : entry.result, entry.displayName, idx);
     if (entry.type === 'thinking') appendThinkingBlock(entry.content, idx);
-    if (entry.type === 'status') appendAssistantStatus(entry.content, idx, entry);
+    if (entry.type === 'status' && !isTransientStatus(entry)) appendAssistantStatus(entry.content, idx, entry);
   });
   ensureTerminalAssistantFooter(displayLog);
   _scrollToBottom(true);

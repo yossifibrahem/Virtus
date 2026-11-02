@@ -1,9 +1,6 @@
 """
-Tests for the pure helper functions in chat_turn_service.py.
-
-run_persistent_chat_turn() requires a live OpenAI stream and is covered
-by the streaming integration tests. Everything tested here is a pure function
-or a thin stateful helper that does not touch the network.
+Tests for chat-turn helpers and orchestration with mocked model responses.
+These tests do not require a live provider or network access.
 
 Functions under test (chat_turn_service):
   _parse_stream_payload   — typed dict event passthrough
@@ -28,6 +25,99 @@ import pytest
 
 import chat_turn_service as svc
 import title_service
+
+
+def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, monkeypatch):
+    import copy
+    import threading
+    import store
+    from conftest import make_png_b64
+
+    conv = store.create()
+    ref = store.save_image(make_png_b64(), 'image/png')
+    messages = [
+        {'role': 'user', 'content': [{'type': 'text', 'text': 'Read this'}, {'type': 'image_ref', 'ref': ref}]},
+        {'role': 'assistant', 'content': 'Earlier answer'},
+        {'role': 'user', 'content': [{'type': 'image_ref', 'ref': ref}]},
+    ]
+    original = copy.deepcopy(messages)
+    monkeypatch.setattr(svc, 'openai_client', lambda body: MagicMock())
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    monkeypatch.setattr(svc.builtin_tools, 'invoke', lambda *a: {
+        'text': 'Page 1: extracted PDF text', 'images': [{'data': make_png_b64()}]})
+    requests, events = [], []
+    def stream(*args, **kwargs):
+        requests.append(copy.deepcopy({k: v for k, v in kwargs.items() if k != 'cancel_event'}))
+        if len(requests) == 1:
+            yield {'type': 'error', 'code': 'image_inputs_unsupported', 'message': 'Unsupported images'}
+        elif len(requests) == 2:
+            yield {'type': 'tool_calls', 'calls': [{'id': 'one', 'function': {
+                'name': 'view', 'arguments': '{"path":"document.pdf"}'}}]}
+        else:
+            yield {'type': 'text', 'content': 'Answer from text'}
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    body = {'conv_id': conv['id'], 'messages': messages, 'conversation_messages': messages,
+            'auto_generate_titles': False, 'model': 'local-model', 'temperature': .3}
+    svc.run_persistent_chat_turn(body, threading.Event(), 'fallback', events.append)
+    assert len(requests) == 3, events
+    assert requests[0]['messages'][0]['content'][1]['type'] == 'image_url'
+    for request in requests[1:]:
+        assert all(isinstance(m.get('content'), (str, type(None))) for m in request['messages'])
+        assert 'Read this' in request['messages'][0]['content']
+        assert 'Image unavailable' in request['messages'][2]['content']
+        assert request['model'] == 'local-model' and request['temperature'] == .3
+        assert request['tools'] == requests[0]['tools']
+    assert 'extracted PDF text' in requests[2]['messages'][-2]['content']
+    assert 'Image unavailable' in requests[2]['messages'][-1]['content']
+    saved = store.load(conv['id'])
+    assert saved['messages'][:3] == original
+    assert messages == original
+    assert saved['messages'][-2]['_tool_media']
+    assert saved['messages'][-1]['content'] == 'Answer from text'
+    assert len([e for e in events if e['type'] == 'status']) == 1
+    assert [e for e in events if e['type'] == 'status'][0] in saved['displayLog']
+    assert not any(e['type'] == 'error' for e in events)
+
+    # A new turn probes images again rather than remembering an old model's limitation.
+    requests.clear()
+    svc.run_persistent_chat_turn(body, threading.Event(), 'new-turn', lambda e: None)
+    assert requests[0]['messages'][0]['content'][1]['type'] == 'image_url'
+
+
+@pytest.mark.parametrize('mode', ['retry_failure', 'text', 'reasoning', 'tool_start', 'unrelated', 'no_images', 'cancel', 'deadline'])
+def test_image_fallback_does_not_loop_or_retry_after_output(tmp_virtus, monkeypatch, mode):
+    import threading
+    from types import SimpleNamespace
+    import store
+    cancel = threading.Event()
+    conv = store.create()
+    messages = [{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {'url': 'data:...'}}]}]
+    if mode == 'no_images':
+        messages = [{'role': 'user', 'content': 'Hello'}]
+    monkeypatch.setattr(svc, 'openai_client', lambda body: MagicMock())
+    monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
+    clock = SimpleNamespace(now=0.)
+    if mode == 'deadline':
+        monkeypatch.setattr(svc, 'time', SimpleNamespace(monotonic=lambda: clock.now))
+    calls, events = [], []
+    def stream(*args, **kwargs):
+        calls.append(kwargs)
+        if mode in {'text', 'reasoning', 'tool_start'}:
+            yield {'type': mode, 'content': 'Partial', 'name': 'view'}
+        if mode == 'cancel':
+            cancel.set()
+        if mode == 'deadline':
+            clock.now = float('inf')
+        yield {'type': 'error', 'message': 'Failure',
+               'code': 'other' if mode == 'unrelated' else 'image_inputs_unsupported'}
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    svc.run_persistent_chat_turn({'conv_id': conv['id'], 'messages': messages,
+                                  'auto_generate_titles': False}, cancel, 'guard', events.append)
+    assert len(calls) == (2 if mode == 'retry_failure' else 1)
+    assert len([e for e in events if e['type'] == 'status']) == (1 if mode == 'retry_failure' else 0)
+    assert any(e['type'] == 'error' for e in events)
+    if mode == 'text':
+        assert store.load(conv['id'])['messages'][-1]['content'] == 'Partial'
 
 
 # ---------------------------------------------------------------------------

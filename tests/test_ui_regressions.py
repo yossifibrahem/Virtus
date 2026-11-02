@@ -220,7 +220,8 @@ const modules = {
   './ids.js': {createClientId:noop},
   './chat_send.js': {sendMessage:noop},
   './chat_edit.js': {editAndResend:noop,regenerateFrom:noop},
-  './chat_log_utils.js': {lastAssistantMessageIndex:()=>-1},
+  './chat_log_utils.js': {lastAssistantMessageIndex:()=>-1,isTransientStatus:entry=>entry.presentation==='toast'},
+  './ui.js': {showToast:noop},
   './conversation_activity.js': {
     activeTurns:new Map(),
     updateConversationActivity:(id,disconnected=false)=>activityChanges.push([id,disconnected]),

@@ -5,6 +5,22 @@ import re
 import store
 
 
+def without_images(messages: list[dict]) -> list[dict]:
+    """Build a text-only provider request without changing stored history."""
+    output = []
+    for message in messages:
+        content = message.get('content')
+        if isinstance(content, list) and any(part.get('type') == 'image_url' for part in content):
+            content = '\n'.join(
+                'Image unavailable: this model does not support image inputs.'
+                if part.get('type') == 'image_url' else part.get('text', '')
+                for part in content
+            )
+            message = {**message, 'content': content}
+        output.append(message)
+    return output
+
+
 def directory(conv_id):
     if not isinstance(conv_id, str) or not re.fullmatch(r'[a-fA-F0-9-]{36}', conv_id) or not store.load(conv_id):
         raise ValueError('Conversation not found')

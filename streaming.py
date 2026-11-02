@@ -7,6 +7,7 @@ Flask.  `make_streaming_response` wraps it into a Flask Response.
 from __future__ import annotations
 
 import json
+import re
 from io import StringIO
 from contextlib import closing
 from functools import partial
@@ -16,6 +17,20 @@ from typing import Any, Generator
 from anyio.from_thread import start_blocking_portal
 from flask import Response, stream_with_context
 from openai import AsyncOpenAI, OpenAI
+
+
+_UNSUPPORTED_IMAGE_INPUTS = re.compile(
+    r"(?:does not|doesn't|do not|cannot|can't) support (?:the |any )?images?(?: (?:inputs?|messages))?\b"
+    r"|image (?:inputs?|messages) (?:are |is )?not supported"
+    r"|only (?:supports? |accepts? )text(?:[- ]only)? (?:inputs?|messages)",
+    re.IGNORECASE,
+)
+
+
+def _unsupported_image_inputs(exc: Exception) -> bool:
+    """Only explicit capability rejections qualify, never a generic HTTP 400."""
+    return (getattr(exc, 'status_code', None) in (400, 422)
+            and bool(_UNSUPPORTED_IMAGE_INPUTS.search(str(exc))))
 
 
 def sse_event(payload: dict) -> str:
@@ -153,7 +168,10 @@ def stream_chat_completion(
         yield {"type": "done"}
 
     except Exception as exc:
-        yield {"type": "error", "message": str(exc)}
+        event = {"type": "error", "message": str(exc)}
+        if _unsupported_image_inputs(exc):
+            event['code'] = 'image_inputs_unsupported'
+        yield event
         yield {"type": "done"}
 
 

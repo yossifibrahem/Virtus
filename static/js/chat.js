@@ -20,7 +20,8 @@ import { buildApiMessages, buildToolsPayload, buildMcpToolMetaPayload } from './
 import { createClientId } from './ids.js';
 import { sendMessage as sendMessageImpl } from './chat_send.js';
 import { editAndResend as editAndResendImpl, regenerateFrom as regenerateFromImpl } from './chat_edit.js';
-import { lastAssistantMessageIndex } from './chat_log_utils.js';
+import { lastAssistantMessageIndex, isTransientStatus } from './chat_log_utils.js';
+import { showToast } from './ui.js';
 import { activeTurns, updateConversationActivity } from './conversation_activity.js';
 
 // Attachment handling lives in chat_attachments.js.
@@ -563,7 +564,10 @@ async function processSSEEvent(evt, ctx) {
 
   } else if (evt.type === 'status') {
     ctx.turn.displayLog.push(evt);
-    if (ctx.isVisible()) renderAllMessages(ctx.turn.displayLog);
+    if (ctx.isVisible()) {
+      if (isTransientStatus(evt)) showToast(evt.content);
+      else renderAllMessages(ctx.turn.displayLog);
+    }
 
   } else if (evt.type === 'title') {
     if (ctx.turn) applyTurnTitle(ctx.turn, evt.title || ctx.turn.title);

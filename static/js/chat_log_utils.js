@@ -3,6 +3,12 @@
 
 const ASSISTANT_ARTIFACT_TYPES = new Set(['thinking', 'tool_result', 'status']);
 
+export function isTransientStatus(entry) {
+  // Older saved fallback notices predate the presentation field.
+  return entry?.type === 'status' && (entry.presentation === 'toast' ||
+    entry.content === 'This model does not support image inputs. Continuing without images.');
+}
+
 export function isUserMessage(entry) {
   return entry?.type === 'message' && entry.role === 'user';
 }
@@ -16,7 +22,7 @@ export function hasAssistantMessageContent(entry) {
 }
 
 export function isAssistantArtifact(entry) {
-  return Boolean(entry && ASSISTANT_ARTIFACT_TYPES.has(entry.type));
+  return Boolean(entry && ASSISTANT_ARTIFACT_TYPES.has(entry.type) && !isTransientStatus(entry));
 }
 
 export function canHostAssistantBranch(entry) {
