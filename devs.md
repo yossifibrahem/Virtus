@@ -218,14 +218,16 @@ failed session is discarded and a later request can open a fresh connection.
 
 User state is under `~/.virtus/`: conversations, folders, images, workspaces,
 `config.json`, `advanced_config.json`, `mcp.json`, and `memory.json`. File paths can
-be overridden by the environment variables documented in README. API keys remain
+be overridden by the environment variables in the
+[configuration reference](docs/CONFIGURATION.md#environment-variables). API keys remain
 server-side; browser settings and model request bodies do not carry them.
-Configuration precedence is environment, saved JSON, then defaults. The advanced
-settings UI marks values locked by environment variables.
+Configuration precedence is environment, saved JSON, then defaults. Runtime limits
+are configured server-side; the configuration API reports environment-locked values.
 
 Desktop releases build from `.github/workflows/release.yml`. macOS ships an Apple
 Silicon macOS 14+ DMG; Windows ships an x64 PyInstaller `onedir` ZIP that must remain
-intact. See README for build commands and `WINDOWS-PACKAGING-LESSONS.md` for Windows
+intact. See [installation and builds](docs/SETUP.md#building-and-deploying) for build
+commands and `WINDOWS-PACKAGING-LESSONS.md` for Windows
 runtime and signing constraints. Packaging includes both container workers,
 `Dockerfile.sandbox`, and `.dockerignore`. All participate in sandbox identity;
 worker changes require rebuilding the image. Desktop-only changes do not change
