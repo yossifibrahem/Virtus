@@ -59,12 +59,22 @@ Click a screenshot to view it at full size.
 <table>
   <tr>
     <td width="50%">
-      <a href="docs/images/virtus-workspace.jpg"><img src="docs/images/virtus-workspace.jpg" alt="An example conversation beside a rendered Markdown workspace file in dark mode." width="100%" /></a>
+      <a href="docs/images/virtus-workspace.jpg"><img src="docs/images/virtus-workspace.jpg" alt="The launch-plan conversation with an expanded thinking block, View and Write tool calls, and the finished Markdown file beside it." width="100%" /></a>
       <p align="center"><strong>Chat and file previews</strong></p>
     </td>
     <td width="50%">
       <a href="docs/images/virtus-folders.jpg"><img src="docs/images/virtus-folders.jpg" alt="A folder home showing its conversations and shared workspace file tree." width="100%" /></a>
       <p align="center"><strong>A home for each project</strong></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="docs/images/virtus-thinking.jpg"><img src="docs/images/virtus-thinking.jpg" alt="The launch-plan conversation with an expanded thinking block and a View tool call showing project notes." width="100%" /></a>
+      <p align="center"><strong>Thinking and tool activity</strong></p>
+    </td>
+    <td width="50%">
+      <a href="docs/images/virtus-tools.jpg"><img src="docs/images/virtus-tools.jpg" alt="A close view of the launch-plan tool timeline with an expanded Write call, the file path, size, and result." width="100%" /></a>
+      <p align="center"><strong>Tool calls in detail</strong></p>
     </td>
   </tr>
   <tr>
