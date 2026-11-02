@@ -60,21 +60,21 @@ Click a screenshot to view it at full size.
   <tr>
     <td width="50%">
       <a href="docs/images/virtus-workspace.jpg"><img src="docs/images/virtus-workspace.jpg" alt="An example conversation beside a rendered Markdown workspace file in dark mode." width="100%" /></a>
-      <p align="center"><strong>Chat and file previews</strong><br />Keep the conversation and its files side by side.</p>
+      <p align="center"><strong>Chat and file previews</strong></p>
     </td>
     <td width="50%">
       <a href="docs/images/virtus-folders.jpg"><img src="docs/images/virtus-folders.jpg" alt="A folder home showing its conversations and shared workspace file tree." width="100%" /></a>
-      <p align="center"><strong>A home for each project</strong><br />Related chats, shared files, and a place to pick up your work.</p>
+      <p align="center"><strong>A home for each project</strong></p>
     </td>
   </tr>
   <tr>
     <td width="50%">
       <a href="docs/images/virtus-appearance.jpg"><img src="docs/images/virtus-appearance.jpg" alt="Appearance settings in light mode with theme previews, font choices, and accent colors." width="100%" /></a>
-      <p align="center"><strong>Your space, your style</strong><br />Themes, typography, and colors that suit you.</p>
+      <p align="center"><strong>Your space, your style</strong></p>
     </td>
     <td width="50%">
       <a href="docs/images/virtus-memory.jpg"><img src="docs/images/virtus-memory.jpg" alt="Chat settings with example saved memories and controls to edit, add, delete, clear, or disable memory." width="100%" /></a>
-      <p align="center"><strong>Memory you can manage</strong><br />Review what carries forward into future conversations.</p>
+      <p align="center"><strong>Memory you can manage</strong></p>
     </td>
   </tr>
 </table>
