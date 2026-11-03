@@ -1,6 +1,6 @@
 /* Compact stacked activity, with independent disclosures for each step. */
 .block-group, .thinking-block, .tool-strip { margin: 6px 0; min-width: 0; }
-.block-group { width: min(100%, 540px); max-width: 100%; border: 1px solid var(--border); border-radius: 7px; background: transparent; overflow: hidden; }
+.block-group { width: 100%; max-width: 100%; border: 1px solid var(--border); border-radius: 7px; background: transparent; overflow: hidden; }
 :is(.group-header, .thinking-header, .tr-summary, .tc-item-header, .tool-strip-running-row) { width: 100%; gap: 7px; border: 0; background: transparent; text-align: left; color: var(--text2); font-family: var(--font-roman); cursor: pointer; }
 .group-header { min-height: 30px; padding: 5px 8px; border-radius: 0; transition: background 100ms ease; }
 .group-header:hover { background: var(--surface2); }
@@ -23,7 +23,7 @@
 .group-body :is(.thinking-header, .tr-summary, .tool-strip-running-row) { border-radius: 0; }
 .group-body :is(.thinking-body, .tr-body, .tc-item-args) { padding: 6px 8px 8px; border-top: 0; max-height: 144px; }
 /* Standalone steps share the same material and compact icon-led anatomy. */
-.msg-row > :is(.thinking-block, .tool-strip) { width: min(100%, 540px); max-width: min(100%, 540px); border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }
+.msg-row > :is(.thinking-block, .tool-strip) { width: 100%; max-width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }
 :is(.thinking-header, .tr-summary, .tc-item-header, .tool-strip-running-row) { min-height: 30px; padding: 5px 8px; transition: background 100ms ease; }
 :is(.thinking-header, .tr-summary, .tc-item-header, .tool-strip-running-row):hover { background: var(--surface2); }
 :is(.thinking-icon, .tool-icon) { display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--text2); opacity: 1; flex: 0 0 16px; }
