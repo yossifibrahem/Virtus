@@ -1,13 +1,13 @@
 """Workspace file and image routes."""
 from __future__ import annotations
 
+import base64
 import re
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, Response, jsonify, request
 
 import store
 import container_files
-import tool_media
 
 blueprint = Blueprint("files", __name__)
 
@@ -67,30 +67,31 @@ def workspace_file(scope, workspace_id, action):
     return jsonify({"error": "Not found"}), 404
 
 
-@blueprint.route("/api/images", methods=["POST"])
-def upload_image():
-    body = request.get_json(silent=True) or {}
-    try:
-        name = store.save_image(body.get("data", ""), body.get("media_type", "image/png"))
-        return jsonify({"ref": name, "url": f"/api/images/{name}"})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
-
-
-@blueprint.route("/api/images/<name>", methods=["GET"])
-def serve_image(name: str):
-    path = store.get_image_path(name)
-    if not path:
-        return jsonify({"error": "Not found"}), 404
-    ext = name.rsplit(".", 1)[-1]
-    return send_file(path, mimetype=f"image/{'jpeg' if ext == 'jpeg' else ext}")
-
-
-@blueprint.route("/api/conversations/<conv_id>/tool-media/<ref>")
-def tool_image(conv_id, ref):
+@blueprint.route("/api/conversations/<conv_id>/images", methods=["POST"])
+def upload_image(conv_id):
     if err := _bad_conv_id(conv_id):
         return err
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Expected a JSON object"}), 400
     try:
-        return send_file(tool_media.path(conv_id, ref), mimetype="image/jpeg")
-    except ValueError:
+        raw = base64.b64decode(body.get("data", ""), validate=True)
+        ref = store.save_image(conv_id, raw, body.get("media_type", "image/png"))
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    if ref is None:
+        return jsonify({"error": "Conversation not found"}), 404
+    return jsonify({"ref": ref, "url": f"/api/conversations/{conv_id}/images/{ref}"})
+
+
+@blueprint.route("/api/conversations/<conv_id>/images/<ref>")
+@blueprint.route("/api/conversations/<conv_id>/tool-media/<ref>")
+def serve_image(conv_id, ref):
+    if err := _bad_conv_id(conv_id):
+        return err
+    image = store.get_image(conv_id, ref)
+    if image is None:
         return jsonify({"error": "Image not found"}), 404
+    response = Response(image["data"], mimetype=image["mime_type"])
+    response.set_etag(ref)
+    return response.make_conditional(request)

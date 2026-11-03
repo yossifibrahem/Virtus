@@ -9,6 +9,7 @@ import {
   restorePendingAttachments,
   refreshImagePreviewBar,
   uploadConversationFiles,
+  uploadImage,
   waitForPendingAttachmentAdds,
 } from './chat_attachments.js';
 
@@ -36,7 +37,7 @@ export async function sendMessage(userText, deps) {
     refreshImagePreviewBar();
 
     // Resolve images first so a failed image does not silently disappear from the sent message.
-    const uploadedRefs = await Promise.all(imagesToSend.map(img => img.uploadPromise));
+    const uploadedRefs = await Promise.all(imagesToSend.map(img => uploadImage(turn.convId, img.previewUrl, img.mediaType)));
     const failedImageCount = uploadedRefs.filter(result => !result).length;
     if (failedImageCount) {
       restorePendingAttachments(attachmentsToSend);
@@ -68,6 +69,7 @@ export async function sendMessage(userText, deps) {
       const uploadedFile = uploadedFiles[attachmentIndex];
       if (entry.kind === 'image') {
         const uploaded = uploadedRefs[imageCursor++];
+        entry.previewUrl = uploaded.url;
         displayAttachments.push({
           ...uploadedFile,
           kind: 'image',

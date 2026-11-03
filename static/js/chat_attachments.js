@@ -2,13 +2,13 @@
 
 import { api } from './api.js';
 import { ICONS } from './icons.js';
-import { escapeHtml, formatBytes, fileExtensionLabel } from './format.js';
+import { escapeHtml, fileExtensionLabel } from './format.js';
 
 
 // Keep one ordered list so mixed uploads render in the exact order the user picked them.
-// Image entry: { kind: 'image', file, previewUrl, uploadPromise, name, size }
+// Image entry: { kind: 'image', file, previewUrl, mediaType, name, size }
 // File entry:  { kind: 'file', file, name, size }
-let pendingAttachments = [];
+const pendingAttachments = [];
 let pendingAttachmentAdds = Promise.resolve();
 
 function getImagePreviewBar() { return document.getElementById('image-preview-bar'); }
@@ -37,7 +37,7 @@ function refreshImagePreviewBar() {
 
   pendingAttachments.forEach((entry, idx) => {
     const wrap = document.createElement('div');
-    wrap.className = `attachment-card ${entry.kind === 'image' ? 'attachment-card--image is-uploading' : 'attachment-card--file'}`;
+    wrap.className = `attachment-card ${entry.kind === 'image' ? 'attachment-card--image' : 'attachment-card--file'}`;
 
     if (entry.kind === 'image') {
       wrap.innerHTML = `
@@ -48,19 +48,6 @@ function refreshImagePreviewBar() {
         <button class="attachment-card-remove" title="Remove attachment" aria-label="Remove attachment">
           ${ICONS.close}
         </button>`;
-
-      wrap.setAttribute('aria-busy', 'true');
-      entry.uploadPromise.then(result => {
-        // Release the base64 preview once the server URL is available.
-        if (result?.url) {
-          entry.previewUrl = result.url;
-          wrap.querySelector('img').src = result.url;
-        }
-        wrap.classList.remove('is-uploading');
-        wrap.classList.toggle('is-error', !result);
-        wrap.setAttribute('aria-busy', 'false');
-        if (!result) wrap.title = 'Upload failed. Remove this attachment and try again.';
-      });
     } else {
       wrap.innerHTML = `
         <div class="attachment-card-body">
@@ -83,21 +70,21 @@ function refreshImagePreviewBar() {
   notifyAttachmentsChanged();
 }
 
-/** Read a File into a base64 data-URL, returning { dataUrl, mediaType, name }. */
+/** Read an image into a base64 data-URL and its media type. */
 function readFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload  = () => resolve({ dataUrl: reader.result, mediaType: file.type || 'image/png', name: file.name });
+    reader.onload  = () => resolve({ dataUrl: reader.result, mediaType: file.type || 'image/png' });
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
 /** Upload base64 image to the server; returns { ref, url, mediaType } or null on failure. */
-async function uploadImage(dataUrl, mediaType) {
+export async function uploadImage(convId, dataUrl, mediaType) {
   const base64 = dataUrl.split(',')[1];
   try {
-    const result = await api.post('/api/images', { data: base64, media_type: mediaType });
+    const result = await api.post(`/api/conversations/${encodeURIComponent(convId)}/images`, { data: base64, media_type: mediaType });
     if (result.error) return null;
     return { ref: result.ref, url: result.url, mediaType };
   } catch {
@@ -134,11 +121,9 @@ async function addImageFiles(files) {
     if (!file.type.startsWith('image/')) continue;
     try {
       const { dataUrl, mediaType } = await readFile(file);
-      const uploadPromise = uploadImage(dataUrl, mediaType);
-      // Retain the original File so the send flow can copy the image into the
-      // conversation workspace in addition to uploading its model/preview copy.
-      pendingAttachments.push({ kind: 'image', file, previewUrl: dataUrl, uploadPromise, name: file.name || 'image', size: file.size || 0 });
-      refreshImagePreviewBar(); // show thumb immediately, upload in background
+      // Keep the draft local. Send creates the chat before uploading its images.
+      pendingAttachments.push({ kind: 'image', file, previewUrl: dataUrl, mediaType, name: file.name || 'image', size: file.size || 0 });
+      refreshImagePreviewBar();
     } catch {}
   }
 }

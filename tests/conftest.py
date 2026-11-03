@@ -2,7 +2,7 @@
 Shared pytest fixtures for Virtus AI Chat tests.
 
 Key responsibilities:
-  - Redirect all filesystem paths (conversations, images, containers) to tmp_path
+  - Redirect all persistence paths (database, containers) to tmp_path
     so tests never touch ~/.virtus.
   - Create a Flask test app with runtime requirement checks mocked as ready.
   - Expose a `client` fixture for HTTP integration tests.
@@ -42,26 +42,16 @@ def tmp_virtus(tmp_path, monkeypatch):
     Patches module-level constants in `store` and `container_service` so that
     all fixture-scoped tests read and write to `tmp_path` only.
 
-    Returns a dict with the three directory Paths for use in individual tests.
+    Returns the isolated database and workspace paths.
     """
-    conv_dir = tmp_path / "conversations"
-    images_dir = tmp_path / "images"
     containers_dir = tmp_path / "containers"
-    conv_dir.mkdir()
-    images_dir.mkdir()
     containers_dir.mkdir()
 
-    monkeypatch.setattr("store.CONVERSATIONS_DIR", conv_dir)
-    monkeypatch.setattr("store.IMAGES_DIR", images_dir)
-    monkeypatch.setattr("store.FOLDERS_FILE", tmp_path / "folders.json")
+    database_file = tmp_path / "virtus.sqlite3"
     monkeypatch.setattr("container_service.CONTAINERS_ROOT", containers_dir)
 
-    import store
-    store.invalidate_index()
-
     return {
-        "conv_dir": conv_dir,
-        "images_dir": images_dir,
+        "database_file": database_file,
         "containers_dir": containers_dir,
         "root": tmp_path,
     }
@@ -70,6 +60,12 @@ def tmp_virtus(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Flask app / test client
 # ---------------------------------------------------------------------------
+
+@pytest.fixture
+def image_chat(tmp_virtus):
+    import store
+    return store.create("Images")["id"]
+
 
 @pytest.fixture
 def app(tmp_virtus, monkeypatch):
@@ -134,10 +130,12 @@ def make_png_b64() -> str:
 
 
 @pytest.fixture(autouse=True)
-def isolate_global_settings(tmp_path, monkeypatch):
+def _isolate_persistent_state(tmp_path, monkeypatch):
+    import store
     import memory_service
     import advanced_config
     import container_service
+    monkeypatch.setattr(store, 'DATABASE_FILE', tmp_path / 'virtus.sqlite3')
     monkeypatch.setattr(container_service, '_last_used', {})
     monkeypatch.setattr(memory_service, 'MEMORY_FILE', tmp_path / 'memory.json')
     monkeypatch.setattr(advanced_config, 'ADVANCED_CONFIG_FILE', tmp_path / 'advanced_config.json')

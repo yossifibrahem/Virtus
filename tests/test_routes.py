@@ -8,7 +8,7 @@ Coverage:
   - GET/POST/PUT/DELETE /api/conversations
   - GET /api/conversations/<id>/workspace and /container
   - GET/POST /api/mcp/config
-  - POST/GET /api/images
+  - POST/GET /api/conversations/<id>/images
   - GET /api/conversations/<id>/files (list + content + download)
   - POST /api/chat/stream (attach, cancel, approve)
 """
@@ -43,15 +43,23 @@ class TestListConversations:
     def test_activity_returns_only_active_ids_and_streams(self, client, tmp_virtus):
         store.create("Idle")
         active = store.create("Working")
-        store.save(active["id"], {**active, "active_stream_id": "stream-1"})
+        store.update(active["id"], {"active_stream_id": "stream-1"})
         response = client.get("/api/conversations/activity")
         assert response.status_code == 200
         assert response.json == [{"id": active["id"], "active_stream_id": "stream-1"}]
-        store.save(active["id"], active)
+        store.update(active["id"], {}, remove=("active_stream_id",))
         assert client.get("/api/conversations/activity").json == []
 
 
 class TestCreateConversation:
+    @pytest.mark.parametrize("title", [None, ""])
+    def test_blank_titles_use_defaults(self, client, title):
+        created = client.post("/api/conversations", json={"title": title})
+        assert created.status_code == 201
+        assert created.json["title"] == "New Conversation"
+        renamed = client.put(f"/api/conversations/{created.json['id']}", json={"title": title})
+        assert renamed.status_code == 200
+        assert renamed.json["title"] == "Untitled"
 
     def test_returns_201_with_id(self, client, tmp_virtus):
         resp = client.post("/api/conversations",
@@ -77,6 +85,18 @@ class TestCreateConversation:
 
 
 class TestFolders:
+    def test_folder_deleted_before_update_returns_not_found(self, client):
+        folder = store.create_folder("Project")
+        original_update = store.update_folder
+
+        def delete_before_update(folder_id, **changes):
+            store.delete_folder(folder_id)
+            return original_update(folder_id, **changes)
+
+        with patch.object(store, "update_folder", side_effect=delete_before_update):
+            response = client.put(f"/api/folders/{folder['id']}", json={"name": "Renamed"})
+        assert response.status_code == 404
+
     def test_folder_routes(self, client, tmp_virtus):
         created = client.post("/api/folders", json={"name": "Project"})
         assert created.status_code == 201
@@ -144,7 +164,7 @@ class TestUpdateConversation:
     def test_update_ignores_internal_field_overwrites(self, client, tmp_virtus):
         conv = store.create("locked")
         original_messages = [{"role": "user", "content": "safe"}]
-        store.save(conv["id"], {**conv, "messages": original_messages, "active_stream_id": "stream-1"})
+        store.update(conv["id"], {"messages": original_messages, "active_stream_id": "stream-1"})
 
         resp = client.put(f"/api/conversations/{conv['id']}",
                           json={
@@ -285,53 +305,101 @@ class TestMcpConfigRoutes:
 # ===========================================================================
 
 class TestImageRoutes:
+    @pytest.fixture(autouse=True)
+    def image_urls(self, image_chat):
+        self.chat_id = image_chat
+        self.url = f"/api/conversations/{image_chat}/images"
 
     def test_upload_valid_png_returns_ref_and_url(self, client, tmp_virtus):
-        resp = client.post("/api/images",
+        resp = client.post(self.url,
                            json={"data": make_png_b64(), "media_type": "image/png"},
                            content_type="application/json")
         assert resp.status_code == 200
         assert "ref" in resp.json
-        assert resp.json["url"].startswith("/api/images/")
+        assert resp.json["url"] == f"{self.url}/{resp.json['ref']}"
 
     def test_upload_invalid_base64_returns_400(self, client, tmp_virtus):
-        resp = client.post("/api/images",
+        resp = client.post(self.url,
                            json={"data": "not-base64!!!", "media_type": "image/png"},
                            content_type="application/json")
         assert resp.status_code == 400
         assert "error" in resp.json
 
     def test_upload_unsupported_media_type_returns_400(self, client, tmp_virtus):
-        resp = client.post("/api/images",
+        resp = client.post(self.url,
                            json={"data": make_png_b64(), "media_type": "image/bmp"},
                            content_type="application/json")
         assert resp.status_code == 400
 
     def test_serve_uploaded_image_200(self, client, tmp_virtus):
-        upload = client.post("/api/images",
+        upload = client.post(self.url,
                              json={"data": make_png_b64(), "media_type": "image/png"},
                              content_type="application/json")
-        name = upload.json["ref"]
-        resp = client.get(f"/api/images/{name}")
+        resp = client.get(upload.json["url"])
         assert resp.status_code == 200
-        assert resp.content_type.startswith("image/")
+        assert resp.content_type == "image/png"
+        import base64
+        assert resp.data == base64.b64decode(make_png_b64())
+        assert client.get(upload.json["url"], headers={"If-None-Match": resp.headers["ETag"]}).status_code == 304
 
     def test_serve_nonexistent_image_returns_404(self, client, tmp_virtus):
-        resp = client.get("/api/images/" + "a" * 64 + ".png")
+        resp = client.get(self.url + "/" + "a" * 64 + ".png")
         assert resp.status_code == 404
 
-    def test_serve_unsafe_image_name_returns_404(self, client, tmp_virtus):
-        resp = client.get("/api/images/../../etc/passwd")
-        # Flask will 404 or redirect — either way, not 200
-        assert resp.status_code in (400, 404)
+    def test_unscoped_image_endpoints_are_removed(self, client):
+        assert client.post("/api/images", json={"data": make_png_b64()}).status_code == 404
+        assert client.get("/api/images/" + "a" * 64 + ".png").status_code == 404
 
-    def test_same_content_deduplicated(self, client, tmp_virtus):
+    def test_same_image_can_be_retried_in_its_chat(self, client, tmp_virtus):
         b64 = make_png_b64()
-        r1 = client.post("/api/images", json={"data": b64, "media_type": "image/png"},
+        r1 = client.post(self.url, json={"data": b64, "media_type": "image/png"},
                          content_type="application/json")
-        r2 = client.post("/api/images", json={"data": b64, "media_type": "image/png"},
+        r2 = client.post(self.url, json={"data": b64, "media_type": "image/png"},
                          content_type="application/json")
         assert r1.json["ref"] == r2.json["ref"]
+
+    def test_other_chat_cannot_serve_uploaded_or_tool_images(self, client):
+        import base64
+        import tool_media
+
+        other = store.create("Other")["id"]
+        uploaded = client.post(self.url, json={"data": make_png_b64()}).json
+        tool_ref = tool_media.save(self.chat_id, [{"data": base64.b64encode(b"tool image").decode()}])[0]
+        for owner, status in [(self.chat_id, 200), (other, 404)]:
+            assert client.get(f"/api/conversations/{owner}/images/{uploaded['ref']}").status_code == status
+            assert client.get(f"/api/conversations/{owner}/tool-media/{tool_ref}").status_code == status
+
+    def test_missing_chat_rejects_upload(self, client):
+        missing = "00000000-0000-0000-0000-000000000000"
+        response = client.post(f"/api/conversations/{missing}/images", json={"data": make_png_b64()})
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("body", [[], {"data": []}, {"data": 123}, {"media_type": []}])
+    def test_invalid_upload_body_returns_400(self, client, body):
+        assert client.post(self.url, json=body).status_code == 400
+
+    @pytest.mark.parametrize("scope", ["chat", "folder", "all"])
+    def test_deleting_owner_removes_uploaded_and_tool_images(self, client, scope):
+        import base64
+        import tool_media
+
+        folder = store.create_folder("Project") if scope == "folder" else None
+        if folder:
+            store.update(self.chat_id, {"folder_id": folder["id"]})
+        upload = client.post(self.url, json={"data": make_png_b64()}).json
+        tool_ref = tool_media.save(self.chat_id, [{"data": base64.b64encode(b"tool image").decode()}])[0]
+        path = (f"/api/folders/{folder['id']}" if folder else f"/api/conversations/{self.chat_id}")
+        with patch("container_service.stop_container"), patch("container_service.delete_workspace"):
+            response = client.post("/api/danger/delete-all") if scope == "all" else client.delete(path)
+        assert response.status_code == 200
+        assert store.get_image(self.chat_id, upload["ref"]) is None
+        assert store.get_image(self.chat_id, tool_ref) is None
+
+    def test_failed_chat_deletion_keeps_images(self, client):
+        uploaded = client.post(self.url, json={"data": make_png_b64()}).json
+        with patch("container_service.stop_container", side_effect=RuntimeError("Docker unavailable")):
+            assert client.delete(f"/api/conversations/{self.chat_id}").status_code == 503
+        assert client.get(uploaded["url"]).status_code == 200
 
 
 # ===========================================================================
@@ -919,6 +987,18 @@ def test_delete_all_includes_empty_folders_and_removes_shared_runtime_once(clien
     assert not store.list_all() and not store.list_folders()
 
 
+def test_delete_all_preserves_chats_created_after_its_cleanup_snapshot(client):
+    original = store.create("Delete")
+    created_during_cleanup = []
+    def stop(*args, **kwargs):
+        created_during_cleanup.append(store.create("Keep"))
+    with patch("container_service.stop_container", side_effect=stop), patch("container_service.delete_workspace"):
+        response = client.post("/api/danger/delete-all")
+    assert response.status_code == 200
+    assert store.load(original["id"]) is None
+    assert store.load(created_during_cleanup[0]["id"]) == created_during_cleanup[0]
+
+
 def test_conversation_and_workspace_routes_read_history_once(client, monkeypatch):
     import container_files
     import container_service
@@ -996,7 +1076,7 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
     folder = store.create_folder("Destination")
     source = Path(conversation["working_directory"]) / "source-only.txt"
     source.write_text("Source workspace")
-    original_save = store.save
+    original_update = store.update
     order = []
 
     def stop(runtime_id, *, strict):
@@ -1005,10 +1085,10 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
         assert source.exists()
         order.append("stop")
 
-    def save(conv_id, data):
+    def save(conv_id, data, **kwargs):
         assert source.exists()
         order.append("save")
-        return original_save(conv_id, data)
+        return original_update(conv_id, data, **kwargs)
 
     def remove(runtime_id):
         assert store.load(runtime_id)["folder_id"] == folder["id"]
@@ -1017,7 +1097,7 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
 
     original_remove = container_service.delete_workspace
     with patch("container_service.stop_container", side_effect=stop), \
-         patch.object(store, "save", side_effect=save), \
+         patch.object(store, "update", side_effect=save), \
          patch("container_service.delete_workspace", side_effect=remove):
         response = client.put(f"/api/conversations/{conversation['id']}", json={"folder_id": folder["id"]})
     assert response.status_code == 200
@@ -1032,7 +1112,7 @@ def test_failed_move_save_preserves_source_workspace(client, tmp_virtus):
     source = Path(conversation["working_directory"]) / "keep.txt"
     source.write_text("Source workspace")
     with patch("container_service.stop_container") as stop, \
-         patch.object(store, "save", side_effect=OSError("Disk full")), \
+         patch.object(store, "update", side_effect=OSError("Disk full")), \
          patch("container_service.delete_workspace") as remove:
         with pytest.raises(OSError, match="Disk full"):
             client.put(f"/api/conversations/{conversation['id']}", json={"folder_id": folder["id"]})
@@ -1040,3 +1120,27 @@ def test_failed_move_save_preserves_source_workspace(client, tmp_virtus):
     remove.assert_not_called()
     assert store.load(conversation["id"]) == conversation
     assert source.read_text() == "Source workspace"
+
+
+@pytest.mark.parametrize("scope,method,field", [
+    ("conversations", "post", "title"),
+    ("conversations", "post", "folder_id"),
+    ("conversations", "put", "title"),
+    ("conversations", "put", "system_prompt"),
+    ("conversations", "put", "folder_id"),
+    ("folders", "post", "name"),
+    ("folders", "post", "system_prompt"),
+    ("folders", "put", "name"),
+    ("folders", "put", "system_prompt"),
+])
+@pytest.mark.parametrize("invalid", [["bad"], {"bad": True}])
+def test_malformed_metadata_is_rejected_without_changing_storage(client, scope, method, field, invalid):
+    path = f"/api/{scope}"
+    if method == "put":
+        existing = store.create("Existing") if scope == "conversations" else store.create_folder("Existing")
+        path += f"/{existing['id']}"
+    conversations, folders = store.list_all(), store.list_folders()
+    response = getattr(client, method)(path, json={field: invalid})
+    assert response.status_code == 400
+    assert store.list_all() == conversations
+    assert store.list_folders() == folders

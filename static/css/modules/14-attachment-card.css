@@ -7,7 +7,7 @@
  * HTML structure
  * ──────────────
  * Image card:
- *   <div class="attachment-card attachment-card--image [is-uploading|is-error|is-zoom]">
+ *   <div class="attachment-card attachment-card--image">
  *     <img class="attachment-card-thumb" src="…" alt="…">
  *     <!-- optional label overlay on image cards -->
  *     <div class="attachment-card-overlay">
@@ -167,35 +167,6 @@
 .attachment-card-remove svg {
   width: 10px;
   height: 10px;
-}
-
-/* ─── State modifiers ─────────────────────────────────────────────────────── */
-.attachment-card.is-uploading .attachment-card-thumb {
-  opacity: .55;
-}
-
-.attachment-card.is-uploading::after,
-.attachment-card.is-error::after {
-  content: 'Uploading…';
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  padding: 3px 5px;
-  border-radius: 4px;
-  background: var(--surface2);
-  color: var(--text2);
-  font: .65rem/1.4 var(--font-mono);
-  pointer-events: none;
-}
-.attachment-card.is-error::after { content: 'Upload failed'; color: var(--red); }
-
-.attachment-card.is-error {
-  border-color: rgba(224,112,112,.4);
-}
-
-.attachment-card.is-error .attachment-card-thumb {
-  opacity: .3;
-  filter: grayscale(1);
 }
 
 @media (hover: none) {

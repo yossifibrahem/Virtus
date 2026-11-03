@@ -8,7 +8,6 @@ from flask import Blueprint, abort, jsonify, request
 
 import container_service
 import store
-import sandbox_runtime
 
 blueprint = Blueprint("conversations", __name__)
 
@@ -18,12 +17,15 @@ _UUID_RE = re.compile(
 )
 
 
-def _body() -> dict:
+def _body(*text_fields: str) -> dict:
     body = request.get_json(silent=True)
     if body is None:
         return {}
     if not isinstance(body, dict):
         abort(400, description="Expected a JSON object")
+    for field in text_fields:
+        if field in body and body[field] is not None and not isinstance(body[field], str):
+            abort(400, description=f"{field} must be a string or null")
     return body
 
 
@@ -51,15 +53,12 @@ def list_conversations():
 
 @blueprint.route("/api/conversations/activity", methods=["GET"])
 def conversation_activity():
-    return jsonify([
-        {"id": conv["id"], "active_stream_id": conv["active_stream_id"]}
-        for conv in store.list_all() if conv.get("active_stream_id")
-    ])
+    return jsonify(store.list_active())
 
 
 @blueprint.route("/api/conversations", methods=["POST"])
 def create_conversation():
-    body = _body()
+    body = _body("title", "folder_id")
     folder_id = body.get("folder_id")
     if folder_id and not store.get_folder(folder_id):
         return jsonify({"error": "Folder not found"}), 404
@@ -73,7 +72,7 @@ def list_folders():
 
 @blueprint.route("/api/folders", methods=["POST"])
 def create_folder():
-    body = _body()
+    body = _body("name", "system_prompt")
     return jsonify(store.create_folder(
         body.get("name", "New Folder"),
         body.get("system_prompt", ""),
@@ -84,12 +83,12 @@ def create_folder():
 def update_folder(folder_id: str):
     if err := _bad_conv_id(folder_id):
         return err
-    body = _body()
-    previous = store.get_folder(folder_id)
-    if previous is None:
-        return jsonify({"error": "Not found"}), 404
+    body = _body("name", "system_prompt")
     changes = {key: body[key] for key in ("name", "system_prompt") if key in body}
-    return jsonify(store.update_folder(folder_id, **changes))
+    updated = store.update_folder(folder_id, **changes)
+    if updated is None:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(updated)
 
 
 @blueprint.route("/api/folders/<folder_id>", methods=["DELETE"])
@@ -105,8 +104,6 @@ def delete_folder(folder_id: str):
     if err := _delete_runtime(runtime_id):
         return err
     conversation_ids = [c["id"] for c in conversations]
-    for conversation_id in conversation_ids:
-        store.delete(conversation_id)
     store.delete_folder(folder_id)
     return jsonify({"ok": True, "deleted_conversation_ids": conversation_ids})
 
@@ -149,7 +146,10 @@ def update_conversation(conv_id: str):
     if err := _bad_conv_id(conv_id):
         return err
     allowed_fields = {"title", "system_prompt", "messages", "displayLog", "folder_id"}
-    body = _body()
+    body = _body("title", "system_prompt", "folder_id")
+    for key in ("messages", "displayLog"):
+        if key in body and (not isinstance(body[key], list) or any(not isinstance(item, dict) for item in body[key])):
+            return jsonify({"error": f"{key} must be an array of objects"}), 400
     data = store.load(conv_id)
     if data is None:
         return jsonify({"error": "Not found"}), 404
@@ -158,22 +158,22 @@ def update_conversation(conv_id: str):
     old_runtime_id = store.runtime_id(conv_id, data)
     if "folder_id" in body and body["folder_id"] and not store.get_folder(body["folder_id"]):
         return jsonify({"error": "Folder not found"}), 404
-    for key in allowed_fields:
-        if key in body:
-            if data.get("active_stream_id") and key in {"messages", "displayLog"}:
-                continue
-            if key == "folder_id" and not body[key]:
-                data.pop(key, None)
-            else:
-                data[key] = body[key]
-    data["id"] = conv_id
-    new_runtime_id = store.runtime_id(conv_id, data)
-    data["working_directory"] = str(container_service.conversation_workspace(new_runtime_id))
+    changes = {key: body[key] for key in allowed_fields if key in body}
+    remove = ()
+    if "folder_id" in changes and not changes["folder_id"]:
+        changes.pop("folder_id")
+        remove = ("folder_id",)
+    new_folder_id = body.get("folder_id", data.get("folder_id"))
+    new_runtime_id = store.runtime_id(conv_id, {"folder_id": new_folder_id})
+    if "folder_id" in body:
+        changes["working_directory"] = str(container_service.conversation_workspace(new_runtime_id))
     remove_old_runtime = old_runtime_id != new_runtime_id and old_runtime_id == conv_id
     if remove_old_runtime:
         if err := _delete_runtime(old_runtime_id, remove_workspace=False):
             return err
-    saved = store.save(conv_id, data)
+    saved = store.update(conv_id, changes, remove=remove, protect_active_history=True)
+    if saved is None:
+        return jsonify({"error": "Not found"}), 404
     if remove_old_runtime:
         container_service.delete_workspace(old_runtime_id)
     return jsonify(saved)
@@ -218,8 +218,5 @@ def danger_delete_all():
             container_service.delete_workspace(runtime_id)
         except OSError as exc:
             return jsonify({"ok": False, "errors": [f"{runtime_id}: {exc}"]}), 500
-    for conv in conversations:
-        store.delete(conv["id"])
-    for folder in folders:
-        store.delete_folder(folder["id"])
+    store.delete_all([conv["id"] for conv in conversations], [folder["id"] for folder in folders])
     return jsonify({"ok": True, "deleted": len(conversations)})

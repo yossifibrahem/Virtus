@@ -31,10 +31,10 @@ def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, mon
     import copy
     import threading
     import store
-    from conftest import make_png_b64
+    from conftest import make_png_b64, make_png_bytes
 
     conv = store.create()
-    ref = store.save_image(make_png_b64(), 'image/png')
+    ref = store.save_image(conv['id'], make_png_bytes(), 'image/png')
     messages = [
         {'role': 'user', 'content': [{'type': 'text', 'text': 'Read this'}, {'type': 'image_ref', 'ref': ref}]},
         {'role': 'assistant', 'content': 'Earlier answer'},
@@ -123,6 +123,34 @@ def test_image_fallback_does_not_loop_or_retry_after_output(tmp_virtus, monkeypa
 # ---------------------------------------------------------------------------
 # _parse_stream_payload
 # ---------------------------------------------------------------------------
+
+def test_stream_snapshots_preserve_manual_renames_and_settings(tmp_virtus):
+    import store
+
+    conversation = store.create("Original")
+    recorder = svc.TurnRecorder(conversation["id"], "Original", [], "stream-1")
+    recorder.save([], force=True)
+    store.update(conversation["id"], {"title": "My title", "system_prompt": "My instructions"})
+    recorder.messages.append({"role": "assistant", "content": "Partial"})
+    recorder.save([], force=True)
+    recorder.update_title("Generated title")
+    assert recorder.finalize([]) == "My title"
+    saved = store.load(conversation["id"])
+    assert saved["title"] == "My title"
+    assert saved["system_prompt"] == "My instructions"
+    assert saved["messages"] == recorder.messages
+    assert not saved["streaming"] and "active_stream_id" not in saved
+
+
+def test_turn_save_does_not_recreate_a_deleted_chat(tmp_virtus):
+    import store
+
+    conversation = store.create()
+    store.delete(conversation["id"])
+    with pytest.raises(ValueError, match="Conversation no longer exists"):
+        svc._save_turn(conversation["id"], "Stale", [], [])
+    assert store.list_all() == []
+
 
 class TestParseStreamPayload:
     """Streaming internals are dict-based; SSE encoding happens only at the route boundary."""
@@ -346,25 +374,19 @@ class TestTurnRecorder:
       - finalize() always writes with no active stream_id
     """
 
-    @pytest.fixture(autouse=True)
-    def _isolate_store(self, tmp_virtus):
-        pass
-
-    def _make_recorder(self, conv_id: str) -> svc.TurnRecorder:
-        import store
-        store.create("stub")  # ensure conv exists on disk
+    def _make_recorder(self) -> svc.TurnRecorder:
         return svc.TurnRecorder(conv_id="stub", title="T", messages=[], stream_id="s1")
 
-    def test_force_true_always_saves(self, tmp_virtus):
-        recorder = self._make_recorder("stub")
+    def test_force_true_always_saves(self):
+        recorder = self._make_recorder()
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)
             recorder.save([], force=True)
         assert mock_save.call_count == 2
 
-    def test_rapid_small_saves_throttled(self, tmp_virtus):
+    def test_rapid_small_saves_throttled(self):
         """Calls within the 0.75s window with no size growth must be skipped."""
-        recorder = self._make_recorder("stub")
+        recorder = self._make_recorder()
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)  # first call seeds the timer
             recorder.save([], reasoning="a", text="b")  # within window, small delta
@@ -372,25 +394,25 @@ class TestTurnRecorder:
         # Only the forced first call should have persisted
         assert mock_save.call_count == 1
 
-    def test_large_chunks_do_not_bypass_throttle(self, tmp_virtus):
+    def test_large_chunks_do_not_bypass_throttle(self):
         """Large chunks still respect the 0.75s persistence window."""
-        recorder = self._make_recorder("stub")
+        recorder = self._make_recorder()
         big_text = "x" * 600
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)
             recorder.save([], text=big_text)
         assert mock_save.call_count == 1
 
-    def test_finalize_calls_save_turn_without_stream_id(self, tmp_virtus):
-        recorder = self._make_recorder("stub")
+    def test_finalize_calls_save_turn_without_stream_id(self):
+        recorder = self._make_recorder()
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.finalize([])
-        args, kwargs = mock_save.call_args
+        _, kwargs = mock_save.call_args
         # _save_turn(conv_id, title, messages, display_log) — no stream_id kwarg
         assert "stream_id" not in kwargs or kwargs.get("stream_id") == ""
 
-    def test_update_title_changes_saved_title(self, tmp_virtus):
-        recorder = self._make_recorder("stub")
+    def test_update_title_changes_saved_title(self):
+        recorder = self._make_recorder()
         recorder.update_title("New Title")
         with patch("chat_turn_service._save_turn") as mock_save:
             recorder.save([], force=True)
@@ -584,10 +606,11 @@ def test_unexpected_stream_exception_keeps_partial_text(tmp_virtus, monkeypatch)
 def test_uploaded_image_refs_expand_only_at_provider_boundary(tmp_virtus):
     import store
     import tool_media
-    from conftest import make_png_b64
-    ref = store.save_image(make_png_b64(), 'image/png')
+    from conftest import make_png_b64, make_png_bytes
+    conversation = store.create()
+    ref = store.save_image(conversation['id'], make_png_bytes(), 'image/png')
     messages = [{'role': 'user', 'content': [{'type': 'image_ref', 'ref': ref}]}]
-    expanded = tool_media.expand(messages, store.create()['id'])
+    expanded = tool_media.expand(messages, conversation['id'])
     part = expanded[0]['content'][0]
     assert part == {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + make_png_b64()}}
     assert messages[0]['content'][0] == {'type': 'image_ref', 'ref': ref}

@@ -744,41 +744,95 @@ assert.equal(state.convId,null,'A delayed new-chat response must not override a 
 ''')
 
 
-def test_failed_attachment_leaves_uploading_state_and_offers_recovery():
+def test_draft_image_stays_local_until_uploaded_to_a_chat():
     run_node(r'''
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-const cards=[];
+const cards=[]; const handlers={}; const posts=[];
 const bar={appendChild:card=>cards.push(card)};
-globalThis.document={getElementById:()=>bar,dispatchEvent(){},createElement:()=>({
+const input={addEventListener:(name,fn)=>handlers[name]=fn};
+globalThis.document={getElementById:id=>id==='image-preview-bar'?bar:input,dispatchEvent(){},createElement:()=>({
   attributes:{}, classes:new Set(), classList:{},
   setAttribute(key,value){this.attributes[key]=value;},
   querySelector:()=>({addEventListener(){}}),
 })};
 globalThis.CustomEvent=class {};
-const dependencies={'./api.js':{api:{}},'./icons.js':{ICONS:{}},
+globalThis.FileReader=class {
+ readAsDataURL(file){this.result=file.dataUrl;this.onload();}
+};
+const dependencies={'./api.js':{api:{post:async(path,body)=>{
+ posts.push({path,body});return {ref:'image.png',url:path+'/image.png'};
+}}},'./icons.js':{ICONS:{}},
   './format.js':{escapeHtml:s=>s,formatBytes:()=>'',fileExtensionLabel:()=>''}};
 const module=new vm.SourceTextModule(readFileSync('static/js/chat_attachments.js','utf8'));
 await module.link(specifier=>new vm.SyntheticModule(Object.keys(dependencies[specifier]),function(){
   for(const [key,value] of Object.entries(dependencies[specifier])) this.setExport(key,value);
 }));
 await module.evaluate();
-let finish;
-module.namespace.restorePendingAttachments([{kind:'image',previewUrl:'data:',name:'image.png',
-  uploadPromise:new Promise(resolve=>finish=resolve)}]);
-const card=cards[0];
-assert(card.className.includes('is-uploading'));
-assert.equal(card.attributes['aria-busy'],'true');
-card.classList.remove=name=>card.classes.delete(name);
-card.classList.toggle=(name,on)=>on?card.classes.add(name):card.classes.delete(name);
-card.classes.add('is-uploading');
-finish(null);
-await Promise.resolve();
-assert.equal(card.classes.has('is-uploading'),false);
-assert.equal(card.classes.has('is-error'),true);
-assert.equal(card.attributes['aria-busy'],'false');
-assert(card.title.includes('try again'));
+module.namespace.initImageAttachments();
+handlers.change({target:{files:[{name:'image.png',type:'image/png',size:3,dataUrl:'data:image/png;base64,YWJj'}]}});
+await module.namespace.waitForPendingAttachmentAdds();
+assert.equal(posts.length,0,'Choosing an image must not create an unowned upload');
+assert(module.namespace.hasPendingAttachments());
+assert(!cards[0].className.includes('is-uploading'));
+const [entry]=module.namespace.drainPendingAttachments();
+const result=await module.namespace.uploadImage('owner-chat',entry.previewUrl,entry.mediaType);
+assert.deepEqual(posts,[{path:'/api/conversations/owner-chat/images',body:{data:'YWJj',media_type:'image/png'}}]);
+assert.equal(result.ref,'image.png');
+''')
+
+
+def test_image_send_creates_owner_before_upload_and_restores_failed_uploads():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const state={convId:null,isStreaming:false};
+const entry={kind:'image',previewUrl:'data:image/png;base64,YWJj',mediaType:'image/png',name:'image.png',size:3};
+let pending=[entry]; const order=[]; let failUpload=true; let saved;
+const deps={
+ hasPendingAttachments:()=>pending.length>0,
+ setStreaming:value=>state.isStreaming=value,
+ createTurnContext:convId=>({convId,messages:[],displayLog:[]}),
+ createNewConversation:async()=>{order.push('create');state.convId='owner';return {id:'owner'};},
+ syncVisibleTurn(){},isTurnVisible:turn=>turn.convId===state.convId,
+ persistTurnConversation:async turn=>saved=structuredClone(turn),
+ runAssistantTurnAndPersist:async()=>{order.push('assistant');state.isStreaming=false;},
+};
+const dependencies={
+ './state.js':{state},'./renderer.js':{appendMessage(){}},'./chat_branches.js':{syncVisibleBranches(){}},
+ './file_panel.js':{refreshFilePanel:async()=>{}},
+ './chat_attachments.js':{
+  waitForPendingAttachmentAdds:async()=>{},refreshImagePreviewBar(){},
+  drainPendingAttachments:()=>pending.splice(0),restorePendingAttachments:entries=>pending.unshift(...entries),
+  uploadImage:async(owner,dataUrl,mime)=>{
+   assert.equal(owner,'owner');assert.equal(dataUrl,'data:image/png;base64,YWJj');assert.equal(mime,'image/png');
+   order.push('image');return failUpload?null:{ref:'image.png',url:'/api/conversations/owner/images/image.png',mediaType:mime};
+  },
+  uploadConversationFiles:async(owner,entries)=>{
+   assert.equal(owner,'owner');assert.equal(entries[0].kind,'image');order.push('workspace');
+   return [{name:'image.png',path:'/workspace/uploads/image.png',size:3}];
+  },
+ },
+};
+const module=new vm.SourceTextModule(readFileSync('static/js/chat_send.js','utf8'));
+await module.link(specifier=>new vm.SyntheticModule(Object.keys(dependencies[specifier]),function(){
+ for(const [key,value] of Object.entries(dependencies[specifier]))this.setExport(key,value);
+}));
+await module.evaluate();
+await module.namespace.sendMessage('Image',deps);
+assert.deepEqual(order,['create','image']);
+assert.deepEqual(pending,[entry]);
+assert.equal(state.isStreaming,false);
+failUpload=false;
+await module.namespace.sendMessage('Image',deps);
+assert.deepEqual(order,['create','image','image','workspace','assistant']);
+assert.equal(pending.length,0);
+assert.equal(saved.messages[0].content[1].ref,'image.png');
+assert.equal(saved.messages[0].attachments[0].path,'/workspace/uploads/image.png');
+assert.equal(saved.displayLog[0].content.attachments[0].url,'/api/conversations/owner/images/image.png');
+assert.equal(entry.previewUrl,'/api/conversations/owner/images/image.png','Release the local base64 after upload');
 ''')
 
 

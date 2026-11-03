@@ -321,7 +321,7 @@ def test_rejects_reasoning_or_invalid_text(content):
         svc._extract_title(SimpleNamespace(content=content))
 
 
-@pytest.mark.parametrize("mode", ["generated", "fallback", "disabled"])
+@pytest.mark.parametrize("mode", ["generated", "fallback", "disabled", "manual_rename"])
 def test_title_is_published_persisted_and_turn_finalized(tmp_virtus, monkeypatch, mode):
     import threading
 
@@ -334,6 +334,11 @@ def test_title_is_published_persisted_and_turn_finalized(tmp_virtus, monkeypatch
                         lambda client, request, cancel: client.chat.completions.create(**request))
     if mode == "fallback":
         client.chat.completions.create.side_effect = TimeoutError()
+    if mode == "manual_rename":
+        def generate(*args):
+            store.update(conversation["id"], {"title": "My title"})
+            return "Generated title"
+        monkeypatch.setattr(svc, "generate_title", generate)
     monkeypatch.setattr(chat_turn_service, "openai_client", lambda body: client)
     monkeypatch.setattr(chat_turn_service, "_inject_memory", lambda messages: messages)
     monkeypatch.setattr(chat_turn_service.stream_module, "stream_chat_completion", lambda *a, **k: iter([
@@ -344,15 +349,14 @@ def test_title_is_published_persisted_and_turn_finalized(tmp_virtus, monkeypatch
     events = []
     chat_turn_service.run_persistent_chat_turn({
         "conv_id": conversation["id"],
-        "title": "New Conversation",
         "conversation_messages": messages,
         "messages": messages,
         "auto_generate_titles": mode != "disabled",
     }, threading.Event(), "title-test", events.append)
     saved = store.load(conversation["id"])
     title_events = [event for event in events if event["type"] == "title"]
-    if mode == "disabled":
-        assert saved["title"] == "New Conversation"
+    if mode in {"disabled", "manual_rename"}:
+        assert saved["title"] == ("My title" if mode == "manual_rename" else "New Conversation")
         assert not title_events
         client.chat.completions.create.assert_not_called()
     else:

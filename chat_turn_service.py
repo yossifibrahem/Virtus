@@ -87,22 +87,22 @@ def _parse_stream_payload(raw_event) -> dict | None:
     return raw_event if isinstance(raw_event, dict) else None
 
 
-def _save_turn(conv_id: str, title: str, messages: list, display_log: list, *, stream_id: str = "") -> None:
-    if not conv_id:
-        return
-    data = store.load(conv_id) or {"id": conv_id, "created_at": ""}
-    data.update({
-        "title": title or data.get("title") or "Untitled",
+def _save_turn(conv_id: str, title: str, messages: list, display_log: list, *,
+               stream_id: str = "", expected_title: str | None = None) -> str | None:
+    changes = {
         "messages": messages,
         "displayLog": display_log,
         "streaming": bool(stream_id),
-        "working_directory": str(container_service.conversation_workspace(store.runtime_id(conv_id, data))),
-    })
+    }
+    if title:
+        changes["title"] = title
     if stream_id:
-        data["active_stream_id"] = stream_id
-    else:
-        data.pop("active_stream_id", None)
-    store.save(conv_id, data)
+        changes["active_stream_id"] = stream_id
+    saved = store.update(conv_id, changes, remove=() if stream_id else ("active_stream_id",),
+                         expected_title=expected_title)
+    if saved is None:
+        raise ValueError("Conversation no longer exists")
+    return saved.get("title")
 
 
 def _log_with_partial(base_log: list, reasoning: str, text: str) -> list:
@@ -164,6 +164,7 @@ class TurnRecorder:
     def __init__(self, conv_id: str, title: str, messages: list, stream_id: str) -> None:
         self.conv_id = conv_id
         self.title = title
+        self.original_title = title
         self.messages = messages
         self.stream_id = stream_id
         self.last_saved_at = 0.0
@@ -182,10 +183,11 @@ class TurnRecorder:
             self.messages,
             _log_with_partial(display_log, reasoning, text),
             stream_id=self.stream_id,
+            expected_title=self.original_title,
         )
 
-    def finalize(self, display_log: list) -> None:
-        _save_turn(self.conv_id, self.title, self.messages, display_log)
+    def finalize(self, display_log: list) -> str | None:
+        return _save_turn(self.conv_id, self.title, self.messages, display_log, expected_title=self.original_title)
 
 
 def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_id: str, publish: Publish) -> None:
@@ -195,7 +197,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         publish({"type": "error", "message": "A valid conversation is required"})
         return
     runtime_id = store.runtime_id(conv_id, conversation)
-    title = body.get("title") or "Untitled"
+    title = conversation.get("title") or body.get("title") or "Untitled"
     turn_messages = list(body.get("conversation_messages") or [])
     display_log = list(body.get("display_log") or [])
     api_messages = list(body.get("messages") or [])
@@ -211,6 +213,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
     client = None
     acc_text = acc_reasoning = ""
     text_only = False
+    generated_title = None
 
     def finalize_partial_answer(reasoning: str, text: str) -> bool:
         nonlocal assistant_completed
@@ -257,7 +260,7 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
         recorder.save(display_log, force=True)
         storage_safeguards.check(runtime_id)
         client = openai_client(body)
-        if conv_id and tool_meta:
+        if tool_meta:
             session_pool = mcp_service.get_persistent_pool(runtime_id)
 
         while not cancel_event.is_set():
@@ -414,7 +417,6 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
             generated_title = title_service.generate_title(client, body, turn_messages, cancel_event)
             if generated_title:
                 recorder.update_title(generated_title)
-                publish({"type": "title", "title": generated_title})
 
     except Exception as exc:
         finalize_partial_answer(acc_reasoning, acc_text)
@@ -429,7 +431,9 @@ def run_persistent_chat_turn(body: dict, cancel_event: threading.Event, stream_i
                 publish({'type': 'error', 'message': stop_reason[0]})
             if cancel_event.is_set():
                 display_log.append({"type": "status", "content": "Response stopped."})
-            recorder.finalize(display_log)
+            saved_title = recorder.finalize(display_log)
+            if generated_title and saved_title == generated_title:
+                publish({"type": "title", "title": generated_title})
             # All outcomes send authoritative history before the reader may save branches.
             publish({"type": "assistant_done", "messages": turn_messages, "displayLog": display_log})
         finally:

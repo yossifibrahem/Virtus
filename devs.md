@@ -73,7 +73,7 @@ python packaging/smoke_sandbox.py --image virtus-sandbox:builtins-test
 | `container_files.py` | Host transport and upload name/size checks for the file panel |
 | `sandbox_files.py` | Container-only listing, preview, upload, download, path checks |
 | `routes_files.py` | File panel and image/media HTTP endpoints |
-| `routes_conversations.py`, `store.py` | Chat/Folder CRUD, runtime ownership, atomic JSON persistence |
+| `routes_conversations.py`, `store.py` | Chat/Folder CRUD, runtime ownership, transactional SQLite persistence |
 | `mcp_adapters.py` | Wrap explicit MCP commands and environment for `docker exec` |
 | `mcp_service.py` | MCP config, discovery, one-shot calls, persistent pool registry |
 | `mcp_session_pool.py` | Persistent stdio connections on a dedicated async worker |
@@ -161,6 +161,10 @@ request reads up to 32 KiB of app-owned memory. The turn adds native tools, stre
 calls, and repeats until the assistant finishes. Uploaded and tool images are
 persisted by reference and expanded server-side only when constructing the model request. Do
 not fetch/re-encode stored images in the browser or cache their base64 data there.
+Uploaded and tool images share one SQLite `images` table: chat ID, image reference,
+MIME type, and binary data. The chat foreign key deletes its images automatically
+with the chat. Draft previews stay local; Send creates the chat before uploading
+images to `/api/conversations/<id>/images`. Workspace copies remain ordinary files.
 
 `TurnRecorder` saves partial output at most once per 0.75 seconds, with forced
 writes at tool boundaries and finalization. Model stream errors preserve partial
@@ -169,11 +173,23 @@ result, even if validation, approval, execution, or cancellation prevents it fro
 running. Invalid arguments never execute with empty defaults. After optional title
 generation, finalization saves history before sending `assistant_done` for success,
 failure, or cancellation. The browser consumes that history before saving branches
-and keeps the composer busy until the terminal SSE marker. Conversation JSON uses
-explicit UTF-8 encoding on every platform; existing indented JSON remains readable.
+and keeps the composer busy until the terminal SSE marker. Generated titles are
+published after their final save; a manual rename during a turn takes precedence.
+
+`store.py` uses Python's standard-library `sqlite3` with a connection per operation,
+foreign keys, WAL journaling, and short transactions. Chat/folder metadata and
+ordered message/display-log entries are stored separately. Indexed summary queries
+do not deserialize histories. Snapshot saves serialize entries for comparison but
+write only changed/new rows and remove truncated suffixes; branch structures and
+media references retain their existing JSON representation within entries. Partial
+edits merge with current metadata inside a write transaction, and background turn
+updates cannot recreate deleted chats. Folder deletion cascades through its chats
+and history rows in one transaction, after successful sandbox/workspace cleanup.
+Delete-all metadata removal is also transactional. Docker/filesystem operations
+remain outside the database transaction and retain their existing cleanup ordering.
+There is no import or migration from the former conversation/folder JSON stores.
 Configuration readers and writers share a lock, and callers receive independent
-cache snapshots. Conversation summary construction uses one helper; initial index
-building is serialized with index updates so concurrent saves stay visible.
+cache snapshots.
 
 `routes_chat.py` stores active replay events and cancellation state in process
 memory. Keep one application worker process; use threads for concurrency.
@@ -183,8 +199,9 @@ avoids repeating JSON serialization for each reader. Completed approval prompts
 become replay comments without shifting cursors. Keep-alives maintain idle SSE
 connections. Approval controls never block the reader: timeouts and results must
 still be consumed. Pending decisions survive navigation and are scoped to the
-current turn; stopping one chat must not deny another chat’s tools. No database,
-cross-process stream broker, or persistent background job service is present.
+current turn; stopping one chat must not deny another chat’s tools. SQLite stores
+chat history, but active stream state remains in-process. There is no cross-process
+stream broker or persistent background job service.
 
 ## MCP configuration and session ownership
 
@@ -216,7 +233,7 @@ failed session is discarded and a later request can open a fresh connection.
 
 ## Storage, configuration, and releases
 
-User state is under `~/.virtus/`: conversations, folders, images, workspaces,
+User state is under `~/.virtus/`: `virtus.sqlite3` (conversations, folders, and images), workspaces,
 `config.json`, `advanced_config.json`, `mcp.json`, and `memory.json`. File paths can
 be overridden by the environment variables in the
 [configuration reference](docs/CONFIGURATION.md#environment-variables). API keys remain

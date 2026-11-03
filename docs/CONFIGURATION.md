@@ -52,6 +52,7 @@ http://localhost:1234/v1     # LM Studio
 | `VIRTUS_MCP_TOOL_TIMEOUT` | `120` | Maximum MCP tool-call duration in seconds |
 | `VIRTUS_TOOL_APPROVAL_TIMEOUT` | `600` | Maximum wait for a tool approval decision in seconds |
 | `VIRTUS_CONFIG_FILE` | `~/.virtus/config.json` | Server-side API config path |
+| `VIRTUS_DATABASE_FILE` | `~/.virtus/virtus.sqlite3` | Local SQLite database for conversations, folders, and chat images |
 | `VIRTUS_CONFIG_CACHE_TTL` | `5` | Seconds to cache API config reads |
 | `VIRTUS_ADVANCED_CONFIG_FILE` | `~/.virtus/advanced_config.json` | Advanced/container settings config path |
 | `VIRTUS_MCP_CONFIG_FILE` | `~/.virtus/mcp.json` | MCP server config path |
@@ -88,11 +89,23 @@ All runtime data is stored outside the repo under `~/.virtus/`:
 ├── memory.json            # App-managed cross-chat memory, never mounted into containers
 ├── memory.settings.json   # Whether cross-chat memory is enabled
 ├── memory.history.json    # Recoverable prior memory versions
-├── folders.json           # Folder names, IDs, and instructions
-├── conversations/         # One JSON file per conversation
-├── containers/            # Workspace directories for standalone chats and shared folders
-└── images/                # Uploaded images keyed by SHA-256 hash
+├── virtus.sqlite3         # Conversations, histories, branches, folders, and image bytes
+└── containers/            # Workspace directories for standalone chats and shared folders
 ```
+
+The database is created automatically on first use with Python's built-in SQLite
+support; no database service is required. The previous conversation JSON files and
+`folders.json` are not imported. Uploaded and tool-result images are SQLite rows
+owned by their chat; deleting the chat deletes its images. The image table is added
+automatically to existing SQLite databases, preserving chats and folders. Old
+file-based images are not imported. Workspace directories, settings, and memory
+retain their existing storage.
+
+SQLite uses WAL journaling and may create adjacent `virtus.sqlite3-wal` and
+`virtus.sqlite3-shm` files while connections are open. Shut down Virtus before copying
+its data directory for backup; copying only a live database file can omit recent
+writes. A backup made while the app runs must use SQLite's backup API for the database
+and also include the external workspace files. The database backup includes chat images.
 
 ## MCP Configuration
 

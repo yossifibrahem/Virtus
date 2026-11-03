@@ -1,7 +1,6 @@
 """Native contracts, worker behavior, transport boundaries, and media ordering."""
 import json
 import os
-from pathlib import Path
 import threading
 from unittest.mock import Mock
 import pytest
@@ -157,8 +156,7 @@ def test_media_conversation_scoping_and_order(tmp_virtus):
     a, b = store.create(), store.create()
     import base64
     refs = tool_media.save(a['id'], [{'data': base64.b64encode(b'\xff\xd8\xfftest').decode()}])
-    with pytest.raises(ValueError):
-        tool_media.path(b['id'], refs[0])
+    assert store.get_image(b['id'], refs[0]) is None
     messages = [{'role': 'tool', 'content': 'image', '_tool_media': refs}, {'role': 'tool', 'content': 'other'}]
     expanded = tool_media.expand(messages, a['id'])
     assert [m['role'] for m in expanded] == ['tool', 'tool', 'user']
@@ -286,7 +284,7 @@ def test_runtime_locks_are_reclaimed():
     assert 'temporary-lock' not in sandbox_runtime._LOCKS
 
 
-def test_tool_media_batches_read_conversation_once(tmp_virtus, monkeypatch):
+def test_tool_media_does_not_read_conversation_history(tmp_virtus):
     import base64
     from unittest.mock import patch
 
@@ -294,9 +292,9 @@ def test_tool_media_batches_read_conversation_once(tmp_virtus, monkeypatch):
     images = [{'data': base64.b64encode(b'image-' + bytes([i])).decode()} for i in range(3)]
     with patch.object(store, 'load', wraps=store.load) as load:
         refs = tool_media.save(conversation['id'], images)
-        assert load.call_count == 1
+        assert load.call_count == 0
     messages = [{'role': 'tool', 'content': 'images', '_tool_media': refs}]
     with patch.object(store, 'load', wraps=store.load) as load:
         expanded = tool_media.expand(messages, conversation['id'])
-        assert load.call_count == 1
+        assert load.call_count == 0
     assert len(expanded[-1]['content']) == 4

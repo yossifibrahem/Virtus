@@ -4,7 +4,6 @@
 // Per-tool overrides (meta text, arg filtering, result rendering) live in
 // tool_adapters/. Add or remove adapters by editing tool_adapters/index.js.
 
-import { escapeHtml } from './format.js';
 import { formatArgsHtml, renderGenericResult } from './tool_format.js';
 import { adapterFor } from './tool_adapters/index.js';
 

@@ -26,6 +26,9 @@ changes do not damage the host's unrelated files or packages.
   Chats retain separate histories. Standalone chats have their own runtimes.
 - Keep the local, single-process application design. No multi-user service,
   distributed infrastructure, or replacement desktop framework is requested.
+- Keep implementations direct and scoped to current needs. Avoid speculative
+  abstractions and background infrastructure. Add abstractions only when existing
+  application behavior requires them.
 
 ## 2. Persistence: shared managed workspaces
 
@@ -359,3 +362,49 @@ The local development app was restarted with `.venv312/bin/python app.py`.
 Its health check passed at `http://127.0.0.1:8080`. The setup requirements check
 reported the sandbox image already matches the current worker identity, so setup
 did not request a rebuild. No live Docker integration tests were performed.
+
+## 12. SQLite conversation/folder persistence (2026-11-03)
+
+The user approved replacing conversation and folder JSON persistence with local
+SQLite only. There are no existing conversations or folders to migrate; do not add
+legacy import or migration handling. Workspace mounts, images, tool media, memory,
+and settings keep their existing storage. Docker volume changes are deferred.
+
+The database defaults to `~/.virtus/virtus.sqlite3`, with a `VIRTUS_DATABASE_FILE`
+override. It uses the Python standard library, WAL journaling, per-operation
+connections, foreign keys, and transactions. Indexed metadata supports listings;
+message and display-log entries retain the current branch/media representation in
+separate ordered rows, with writes limited to changed/new entries and truncated
+suffix cleanup. Partial updates merge transactionally with current metadata.
+Folder/chat history deletion is atomic after the existing runtime cleanup steps.
+The app remains local and single-process; SQLite does not replace in-memory stream
+replay, cancellation, or runtime coordination.
+
+Validation after review: 697 passed, 9 skipped, 2 deselected using `.venv312/bin/pytest`.
+The desktop listener test cannot bind sockets in this sandbox; the documented
+native AppKit artwork test was also deselected. Live Docker tests were not run.
+Storage tests use temporary databases and cover concurrent edits, rollback,
+branch/media round trips, cascade deletion, and persistence across processes.
+Review fixes reject malformed metadata before SQLite binding and return 404 if a
+folder is deleted during its update. Obsolete test setup and the old conversation
+directory ignore entry were removed; test SQL connections close explicitly.
+
+## 13. Chat-owned images in SQLite (2026-11-03)
+
+Uploaded images and tool-result images use one `images` table with chat ID, image
+reference, MIME type, and binary data. Every image belongs to one chat; the foreign
+key cascades image deletion when its chat is deleted. Images remain available to
+all saved branches within that chat. No shared-media ownership or background
+cleanup system is needed.
+
+Draft image previews remain local until Send creates or selects the owning chat.
+Image upload/serving is chat-scoped. The ordinary editable workspace copy remains.
+Existing SQLite databases gain the image table without changing chat/folder data;
+old filesystem images are not imported.
+
+Final validation: 712 passed, 9 skipped, 2 desktop tests deselected for the documented
+native UI/socket restrictions. Coverage includes binary persistence across
+processes, owner-scoped reads, cascade deletion, failed-deletion preservation,
+draft upload timing, and image-upload retries. Live Docker tests were not run.
+Final unused-import cleanup includes the sandbox worker, changing its build
+identity; use the normal setup flow to rebuild the sandbox image.

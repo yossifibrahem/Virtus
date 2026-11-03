@@ -69,6 +69,7 @@ const modules = {
     restorePendingAttachments() {},
     refreshImagePreviewBar() {},
     uploadConversationFiles: async () => [],
+    uploadImage: async () => null,
     waitForPendingAttachmentAdds: async () => {},
   },
 };

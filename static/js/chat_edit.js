@@ -9,11 +9,11 @@ import { assistantFooterHostIndex } from './chat_log_utils.js';
 // ── Edit & Resend ─────────────────────────────────────────────────────────────
 
 /**
- * Extract the image ref from a server image URL, e.g. "/api/images/<ref>" → "<ref>".
+ * Extract the ref from a chat image URL: "/api/conversations/<id>/images/<ref>".
  * Returns null if the URL doesn't match the expected pattern.
  */
 function imageUrlToRef(url) {
-  const match = url && url.match(/\/api\/images\/([^/?#]+)/);
+  const match = url && url.match(/\/api\/conversations\/[^/]+\/images\/([^/?#]+)/);
   return match ? match[1] : null;
 }
 
