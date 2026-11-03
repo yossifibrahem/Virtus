@@ -84,13 +84,57 @@ let activitySequence = 0;
 export function updateGroupLabel(group) {
   if (!group) return;
   const elements = [...group.querySelector('.group-body').children].filter(isGroupableBlock);
-  const activeBlock = elements.findLast(isBlockActive);
-  group.hidden = elements.length === 0;
-  group.classList.toggle('group-active', !!activeBlock);
-  group.querySelector('.group-label').textContent = activeBlock ? 'Working' : 'Work log';
-  group.querySelector('.group-desc').textContent = activeBlock ? getBlockLabel(activeBlock) : makeGroupSummary(elements);
-  group.querySelector('.group-count').textContent = String(elements.length);
-  group.querySelector('.group-count').setAttribute('aria-label', `${elements.length} steps`);
+  const activeBlock = group.dataset.finished === 'true' ? null : elements.findLast(isBlockActive);
+  const processing = group.dataset.processing === 'true';
+  const thinking = activeBlock?.classList.contains('thinking-block');
+  group.hidden = elements.length === 0 && !processing;
+  const busy = !!activeBlock || processing;
+  group.classList.toggle('group-active', busy);
+  group.querySelector('.group-label').textContent = activeBlock
+    ? (thinking ? 'Thinking' : getBlockLabel(activeBlock))
+    : (processing ? 'Working' : 'Work log');
+  group.querySelector('.group-desc').textContent = activeBlock ? '' : makeGroupSummary(elements);
+  const emblem = group.querySelector('.group-emblem');
+  // Keep the same spinner node across activity changes so its motion stays steady.
+  const iconState = busy ? 'busy' : 'idle';
+  if (emblem && emblem.dataset.state !== iconState) {
+    emblem.dataset.state = iconState;
+    emblem.innerHTML = busy ? '<span class="group-progress"></span>' : ICONS.layers;
+  }
+  const count = group.querySelector('.group-count');
+  count.textContent = String(elements.length);
+  count.hidden = elements.length === 0;
+  count.setAttribute('aria-label', `${elements.length} ${elements.length === 1 ? 'step' : 'steps'}`);
+}
+
+// Only the latest log in the visible assistant turn represents ongoing work.
+// Replay uses finalized blocks and never sets this transient state.
+export function setWorkLogProcessing(processing) {
+  const messages = messagesEl();
+  if (!messages) return;
+  const row = [...messages.children].filter(el => el.classList.contains('msg-row')).at(-1);
+  if (!row || row.classList.contains('user-row')) {
+    if (processing) {
+      const assistant = prepareAssistantRow();
+      const group = createGroupBlock();
+      assistant.appendChild(group);
+      group.dataset.processing = 'true';
+      updateGroupLabel(group);
+    }
+    return;
+  }
+  let groups = [...row.querySelectorAll('.block-group')];
+  if (processing && !groups.length) {
+    const group = createGroupBlock();
+    row.appendChild(group);
+    groups = [group];
+  }
+  groups.forEach((group, index) => {
+    const current = processing && index === groups.length - 1;
+    group.dataset.processing = String(current);
+    group.dataset.finished = String(!current);
+    updateGroupLabel(group);
+  });
 }
 
 function createGroupBlock() {
@@ -100,7 +144,7 @@ function createGroupBlock() {
   group.innerHTML = `
     <button class="group-header" type="button" aria-expanded="${expanded}" aria-controls="${group.id}-panel">
       <span class="group-emblem" aria-hidden="true">${ICONS.layers}</span>
-      <span class="group-heading"><span class="group-label">Work log</span><span class="group-desc"></span></span>
+      <span class="group-heading"><span class="group-label" aria-live="polite" aria-atomic="true">Work log</span><span class="group-desc"></span></span>
       <span class="group-count"></span><span class="group-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
     </button>
     <div id="${group.id}-panel" class="activity-workspace" ${expanded ? '' : 'hidden'}>

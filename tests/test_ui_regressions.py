@@ -187,7 +187,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const state = {convId:'a',isStreaming:true,streamId:'stream-a'};
-const posts=[], approvals=[], results=[], running=[], activityChanges=[], markdown=[];
+const posts=[], approvals=[], results=[], running=[], activityChanges=[], markdown=[], workLogChanges=[];
 const frames=new Map(); let nextFrame=0;
 const noop = () => {};
 const renderer = Object.fromEntries([
@@ -210,6 +210,7 @@ const modules = {
   './api.js': {api:{post:async (url,body) => {posts.push({url,body});}}},
   './state.js': {state},
   './renderer.js': renderer,
+  './renderer_groups.js': {setWorkLogProcessing:active=>workLogChanges.push(active)},
   './markdown.js': {applyMarkdown:(el,text)=>markdown.push(text)},
   './conversations.js': {persistConversationFor:noop,createNewConversation:noop},
   './file_panel.js': {refreshFilePanel:async () => {}},
@@ -266,6 +267,7 @@ assert.equal(frames.size,0,'Background tokens must not build detached DOM');
 state.convId='a';
 reattachRuntime({turn,ctx});
 assert.equal(markdown.at(-1),'First second third background');
+assert.equal(workLogChanges.at(-1),true,'Reattaching a live turn restores its work-log status');
 await apply({type:'text',content:' final'},ctx);
 await apply({type:'tool_start',name:'view'},ctx);
 await apply({type:'tool_start',name:'external'},ctx);
@@ -301,6 +303,8 @@ assert.equal(posts.at(-1).body.stream_id,'stream-a');
 assert(state.isStreaming,'Composer waits for authoritative completion');
 await apply({type:'assistant_done',messages:[],displayLog:[]},ctx);
 assert(ctx.assistantDone);
+assert.equal(workLogChanges.at(-1),false,'Authoritative completion finalizes visible work logs');
+const visibleStatusCount=workLogChanges.length;
 
 // The real attachment lifecycle releases local history, but distinguishes a
 // terminal stream from a disconnect while the independent worker is running.
@@ -315,6 +319,7 @@ assert(!await module.namespace.attachServerStream('a','disconnected',{title:'Wor
 assert.deepEqual(activityChanges.slice(-2),[['a',false],['a',true]]);
 assert(!activeTurns.has('a'),'Disconnected consumers must release their retained history');
 assert(activeTurns.has('b'),'Finishing a background consumer must preserve other turns');
+assert.equal(workLogChanges.length,visibleStatusCount,'Background completion must not change the visible work log');
 ''')
 
 
@@ -543,24 +548,26 @@ const thought=makeBlock(['thinking-block'],'Thought process');
 const tool=makeBlock(['tool-strip','tool-strip-running'],'Bash · echo hello');
 tool.block.dataset={toolName:'bash',displayName:'Bash · echo hello'};
 const body=new Element();body.children=[thought.block,tool.block];
-const selectors=['.group-label','.group-desc','.group-count'];
+const selectors=['.group-label','.group-desc','.group-count','.group-emblem'];
 const nodes=Object.fromEntries(selectors.map(s=>[s,new Element()]));nodes['.group-body']=body;
 const group=new Element();group.querySelector=s=>nodes[s];
+const messages={children:[]};
+const row=new Element(['msg-row']);row.querySelectorAll=()=>[group];messages.children=[row];
 const context=vm.createContext({});
 const mod=new vm.SourceTextModule(readFileSync('static/js/renderer_groups.js','utf8'),{context});
 const deps={
  './dom.js':{createElement:()=>new Element(),setVisible:(el,on)=>{el.style.display=on?'block':'none';}},
- './icons.js':{ICONS:{chevronRight:'right'}},'./state.js':{state:{}},
- './renderer_core.js':{messagesEl:()=>null,createMessageRow:()=>null}
+ './icons.js':{ICONS:{chevronRight:'right',layers:'layers',bulb:'bulb'}},'./state.js':{state:{}},
+ './renderer_core.js':{messagesEl:()=>messages,createMessageRow:()=>null}
 };
 await mod.link(name=>new vm.SyntheticModule(Object.keys(deps[name]),function(){for(const [key,value] of Object.entries(deps[name]))this.setExport(key,value);},{context}));
 await mod.evaluate();
-const {updateGroupLabel:update,attachCollapsible}=mod.namespace;
+const {updateGroupLabel:update,attachCollapsible,setWorkLogProcessing}=mod.namespace;
 for(const {block} of [thought,tool]) attachCollapsible(block,{headerSelector:'.header',bodySelector:'.body',chevronSelector:'.chevron'});
 thought.header.events.click();tool.header.events.click();update(group);
 assert.equal(thought.body.style.display,'block');assert.equal(tool.body.style.display,'block');
 assert.equal(thought.header.attrs['aria-expanded'],'true');assert.equal(tool.header.attrs['aria-expanded'],'true');
-assert.equal(nodes['.group-label'].textContent,'Working');assert.equal(nodes['.group-count'].textContent,'2');
+assert.equal(nodes['.group-label'].textContent,'Bash · echo hello');assert.equal(nodes['.group-count'].textContent,'2');
 tool.block.classList.toggle('tool-strip-running',false);update(group);
 assert.equal(nodes['.group-label'].textContent,'Work log');
 assert.equal(thought.block.classList.contains('open'),true);assert.equal(tool.block.classList.contains('open'),true);
@@ -571,6 +578,21 @@ assert.equal(thought.header.attrs['aria-expanded'],'false');
 // Removing an approval step updates counts without changing its neighbors.
 body.children=[tool.block];update(group);assert.equal(nodes['.group-count'].textContent,'1');
 assert.equal(tool.block.classList.contains('open'),true);
+// Processing stays visible even before any thinking or tool events arrive.
+body.children=[];setWorkLogProcessing(true);
+assert.equal(nodes['.group-label'].textContent,'Working');assert.equal(group.hidden,false);assert.equal(nodes['.group-count'].hidden,true);
+body.children=[thought.block];thought.block.classList.toggle('thinking-streaming',true);update(group);
+assert.equal(nodes['.group-label'].textContent,'Thinking');assert(nodes['.group-emblem'].innerHTML.includes('group-progress'));
+body.children.push(tool.block);tool.block.classList.toggle('tool-strip-running',true);update(group);
+assert.equal(nodes['.group-label'].textContent,'Bash · echo hello');
+tool.block.querySelector=s=>s==='.thinking-icon, .tool-icon'?{innerHTML:'bash-icon'}:null;update(group);
+assert(nodes['.group-emblem'].innerHTML.includes('group-progress'));
+assert(!nodes['.group-emblem'].innerHTML.includes('bash-icon'));
+thought.block.classList.toggle('thinking-streaming',false);tool.block.classList.toggle('tool-strip-running',false);update(group);
+assert.equal(nodes['.group-label'].textContent,'Working');assert(nodes['.group-emblem'].innerHTML.includes('group-progress'));
+// Finishing (including stop/error cleanup) overrides any stale streaming classes.
+tool.block.classList.toggle('tool-strip-running',true);setWorkLogProcessing(false);
+assert.equal(nodes['.group-label'].textContent,'Work log');assert.equal(nodes['.group-emblem'].innerHTML,'layers');
 body.children=[];update(group);assert.equal(group.hidden,true);
 ''')
 

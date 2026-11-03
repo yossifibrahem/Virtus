@@ -1,6 +1,7 @@
 // Chat — message sending, SSE stream reading, tool-call orchestration.
 
 import { api }   from './api.js';
+import { setWorkLogProcessing } from './renderer_groups.js';
 import { state } from './state.js';
 import {
   createStreamingMessage, appendAssistantStatus,
@@ -180,6 +181,7 @@ function reattachRuntime(runtime) {
   });
 
   showPendingApproval(ctx);
+  setWorkLogProcessing(true);
   scrollToBottom(true);
   return true;
 }
@@ -217,6 +219,7 @@ async function attachServerStream(convId, streamId, data = {}) {
     syncVisibleTurn(turn);
     document.getElementById('chat-title-input').value = turn.title || '';
     renderAllMessages(turn.displayLog);
+    setWorkLogProcessing(true);
     setStreaming(true);
     state.streamId = streamId;
   }
@@ -329,6 +332,7 @@ function finishAssistantTurn(turn = null, ctx = null) {
   if ((!turn || isTurnVisible(turn)) && isCurrent) {
     if (ctx) ctx.abortController = null;
     if (!ctx || state.streamId === ctx.streamId) state.streamId = null;
+    setWorkLogProcessing(false);
     setStreaming(false);
   }
 }
@@ -398,6 +402,7 @@ function finalizeAssistantAnswer(ctx, messages = null, displayLog = null) {
 
   // The composer is released by finishAssistantTurn after the terminal SSE marker.
   if (isTurnVisible(ctx.turn) && isCurrentStreamContext(ctx.turn, ctx)) {
+    setWorkLogProcessing(false);
     scrollToBottom();
   }
 }
@@ -592,7 +597,10 @@ async function runChatLoop(turn) {
 
   activeTurns.set(turn.convId, { turn, ctx, streamId });
   updateConversationActivity(turn.convId);
-  if (isTurnVisible(turn)) state.streamId = streamId;
+  if (isTurnVisible(turn)) {
+    state.streamId = streamId;
+    setWorkLogProcessing(true);
+  }
 
   // A newly-started turn already has the user's message appended in-place.
   // Reattaching here would fully re-render the chat and cause the first flash

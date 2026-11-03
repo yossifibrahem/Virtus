@@ -9,7 +9,7 @@ import {
   getToolKind, getToolOutcome, getToolRunningArgs, bindToolActions,
 } from './tool_ui.js';
 import { scrollToBottom } from './renderer_core.js';
-import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel } from './renderer_groups.js';
+import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel, setWorkLogProcessing } from './renderer_groups.js';
 
 function getToolIconSvg(toolName) {
   return getToolIcon(toolName, ICONS, state.mcpTools, state.mcpServerSettings);
@@ -89,6 +89,7 @@ export function createToolStrip(toolName, displayName = '') {
     <div class="activity-pending">Preparing this step…</div>`;
   row.appendChild(strip);
   tryGroupBlock(strip);
+  setWorkLogProcessing(true);
   scrollToBottom();
   return strip;
 }

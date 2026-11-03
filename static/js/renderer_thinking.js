@@ -5,7 +5,7 @@ import { ICONS } from './icons.js';
 import { state } from './state.js';
 import { escapeHtml } from './format.js';
 import { scrollToBottom } from './renderer_core.js';
-import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel } from './renderer_groups.js';
+import { prepareAssistantRow, attachCollapsible, tryGroupBlock, updateGroupLabel, setWorkLogProcessing } from './renderer_groups.js';
 
 function createThinkingMarkup({ label, chevron, body = '', streaming = false, display = 'none' }) {
   return `
@@ -40,6 +40,7 @@ export function createThinkingBlock() {
 
   row.appendChild(block);
   tryGroupBlock(block);
+  setWorkLogProcessing(true);
   scrollToBottom();
   return block.querySelector('.thinking-body');
 }

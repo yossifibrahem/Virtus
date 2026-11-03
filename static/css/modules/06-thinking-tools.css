@@ -7,8 +7,13 @@
 .group-header:hover { background: var(--surface2); }
 .group-emblem { position: relative; display: grid; place-items: center; width: 16px; height: 16px; flex: 0 0 16px; color: var(--text2); }
 .group-emblem > svg { width: 14px; height: 14px; }
+.group-progress { width: 12px; height: 12px; border: 1.5px solid var(--border2); border-top-color: var(--text2); border-radius: 50%; }
+@media (prefers-reduced-motion: no-preference) {
+  .group-progress { animation: work-log-progress 1.4s linear infinite; }
+}
+@keyframes work-log-progress { to { transform: rotate(360deg); } }
 .group-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
-#messages .group-header .group-label { font-size: .73rem; font-weight: 400; white-space: nowrap; color: var(--text); padding: 0; margin: 0; }
+#messages .group-header .group-label { font-size: .73rem; font-weight: 400; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); padding: 0; margin: 0; }
 #messages .group-desc { display: block; max-width: 300px; font-size: .7rem; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-count { display: grid; place-items: center; flex: 0 0 auto; min-width: 14px; height: 16px; color: var(--text3); font-size: .65rem; font-variant-numeric: tabular-nums; }
 .group-chevron { margin-left: 4px; color: var(--text3); }
