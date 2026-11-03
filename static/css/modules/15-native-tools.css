@@ -13,11 +13,11 @@
 .native-details > summary { cursor: pointer; color: var(--text3); font-size: .7rem; padding: 3px 0; }
 .native-details[open] > summary { margin-bottom: 8px; }
 .native-replacement { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-.native-media { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
+.native-media { display: flex; flex-wrap: wrap; gap: 8px; }
 .native-media:empty { display: none; }
-.native-media figure { margin: 0; min-width: 0; }
+.native-media figure { margin: 0; width: 160px; max-width: 100%; min-width: 0; }
 .native-media a { display: block; cursor: zoom-in; }
-.native-media img { display: block; max-width: 100%; max-height: 480px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); }
+.native-media img { display: block; max-width: 100%; max-height: 200px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); }
 .native-media figcaption { font-size: .65rem; color: var(--text3); margin-top: 5px; }
 .native-outcome { flex-shrink: 0; margin-left: 8px; font-size: .64rem; color: var(--text3); }
 .native-outcome--error { color: var(--red); }
