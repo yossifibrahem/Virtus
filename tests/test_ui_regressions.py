@@ -548,7 +548,7 @@ const thought=makeBlock(['thinking-block'],'Thought process');
 const tool=makeBlock(['tool-strip','tool-strip-running'],'Bash · echo hello');
 tool.block.dataset={toolName:'bash',displayName:'Bash · echo hello'};
 const body=new Element();body.children=[thought.block,tool.block];
-const selectors=['.group-label','.group-desc','.group-count','.group-emblem'];
+const selectors=['.group-label','.group-emblem'];
 const nodes=Object.fromEntries(selectors.map(s=>[s,new Element()]));nodes['.group-body']=body;
 const group=new Element();group.querySelector=s=>nodes[s];
 const messages={children:[]};
@@ -567,7 +567,7 @@ for(const {block} of [thought,tool]) attachCollapsible(block,{headerSelector:'.h
 thought.header.events.click();tool.header.events.click();update(group);
 assert.equal(thought.body.style.display,'block');assert.equal(tool.body.style.display,'block');
 assert.equal(thought.header.attrs['aria-expanded'],'true');assert.equal(tool.header.attrs['aria-expanded'],'true');
-assert.equal(nodes['.group-label'].textContent,'Bash · echo hello');assert.equal(nodes['.group-count'].textContent,'2');
+assert.equal(nodes['.group-label'].textContent,'Bash · echo hello');
 tool.block.classList.toggle('tool-strip-running',false);update(group);
 assert.equal(nodes['.group-label'].textContent,'Work log');
 assert.equal(thought.block.classList.contains('open'),true);assert.equal(tool.block.classList.contains('open'),true);
@@ -575,12 +575,12 @@ assert.equal(thought.block.classList.contains('open'),true);assert.equal(tool.bl
 thought.header.events.click();update(group);
 assert.equal(thought.body.style.display,'none');assert.equal(tool.body.style.display,'block');
 assert.equal(thought.header.attrs['aria-expanded'],'false');
-// Removing an approval step updates counts without changing its neighbors.
-body.children=[tool.block];update(group);assert.equal(nodes['.group-count'].textContent,'1');
+// Removing an approval step does not change its neighbors.
+body.children=[tool.block];update(group);
 assert.equal(tool.block.classList.contains('open'),true);
 // Processing stays visible even before any thinking or tool events arrive.
 body.children=[];setWorkLogProcessing(true);
-assert.equal(nodes['.group-label'].textContent,'Working');assert.equal(group.hidden,false);assert.equal(nodes['.group-count'].hidden,true);
+assert.equal(nodes['.group-label'].textContent,'Working');assert.equal(group.hidden,false);
 body.children=[thought.block];thought.block.classList.toggle('thinking-streaming',true);update(group);
 assert.equal(nodes['.group-label'].textContent,'Thinking');assert(nodes['.group-emblem'].innerHTML.includes('group-progress'));
 body.children.push(tool.block);tool.block.classList.toggle('tool-strip-running',true);update(group);
@@ -656,7 +656,7 @@ const mod=new vm.SourceTextModule(readFileSync('static/js/renderer_groups.js','u
 const deps={
  './dom.js':{setVisible(){},createElement:(_tag,options)=>{
   const group=element(options.className.split(' '));
-  const nodes=Object.fromEntries(['.group-header','.activity-workspace','.group-body','.group-label','.group-desc','.group-count'].map(s=>[s,element()]));
+  const nodes=Object.fromEntries(['.group-header','.activity-workspace','.group-body','.group-label'].map(s=>[s,element()]));
   group.querySelector=s=>nodes[s];return group;
  }},'./state.js':{state},'./icons.js':{ICONS:{layers:'',chevronRight:''}},
  './renderer_core.js':{messagesEl:()=>null,createMessageRow:()=>null}

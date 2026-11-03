@@ -44,18 +44,6 @@ export function isGroupableBlock(el) {
   );
 }
 
-function makeGroupSummary(elements) {
-  let thinks = 0, tools = 0;
-  elements.forEach(el => {
-    if (el.classList.contains('thinking-block')) thinks++;
-    else if (el.classList.contains('tool-strip')) tools++;
-  });
-  const parts = [];
-  if (thinks) parts.push(`${thinks} thought${thinks === 1 ? '' : 's'}`);
-  if (tools) parts.push(`${tools} tool${tools === 1 ? '' : 's'}`);
-  return parts.join(' · ');
-}
-
 function getBlockLabel(el) {
   if (!el) return '';
   if (el.classList.contains('thinking-block')) {
@@ -93,7 +81,6 @@ export function updateGroupLabel(group) {
   group.querySelector('.group-label').textContent = activeBlock
     ? (thinking ? 'Thinking' : getBlockLabel(activeBlock))
     : (processing ? 'Working' : 'Work log');
-  group.querySelector('.group-desc').textContent = activeBlock ? '' : makeGroupSummary(elements);
   const emblem = group.querySelector('.group-emblem');
   // Keep the same spinner node across activity changes so its motion stays steady.
   const iconState = busy ? 'busy' : 'idle';
@@ -101,10 +88,7 @@ export function updateGroupLabel(group) {
     emblem.dataset.state = iconState;
     emblem.innerHTML = busy ? '<span class="group-progress"></span>' : ICONS.layers;
   }
-  const count = group.querySelector('.group-count');
-  count.textContent = String(elements.length);
-  count.hidden = elements.length === 0;
-  count.setAttribute('aria-label', `${elements.length} ${elements.length === 1 ? 'step' : 'steps'}`);
+
 }
 
 // Only the latest log in the visible assistant turn represents ongoing work.
@@ -144,8 +128,8 @@ function createGroupBlock() {
   group.innerHTML = `
     <button class="group-header" type="button" aria-expanded="${expanded}" aria-controls="${group.id}-panel">
       <span class="group-emblem" aria-hidden="true">${ICONS.layers}</span>
-      <span class="group-heading"><span class="group-label" aria-live="polite" aria-atomic="true">Work log</span><span class="group-desc"></span></span>
-      <span class="group-count"></span><span class="group-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
+      <span class="group-heading"><span class="group-label" aria-live="polite" aria-atomic="true">Work log</span></span>
+      <span class="group-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
     </button>
     <div id="${group.id}-panel" class="activity-workspace" ${expanded ? '' : 'hidden'}>
       <div class="group-body"></div>

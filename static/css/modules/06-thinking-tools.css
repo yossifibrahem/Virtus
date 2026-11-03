@@ -1,9 +1,8 @@
 /* Compact stacked activity, with independent disclosures for each step. */
 .block-group, .thinking-block, .tool-strip { margin: 6px 0; min-width: 0; }
-.block-group { width: min(100%, 540px); max-width: 100%; border: 1px solid transparent; border-radius: 7px; background: transparent; overflow: hidden; }
-.block-group.open { border-color: var(--border); }
+.block-group { width: min(100%, 540px); max-width: 100%; border: 1px solid var(--border); border-radius: 7px; background: transparent; overflow: hidden; }
 :is(.group-header, .thinking-header, .tr-summary, .tc-item-header, .tool-strip-running-row) { width: 100%; gap: 7px; border: 0; background: transparent; text-align: left; color: var(--text2); font-family: var(--font-roman); cursor: pointer; }
-.group-header { min-height: 30px; padding: 5px 8px; border-radius: 6px; transition: background 100ms ease; }
+.group-header { min-height: 30px; padding: 5px 8px; border-radius: 0; transition: background 100ms ease; }
 .group-header:hover { background: var(--surface2); }
 .group-emblem { position: relative; display: grid; place-items: center; width: 16px; height: 16px; flex: 0 0 16px; color: var(--text2); }
 .group-emblem > svg { width: 14px; height: 14px; }
@@ -14,16 +13,14 @@
 @keyframes work-log-progress { to { transform: rotate(360deg); } }
 .group-heading { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
 #messages .group-header .group-label { font-size: .73rem; font-weight: 400; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); padding: 0; margin: 0; }
-#messages .group-desc { display: block; max-width: 300px; font-size: .7rem; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.group-count { display: grid; place-items: center; flex: 0 0 auto; min-width: 14px; height: 16px; color: var(--text3); font-size: .65rem; font-variant-numeric: tabular-nums; }
 .group-chevron { margin-left: 4px; color: var(--text3); }
 .group-chevron svg { transition: transform 100ms ease; }
 .block-group.open > .group-header .group-chevron svg { transform: rotate(90deg); }
 .activity-workspace { border-top: 1px solid var(--border); }
-.group-body { padding: 3px; }
+.group-body { padding: 0; }
 .group-body > :is(.thinking-block, .tool-strip) { margin: 0; min-width: 0; }
 .group-body > :is(.thinking-block, .tool-strip) + :is(.thinking-block, .tool-strip) { border-top: 1px solid var(--border); }
-.group-body :is(.thinking-header, .tr-summary, .tool-strip-running-row) { border-radius: 4px; }
+.group-body :is(.thinking-header, .tr-summary, .tool-strip-running-row) { border-radius: 0; }
 .group-body :is(.thinking-body, .tr-body, .tc-item-args) { padding: 6px 8px 8px; border-top: 0; max-height: 144px; }
 /* Standalone steps share the same material and compact icon-led anatomy. */
 .msg-row > :is(.thinking-block, .tool-strip) { width: min(100%, 540px); max-width: min(100%, 540px); border: 1px solid var(--border); border-radius: 7px; background: var(--bg); overflow: hidden; }
