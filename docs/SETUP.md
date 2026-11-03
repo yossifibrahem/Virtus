@@ -21,7 +21,7 @@ Virtus remains in the notification area with **Open Virtus**, **Docker Status**,
 **Open Logs**, and **Quit Virtus** actions. Quit stops the local listener, MCP
 sessions, and running Virtus containers before removing the tray icon. Cleanup
 has a single 15-second deadline; stopped containers remain available for fast
-reuse. Chats and workspaces stay under `%USERPROFILE%\.virtus`.
+reuse. Chats stay under `%USERPROFILE%\.virtus`; workspaces live in Docker named volumes.
 
 The first sandbox installation needs an internet connection. The app includes its Python runtime, and Docker installs the sandbox runtimes and packages. MCP servers are configured separately.
 
@@ -35,7 +35,7 @@ The macOS desktop build targets **Apple Silicon Macs running macOS 14 or newer**
 4. Follow the release notes for first-launch instructions. Alpha builds may be unsigned or unnotarized.
 5. Virtus opens its setup page. If Docker is stopped, click **Start Docker**. When prompted, click **Install Virtus Tools**. Docker pulls `ubuntu:24.04`, installs Python, Node.js, and the sandbox packages inside it, and creates `virtus-sandbox:latest` locally.
 
-Virtus remains in the menu bar using the bundled Virtus artwork, with **Open Virtus**, **Docker Status**, **Open Logs**, and **Quit Virtus** actions. Application updates are manual: replace the old app with a newer DMG. Chats and workspaces stay under `~/.virtus/` and are not removed by an app update or uninstall.
+Virtus remains in the menu bar using the bundled Virtus artwork, with **Open Virtus**, **Docker Status**, **Open Logs**, and **Quit Virtus** actions. Application updates are manual: replace the old app with a newer DMG. Chats stay under `~/.virtus/` and workspaces live in Docker named volumes. Both persist across app updates and uninstall.
 
 Internet access is required during the first sandbox installation for the Ubuntu image and package repositories. No MCP server source is fetched or compiled by this build.
 
@@ -51,7 +51,7 @@ network; use a trusted network. The switch is off by default, and your choice is
 saved in `~/.virtus/desktop-network.json` for future launches. Turn it off to return
 to access from this Mac only. Browser sessions are preserved when switching.
 
-To uninstall, quit Virtus and move `Virtus AI Chat.app` to Trash. Remove `~/.virtus/` separately only if you also want to permanently delete chats, settings, memory, and workspace files. Docker images can be removed separately through Docker Desktop.
+To uninstall, quit Virtus and move `Virtus AI Chat.app` to Trash. Remove `~/.virtus/` separately only if you also want to permanently delete chats, settings, and memory. Delete workspace volumes separately in Docker Desktop. Docker images can be removed separately through Docker Desktop.
 
 ## Developer Quick Start
 

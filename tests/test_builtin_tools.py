@@ -166,12 +166,12 @@ def test_media_conversation_scoping_and_order(tmp_virtus):
 
 def test_unexpected_mount_rejected(monkeypatch, tmp_path):
     from types import SimpleNamespace
-    mounts = [{'Type': 'bind', 'RW': True, 'Destination': '/workspace', 'Source': str(tmp_path)},
+    mounts = [{'Type': 'volume', 'RW': True, 'Destination': '/workspace', 'Name': str(tmp_path)},
               {'Type': 'bind', 'RW': True, 'Destination': '/host', 'Source': '/'}]
     monkeypatch.setattr(container_service, '_run', lambda args: SimpleNamespace(returncode=0, stdout=json.dumps(mounts)))
-    assert not container_service._mounts_match(mounts, tmp_path)
+    assert not container_service._mounts_match(mounts, str(tmp_path))
     mounts.pop()
-    assert container_service._mounts_match(mounts, tmp_path)
+    assert container_service._mounts_match(mounts, str(tmp_path))
 
 
 def test_native_schemas_injected_without_mcp(tmp_virtus, monkeypatch):

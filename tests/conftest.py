@@ -2,7 +2,7 @@
 Shared pytest fixtures for Virtus AI Chat tests.
 
 Key responsibilities:
-  - Redirect all persistence paths (database, containers) to tmp_path
+  - Redirect all persistence paths (database and worker fixtures) to tmp_path
     so tests never touch ~/.virtus.
   - Create a Flask test app with runtime requirement checks mocked as ready.
   - Expose a `client` fixture for HTTP integration tests.
@@ -39,8 +39,8 @@ def tmp_virtus(tmp_path, monkeypatch):
     """
     Redirect every Virtus storage path to an isolated temp directory.
 
-    Patches module-level constants in `store` and `container_service` so that
-    all fixture-scoped tests read and write to `tmp_path` only.
+    Provides isolated database and container-worker test paths. Docker volume
+    operations are mocked separately.
 
     Returns the isolated database and workspace paths.
     """
@@ -48,7 +48,7 @@ def tmp_virtus(tmp_path, monkeypatch):
     containers_dir.mkdir()
 
     database_file = tmp_path / "virtus.sqlite3"
-    monkeypatch.setattr("container_service.CONTAINERS_ROOT", containers_dir)
+
 
     return {
         "database_file": database_file,
@@ -140,3 +140,30 @@ def _isolate_persistent_state(tmp_path, monkeypatch):
     monkeypatch.setattr(memory_service, 'MEMORY_FILE', tmp_path / 'memory.json')
     monkeypatch.setattr(advanced_config, 'ADVANCED_CONFIG_FILE', tmp_path / 'advanced_config.json')
     advanced_config._invalidate_cache()
+
+
+@pytest.fixture(autouse=True)
+def mock_volume_storage(monkeypatch, tmp_path, request):
+    if request.node.path.name == 'test_builtin_docker.py':
+        return
+    import container_service
+    import storage_safeguards
+    import sandbox_files
+    import subprocess
+    import json
+    def probe(args, **kwargs):
+        if '--usage' not in args:
+            raise AssertionError(f'Unexpected Docker call: {args}')
+        runtime_id = args[2].removeprefix(container_service.CONTAINER_PREFIX)
+        root = tmp_path / 'containers' / runtime_id
+        root.mkdir(parents=True, exist_ok=True)
+        previous = sandbox_files.ROOT
+        try:
+            sandbox_files.ROOT = root
+            result = sandbox_files.storage_usage(int(args[-1]))
+        finally:
+            sandbox_files.ROOT = previous
+        return subprocess.CompletedProcess(args, 0, json.dumps(result), '')
+    if request.node.name.startswith(('test_turn_tool_budget', 'test_memory_disable', 'test_turn_wall_budget')) or request.node.path.name not in ('test_container_service.py', 'test_runtime_removal.py', 'test_app_shutdown.py', 'test_storage_safeguards.py', 'test_architecture_decisions.py'):
+        monkeypatch.setattr(storage_safeguards.container_service, 'ensure_container', lambda rid: None)
+        monkeypatch.setattr(storage_safeguards.container_service, '_run', probe)

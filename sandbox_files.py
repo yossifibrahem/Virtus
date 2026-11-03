@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import shutil
 import sys
 
 ROOT = Path('/workspace')
@@ -214,7 +215,29 @@ def read_request(stream):
     return req
 
 
+def storage_usage(max_bytes):
+    total = 0
+    def walk_error(error):
+        raise error
+    for directory, dirs, files in os.walk(ROOT, followlinks=False, onerror=walk_error):
+        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(directory, d))]
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(directory, name)).st_size
+            except FileNotFoundError:
+                continue
+            if total > max_bytes:
+                break
+        if total > max_bytes:
+            break
+    return {'workspace_bytes': total, 'workspace_free_bytes': shutil.disk_usage(ROOT).free,
+            'docker_free_bytes': shutil.disk_usage('/').free}
+
+
 if __name__ == '__main__':
+    if len(sys.argv) == 3 and sys.argv[1] == '--usage':
+        print(json.dumps(storage_usage(int(sys.argv[2]))))
+        sys.exit(0)
     try:
         write_result(execute(read_request(sys.stdin.buffer)), sys.stdout.buffer)
     except FileNotFoundError:

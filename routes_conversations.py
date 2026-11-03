@@ -115,8 +115,6 @@ def get_conversation(conv_id: str):
     data = store.load(conv_id)
     if not data:
         return jsonify({"error": "Not found"}), 404
-    if "working_directory" not in data:
-        data["working_directory"] = str(container_service.conversation_workspace(store.runtime_id(conv_id, data)))
     return jsonify(data)
 
 
@@ -137,7 +135,8 @@ def get_container_status(conv_id: str):
         "runtime_id": runtime_id,
         "container_name": container_service.container_name(runtime_id),
         "status": container_service.get_status(runtime_id),
-        "workspace": str(container_service.conversation_workspace(runtime_id)),
+        "workspace": '/workspace',
+        "volume_name": container_service.workspace_volume(runtime_id),
     })
 
 
@@ -166,7 +165,7 @@ def update_conversation(conv_id: str):
     new_folder_id = body.get("folder_id", data.get("folder_id"))
     new_runtime_id = store.runtime_id(conv_id, {"folder_id": new_folder_id})
     if "folder_id" in body:
-        changes["working_directory"] = str(container_service.conversation_workspace(new_runtime_id))
+        changes["working_directory"] = '/workspace'
     remove_old_runtime = old_runtime_id != new_runtime_id and old_runtime_id == conv_id
     if remove_old_runtime:
         if err := _delete_runtime(old_runtime_id, remove_workspace=False):
@@ -198,7 +197,7 @@ def delete_conversation(conv_id: str):
 
 @blueprint.route("/api/danger/delete-all", methods=["POST"])
 def danger_delete_all():
-    """Delete every conversation, its container, and its workspace directory."""
+    """Delete every conversation, its container, and its workspace volume."""
     conversations = store.list_all()
     if any(c.get("active_stream_id") for c in conversations):
         return jsonify({"error": "Stop active chats before deleting conversations"}), 409
@@ -216,7 +215,7 @@ def danger_delete_all():
     for runtime_id in runtime_ids:
         try:
             container_service.delete_workspace(runtime_id)
-        except OSError as exc:
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             return jsonify({"ok": False, "errors": [f"{runtime_id}: {exc}"]}), 500
     store.delete_all([conv["id"] for conv in conversations], [folder["id"] for folder in folders])
     return jsonify({"ok": True, "deleted": len(conversations)})

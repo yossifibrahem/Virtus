@@ -58,7 +58,6 @@ http://localhost:1234/v1     # LM Studio
 | `VIRTUS_MCP_CONFIG_FILE` | `~/.virtus/mcp.json` | MCP server config path |
 | `VIRTUS_MCP_CONFIG_CACHE_TTL` | `5` | Seconds to cache MCP config reads |
 | `VIRTUS_SANDBOX_IMAGE` | `virtus-sandbox:latest` | Locally built Docker image for sandbox containers |
-| `VIRTUS_CONTAINERS_ROOT` | `~/.virtus/containers` | Host directory for standalone-chat and shared-folder workspaces |
 | `VIRTUS_CONTAINER_MEMORY` | `512m` | Memory limit per sandbox container |
 | `VIRTUS_CONTAINER_CPUS` | `1` | CPU quota per sandbox container |
 | `VIRTUS_CONTAINER_PREFIX` | `virtus-chat-` | Prefix for generated container names |
@@ -89,8 +88,7 @@ All runtime data is stored outside the repo under `~/.virtus/`:
 ├── memory.json            # App-managed cross-chat memory, never mounted into containers
 ├── memory.settings.json   # Whether cross-chat memory is enabled
 ├── memory.history.json    # Recoverable prior memory versions
-├── virtus.sqlite3         # Conversations, histories, branches, folders, and image bytes
-└── containers/            # Workspace directories for standalone chats and shared folders
+└── virtus.sqlite3         # Conversations, histories, branches, folders, and image bytes
 ```
 
 The database is created automatically on first use with Python's built-in SQLite
@@ -98,14 +96,13 @@ support; no database service is required. The previous conversation JSON files a
 `folders.json` are not imported. Uploaded and tool-result images are SQLite rows
 owned by their chat; deleting the chat deletes its images. The image table is added
 automatically to existing SQLite databases, preserving chats and folders. Old
-file-based images are not imported. Workspace directories, settings, and memory
-retain their existing storage.
+file-based images are not imported. Workspace files live in Docker named volumes; settings and memory remain under ~/.virtus.
 
 SQLite uses WAL journaling and may create adjacent `virtus.sqlite3-wal` and
 `virtus.sqlite3-shm` files while connections are open. Shut down Virtus before copying
 its data directory for backup; copying only a live database file can omit recent
 writes. A backup made while the app runs must use SQLite's backup API for the database
-and also include the external workspace files. The database backup includes chat images.
+and separately include Docker workspace volumes. The database backup includes chat images.
 
 ## MCP Configuration
 
@@ -134,3 +131,5 @@ Per-server UI settings (enabled, auto-approve, icon) are stored in browser `loca
 Runtime configuration contains only the servers in `mcp.json`. All server IDs are user-configurable, and loading configuration does not rewrite the file. Previously saved server definitions remain editable; remove any obsolete definitions in settings.
 
 Model-facing tool names use the MCP tool name directly. The matching MCP server is sent separately in `mcp_tool_meta`, which lets the backend dispatch the call without adding server prefixes to the visible tool name. Tool descriptions should stay clean and semantic (`tool.description || tool.name`).
+
+Workspace storage uses one Docker named volume per standalone chat or shared Folder runtime, named `<container_name>-workspace`, mounted at `/workspace`. Volumes persist across container recreation and are removed when their owning chat or Folder is deleted. Storage safeguards measure the volume and container filesystems inside Docker; failed probes return an error.

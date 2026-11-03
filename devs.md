@@ -83,7 +83,7 @@ python packaging/smoke_sandbox.py --image virtus-sandbox:builtins-test
 | `storage_safeguards.py` | Workspace accounting, host/Docker low-space checks |
 | `title_service.py` | Optional title generation |
 | `app_config.py`, `advanced_config.py` | API credentials and runtime/file settings |
-| `docker_cli.py`, `docker_path_utils.py` | Docker executable resolution and platform paths |
+| `docker_cli.py` | Docker executable resolution and invocation |
 | `build_info.py` | Desktop version and sandbox content identity |
 | `desktop_runtime.py` | Shared desktop logging, health/port probes, complete bundled-resource validation |
 | `desktop_launcher.py`, `windows_desktop_launcher.py` | Native menu/tray, instance ownership, server lifecycle |
@@ -120,7 +120,7 @@ runtimes remain known during startup cleanup.
 
 App shutdown closes MCP pools and kills running app containers concurrently within
 one deadline. Containers remain available for restart. Stale containers are
-removed on startup. Bind mount contents remain under the app's data directory.
+removed on startup. Workspace files persist in Docker named volumes.
 
 ## Tools and file transport
 
@@ -233,7 +233,7 @@ failed session is discarded and a later request can open a fresh connection.
 
 ## Storage, configuration, and releases
 
-User state is under `~/.virtus/`: `virtus.sqlite3` (conversations, folders, and images), workspaces,
+User metadata is under `~/.virtus/`: `virtus.sqlite3` (conversations, folders, and images),
 `config.json`, `advanced_config.json`, `mcp.json`, and `memory.json`. File paths can
 be overridden by the environment variables in the
 [configuration reference](docs/CONFIGURATION.md#environment-variables). API keys remain
@@ -284,9 +284,8 @@ saved chat history can still contain facts. Conflicts return current content/rev
 Advanced limits: `turn_timeout_seconds=900`, `turn_tool_limit=100`, `min_free_disk_bytes=536870912`,
 `max_workspace_bytes=10737418240`; corresponding env vars are `VIRTUS_` + uppercase key. Settings
 validate positive integer values. Runtime operations check storage before execution; Docker exec
-and MCP wait loops check about every two seconds. Accounting never follows workspace symlinks.
-Docker free/used storage is queried with in-container disk_usage when available, separately from
-host workspace storage. This is a safeguard, not a reliable hard quota.
+and MCP wait loops check about every two seconds. Accounting runs in the sandbox and never follows workspace symlinks.
+Workspace volume and container root free space are queried inside Docker with bounded probes. This is a safeguard, not a reliable hard quota.
 
 File-panel list/preview/download/PDF operations use a request-local recovery
 context so they remain available over storage limits. Only these known worker actions

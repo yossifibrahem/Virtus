@@ -192,32 +192,12 @@ class TestVolumeArgs:
     """
     from pathlib import Path
 
-    def test_workspace_volume_always_first(self, tmp_path):
-        import docker_path_utils
-
-        result = container_service._volume_args(tmp_path)
-        assert result[0] == "--volume"
-        assert result[1].startswith(docker_path_utils.host_path_to_docker_src(str(tmp_path)))
-        assert ":/workspace" in result[1]
+    def test_workspace_volume_always_first(self):
+        assert container_service._volume_args('test-workspace') == ['--mount', 'type=volume,src=test-workspace,dst=/workspace,volume-nocopy']
 
     def test_implicit_host_mounts_rejected(self):
         with pytest.raises(ValueError, match="Implicit host mounts"):
             container_service.ensure_container("chat", ["/host:/host:ro"])
-
-    def test_windows_workspace_source_uses_forward_slashes(self, monkeypatch):
-        import docker_path_utils
-        from pathlib import PureWindowsPath
-
-        monkeypatch.setattr(docker_path_utils.sys, "platform", "win32")
-
-        result = container_service._volume_args(
-            PureWindowsPath(r"C:\Users\User\.virtus\containers\abc"),
-        )
-
-        assert result == [
-            "--volume",
-            "C:/Users/User/.virtus/containers/abc:/workspace",
-        ]
 
 
 class TestContainerImageIdentity:
@@ -239,7 +219,7 @@ class TestContainerImageIdentity:
 
     @pytest.mark.parametrize('change', ['image_tag', 'image_id', 'identity', 'mount', None])
     def test_existing_container_validation_uses_two_docker_calls(self, tmp_path, monkeypatch, change):
-        monkeypatch.setattr(container_service, '_workspace', lambda cid: tmp_path)
+        monkeypatch.setattr(container_service, 'workspace_volume', lambda cid: 'test-workspace')
         monkeypatch.setattr(container_service.build_info, 'sandbox_identity', lambda: 'identity')
         monkeypatch.setattr(container_service.build_info, 'APP_VERSION', '99.0.0-desktop-only')
         monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {
@@ -254,7 +234,7 @@ class TestContainerImageIdentity:
             'Config': {'WorkingDir': '/workspace', 'Labels': {
                 container_service.build_info.CONTAINER_BUILD_LABEL: 'virtus-sandbox:latest',
                 container_service.build_info.CONTAINER_IDENTITY_LABEL: 'identity'}},
-            'Mounts': [{'Type': 'bind', 'RW': True, 'Source': str(tmp_path), 'Destination': '/workspace'}],
+            'Mounts': [{'Type': 'volume', 'RW': True, 'Name': 'test-workspace', 'Destination': '/workspace'}],
         }
         if change == 'image_tag':
             info['Config']['Labels'][container_service.build_info.CONTAINER_BUILD_LABEL] = 'old-tag'
@@ -273,7 +253,7 @@ class TestContainerImageIdentity:
         monkeypatch.setattr(container_service, 'stop_container', lambda cid, strict=False: removed.append(cid))
         assert container_service.ensure_container('conversation').status == 'running'
         assert removed == (['conversation'] if change else [])
-        assert len(calls) == (3 if change else 2)
+        assert len(calls) == (4 if change else 2)
         assert calls[0][1] == 'inspect' and calls[1][1:3] == ['image', 'inspect']
 
 

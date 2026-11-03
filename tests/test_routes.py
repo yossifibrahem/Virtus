@@ -226,7 +226,7 @@ class TestConversationMetaRoutes:
         resp = client.get(f"/api/conversations/{conv['id']}/workspace")
         assert resp.status_code == 200
         wd = resp.json.get("working_directory", "")
-        assert os.path.isabs(wd)  # must be an absolute host path (works on Windows too)
+        assert wd == '/workspace'  # must be an absolute host path (works on Windows too)
 
     def test_container_status_for_known_conv(self, client, tmp_virtus):
         conv = store.create("container")
@@ -1056,8 +1056,10 @@ def test_delete_all_confirms_all_containers_removed_before_removing_files(client
 def test_failed_sandbox_removal_preserves_standalone_chat_when_moving(client, tmp_virtus):
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
-    workspace = Path(conversation["working_directory"])
+    workspace = tmp_virtus['containers_dir'] / conversation['id']
+    workspace.mkdir(parents=True, exist_ok=True)
     source = workspace / "keep.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("Keep source files")
     with patch("container_service.stop_container", side_effect=RuntimeError("Docker unavailable")) as stop, \
          patch("container_service.delete_workspace") as remove:
@@ -1074,7 +1076,8 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
     import container_service
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
-    source = Path(conversation["working_directory"]) / "source-only.txt"
+    source = tmp_virtus['containers_dir'] / conversation['id'] / "source-only.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("Source workspace")
     original_update = store.update
     order = []
@@ -1095,7 +1098,7 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
         order.append("remove")
         original_remove(runtime_id)
 
-    original_remove = container_service.delete_workspace
+    original_remove = lambda rid: __import__('shutil').rmtree(tmp_virtus['containers_dir'] / rid)
     with patch("container_service.stop_container", side_effect=stop), \
          patch.object(store, "update", side_effect=save), \
          patch("container_service.delete_workspace", side_effect=remove):
@@ -1103,13 +1106,14 @@ def test_standalone_move_revokes_container_before_save_and_removes_files_after(c
     assert response.status_code == 200
     assert order == ["stop", "save", "remove"]
     assert not source.exists()
-    assert not (Path(response.json["working_directory"]) / source.name).exists()
+    assert not ((tmp_virtus['containers_dir'] / ('folder_' + folder['id'])) / source.name).exists()
 
 
 def test_failed_move_save_preserves_source_workspace(client, tmp_virtus):
     conversation = store.create("Standalone")
     folder = store.create_folder("Destination")
-    source = Path(conversation["working_directory"]) / "keep.txt"
+    source = tmp_virtus['containers_dir'] / conversation['id'] / "keep.txt"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text("Source workspace")
     with patch("container_service.stop_container") as stop, \
          patch.object(store, "update", side_effect=OSError("Disk full")), \

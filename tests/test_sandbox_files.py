@@ -52,17 +52,18 @@ def test_symlinks_never_leave_workspace(root, tmp_path):
 @pytest.mark.parametrize('low_space', [False, True])
 def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_virtus, monkeypatch, low_space):
     rid = 'storage-recovery'
-    workspace = container_service.conversation_workspace(rid)
+    workspace = tmp_virtus['containers_dir'] / rid
+    workspace.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(worker, 'ROOT', workspace)
     (workspace / 'report.txt').write_text('keep or export this result')
     advanced_config.save_advanced_config({'max_workspace_bytes': 1})
     if low_space:
-        monkeypatch.setattr(storage_safeguards.shutil, 'disk_usage', lambda path: type('Usage', (), {'free': 0})())
+        monkeypatch.setattr(worker.shutil, 'disk_usage', lambda path: type('Usage', (), {'free': 0})())
 
     checks = []
     def transport(runtime_id, argv, payload, **kwargs):
         # Exercise the same nested checks that runtime creation and execution use.
-        checks.append(storage_safeguards.check(runtime_id, docker=True))
+        checks.append(storage_safeguards.check(runtime_id))
         result = worker.execute(json.loads(payload))
         output = io.BytesIO()
         worker.write_result(result, output)
@@ -85,7 +86,8 @@ def test_file_panel_recovers_over_limit_workspaces_without_allowing_uploads(tmp_
 
 def test_recovery_context_is_request_local_and_restored_after_error(tmp_virtus):
     from concurrent.futures import ThreadPoolExecutor
-    workspace = container_service.conversation_workspace('context')
+    workspace = tmp_virtus['containers_dir'] / 'context'
+    workspace.mkdir(parents=True, exist_ok=True)
     (workspace / 'large').write_bytes(b'large')
     advanced_config.save_advanced_config({'max_workspace_bytes': 1})
     with pytest.raises(RuntimeError, match='test failure'):

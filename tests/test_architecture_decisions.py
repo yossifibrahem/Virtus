@@ -95,7 +95,7 @@ def test_memory_conflict_returns_current_data_and_rejects_host_paths():
 
 
 def valid_runtime(workspace):
-    return {'State': {'Status': 'running'}, 'Mounts': [{'Type': 'bind', 'Source': str(workspace),
+    return {'State': {'Status': 'running'}, 'Mounts': [{'Type': 'volume', 'Name': workspace,
         'Destination': '/workspace', 'RW': True}],
         'Config': {'WorkingDir': '/workspace'},
         'HostConfig': {'Memory': 512*1024**2, 'NanoCpus': 10**9, 'PidsLimit': 256,
@@ -111,7 +111,7 @@ def valid_runtime(workspace):
     ('DeviceRequests', [{'Count': -1}]), ('SecurityOpt', ['no-new-privileges', 'seccomp=unconfined'])])
 def test_effective_configuration_rejected_in_both_reuse_paths(tmp_virtus, monkeypatch, key, value):
     rid = 'test'
-    workspace = containers.conversation_workspace(rid)
+    workspace = containers.workspace_volume(rid)
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
     assert containers._runtime_matches(info, workspace)
@@ -128,7 +128,7 @@ def test_effective_configuration_rejected_in_both_reuse_paths(tmp_virtus, monkey
 
 
 def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_virtus, monkeypatch):
-    workspace = containers.conversation_workspace('test')
+    workspace = containers.workspace_volume('test')
     info = valid_runtime(workspace)
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
     info['HostConfig']['NetworkMode'] = 'custom-docker-network'
@@ -140,7 +140,7 @@ def test_network_is_ignored_and_unexpected_mount_is_incompatible(tmp_virtus, mon
 
 @pytest.mark.parametrize('user', ['', 'root', '0', '0:0', 'root:root', 'root:0', '0:root'])
 def test_equivalent_root_users_do_not_reset_the_environment(tmp_virtus, monkeypatch, user):
-    workspace = containers.conversation_workspace('root-user')
+    workspace = containers.workspace_volume('root-user')
     info = valid_runtime(workspace)
     info['Config']['User'] = user
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
@@ -151,7 +151,7 @@ def test_equivalent_root_users_do_not_reset_the_environment(tmp_virtus, monkeypa
 
 def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(tmp_virtus, monkeypatch):
     rid = 'creation-reuse'
-    workspace = containers.conversation_workspace(rid)
+    workspace = containers.workspace_volume(rid)
     inspected = None
     created = []
     monkeypatch.setattr(containers, '_inspect_container', lambda *args: copy.deepcopy(inspected))
@@ -161,6 +161,8 @@ def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(
 
     def run(command):
         nonlocal inspected
+        if command[:3] == ['docker', 'volume', 'create']:
+            return subprocess.CompletedProcess(command, 0, workspace, '')
         assert command[:2] == ['docker', 'run']
         created.append(command)
         inspected = valid_runtime(workspace)
@@ -180,11 +182,12 @@ def test_created_runtime_satisfies_reuse_policy_with_nondefault_daemon_settings(
 
 def test_reconciliation_never_interrupts_other_active_operations(tmp_virtus, monkeypatch):
     import sandbox_runtime
-    workspace = containers.conversation_workspace('test')
+    workspace = containers.workspace_volume('test')
     info = valid_runtime(workspace); info['HostConfig']['Memory'] = 0
     monkeypatch.setattr(containers, '_container_image_changed', lambda *args: False)
     monkeypatch.setattr(containers, '_inspect_container', lambda *args: info)
     stop = MagicMock(); monkeypatch.setattr(containers, 'stop_container', stop)
+    monkeypatch.setattr(storage, 'check', lambda rid: {})
     ready, finish = threading.Event(), threading.Event()
     def hold():
         with sandbox_runtime.runtime_operation('test'):
@@ -199,14 +202,18 @@ def test_reconciliation_never_interrupts_other_active_operations(tmp_virtus, mon
 
 
 def test_disk_accounting_skips_symlinks_and_checks_docker_fs(tmp_virtus, monkeypatch, tmp_path):
-    workspace = containers.conversation_workspace('test')
+    import sandbox_files
+    workspace = tmp_path / 'workspace'; workspace.mkdir()
+    monkeypatch.setattr(sandbox_files, 'ROOT', workspace)
     (workspace / 'owned').write_bytes(b'abc')
     external = tmp_path / 'external'; external.mkdir(); (external / 'other').write_bytes(b'x'*2000)
     (workspace / 'link').symlink_to(external, target_is_directory=True)
-    assert storage.check('test')['workspace_bytes'] < 2000
-    monkeypatch.setattr(containers, '_run', lambda *args, **kwargs: subprocess.CompletedProcess([], 0, '{"free":1,"used":20}', ''))
-    with pytest.raises(storage.StorageLimit, match='Docker filesystem'):
-        storage.check('test', docker=True)
+    assert sandbox_files.storage_usage(10000)['workspace_bytes'] == 3
+    monkeypatch.setattr(containers, 'ensure_container', lambda rid: None)
+    monkeypatch.setattr(containers, '_run', lambda *args, **kwargs: subprocess.CompletedProcess([], 0,
+        '{"workspace_bytes":3,"workspace_free_bytes":1000000000,"docker_free_bytes":1}', ''))
+    with pytest.raises(storage.StorageLimit, match='critically low'):
+        storage.check('test')
     advanced_config.save_advanced_config({'max_workspace_bytes': 1})
     with pytest.raises(storage.StorageLimit, match='workspace storage'):
         storage.check('test')

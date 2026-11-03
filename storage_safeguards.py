@@ -1,8 +1,6 @@
 """Best-effort storage accounting; safeguards, not hard filesystem quotas."""
 from __future__ import annotations
 import json
-import os
-import shutil
 import subprocess
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -32,43 +30,26 @@ def recovery_operation():
         _RECOVERY.reset(token)
 
 
-def check(runtime_id, *, docker=False):
+def check(runtime_id):
     if _RECOVERY.get():
         return {'storage_recovery': True}
     cfg = advanced_config.load_advanced_config()
-    root = container_service.CONTAINERS_ROOT
     minimum = cfg.get('min_free_disk_bytes', 512 * 1024**2)
     maximum = cfg.get('max_workspace_bytes', 10 * 1024**3)
-    free = shutil.disk_usage(root).free
-    if free < minimum:
-        raise StorageLimit('Managed workspace filesystem has critically low free space. Free managed workspace storage before continuing; existing files were retained.')
-    # Do not follow symlinks or traverse external host shares.
-    total = 0
-    workspace = root / container_service._safe_id(runtime_id)
-    for directory, dirs, files in os.walk(workspace, followlinks=False):
-        dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(directory, d))]
-        for name in files:
-            try:
-                total += os.lstat(os.path.join(directory, name)).st_size
-            except FileNotFoundError:
-                continue
-            if total > maximum:
-                raise StorageLimit('Managed workspace storage limit reached. Free managed workspace storage before continuing; existing files were retained.')
-    result = {'workspace_bytes': total, 'workspace_free_bytes': free}
-    if docker:
-        # Docker Desktop may use a separate VM disk. Query that filesystem too.
-        try:
-            probe = container_service._run(['docker', 'exec', container_service.container_name(runtime_id),
-                '/opt/venv/bin/python', '-I', '-c',
-                'import json,shutil;print(json.dumps(shutil.disk_usage("/")._asdict()))'], timeout=3)
-            if probe.returncode == 0:
-                usage = json.loads(probe.stdout)
-                result['docker_free_bytes'] = int(usage['free'])
-                result['docker_used_bytes'] = int(usage['used'])
-                if usage['free'] < minimum:
-                    raise StorageLimit('Docker filesystem has critically low free space. Shared runtime stopped; existing files were retained.')
-        except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
-            if isinstance(exc, StorageLimit):
-                raise
-            result['docker_storage_unavailable'] = True
+    container_service.ensure_container(runtime_id)
+    try:
+        probe = container_service._run(['docker', 'exec', container_service.container_name(runtime_id),
+            '/opt/venv/bin/python', '-I', '/opt/virtus/sandbox_files.py', '--usage', str(maximum)], timeout=10)
+        if probe.returncode:
+            raise ValueError(probe.stderr.strip() or 'Storage probe failed')
+        result = json.loads(probe.stdout)
+        for key in ('workspace_bytes', 'workspace_free_bytes', 'docker_free_bytes'):
+            if type(result[key]) is not int or result[key] < 0:
+                raise ValueError('Invalid storage usage')
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        raise StorageLimit(f'Could not check sandbox storage: {exc}') from exc
+    if result['workspace_bytes'] > maximum:
+        raise StorageLimit('Managed workspace storage limit reached. Free managed workspace storage before continuing; existing files were retained.')
+    if min(result['workspace_free_bytes'], result['docker_free_bytes']) < minimum:
+        raise StorageLimit('Sandbox filesystem has critically low free space. Free workspace or Docker storage before continuing; existing files were retained.')
     return result

@@ -358,7 +358,7 @@ def test_activity_polling_only_reads_active_metadata(tmp_virtus, monkeypatch):
     store.create("Idle")
     active = store.create("Active")
     store.update(active["id"], {"active_stream_id": "stream-1"})
-    monkeypatch.setattr(store, "conversation_working_directory", lambda *args: pytest.fail("Workspace was accessed"))
+    monkeypatch.setattr("container_service.ensure_container", lambda *args: pytest.fail("Docker was accessed"))
     monkeypatch.setattr(store.json, "loads", lambda *args: pytest.fail("History was loaded"))
     assert store.list_active() == [{"id": active["id"], "active_stream_id": "stream-1"}]
 
@@ -400,8 +400,7 @@ chat = store.load(store.list_all()[0]['id'])
 print(json.dumps({'folder': store.list_folders()[0], 'chat': chat,
                   'image': store.get_image(chat['id'], __import__('sys').argv[1])['data'].hex()}))
 """, ref], env={**os.environ, "HOME": str(tmp_virtus["root"]), "USERPROFILE": str(tmp_virtus["root"]),
-             "VIRTUS_DATABASE_FILE": str(store.DATABASE_FILE),
-             "VIRTUS_CONTAINERS_ROOT": str(tmp_virtus["containers_dir"])},
+             "VIRTUS_DATABASE_FILE": str(store.DATABASE_FILE)},
         capture_output=True, text=True, check=True, timeout=15)
     assert json.loads(result.stdout) == {"folder": folder, "chat": conversation, "image": make_png_bytes().hex()}
 

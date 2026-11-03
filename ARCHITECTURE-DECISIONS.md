@@ -234,8 +234,8 @@ alone do not prevent disk exhaustion or indefinitely repeated tool calls.
 ### Required behavior
 
 - Account for managed workspace storage and check available disk space. Account for
-  Docker/container storage where observable too; the host workspace and Docker's
-  VM/image storage may reside on different filesystems.
+  Docker/container root storage too; the workspace volume and container root
+  may reside on different filesystems. Run bounded storage probes inside Docker.
 - Check before operations and monitor active execution sufficiently to stop/pause
   work when free space becomes critically low. Checking only after a long command
   finishes is not adequate protection.

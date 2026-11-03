@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from mcp_adapters import conversation_working_directory
 
 DATABASE_FILE = Path(os.path.expanduser(os.getenv(
     "VIRTUS_DATABASE_FILE", str(Path.home() / ".virtus" / "virtus.sqlite3"))))
@@ -113,7 +112,7 @@ def _now() -> str:
 
 def _summary(row: sqlite3.Row) -> dict:
     data = dict(row)
-    data["working_directory"] = str(conversation_working_directory(runtime_id(data["id"], data)))
+    data["working_directory"] = '/workspace'
     return data
 
 
@@ -199,9 +198,9 @@ def get_image(conv_id: str, ref: str) -> dict | None:
 
 # ── Runtime ownership ─────────────────────────────────────────────────────────
 
-def working_directory(conv_id: str) -> Path:
+def working_directory(conv_id: str) -> str:
     """Return the MCP workspace for a chat (shared by chats in one folder)."""
-    return conversation_working_directory(runtime_id(conv_id))
+    return '/workspace'
 
 
 def runtime_id(conv_id: str, data: dict | None = None) -> str:
@@ -346,7 +345,7 @@ def create(title: str = "New Conversation", folder_id: str | None = None) -> dic
     data = {"id": conv_id, "title": title or "New Conversation", "messages": [], "created_at": _now()}
     if folder_id:
         data["folder_id"] = folder_id
-    data["working_directory"] = str(conversation_working_directory(runtime_id(conv_id, data)))
+    data["working_directory"] = '/workspace'
     with _connection(write=True) as connection:
         data["updated_at"] = _now()
         _write(connection, conv_id, data, {"messages": []})

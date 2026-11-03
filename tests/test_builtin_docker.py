@@ -18,7 +18,6 @@ pytestmark = pytest.mark.skipif(os.getenv('VIRTUS_RUN_DOCKER_TESTS') != '1', rea
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
     image = os.getenv('VIRTUS_TEST_SANDBOX_IMAGE', 'virtus-sandbox:builtins-test')
-    monkeypatch.setattr(containers, 'CONTAINERS_ROOT', tmp_path / 'workspaces')
     monkeypatch.setattr(containers, 'CONTAINER_PREFIX', 'virtus-integration-')
     monkeypatch.setattr(advanced_config, 'load_advanced_config', lambda: {
         'sandbox_image': image, 'container_memory': '512m', 'container_cpus': '1',
@@ -30,7 +29,8 @@ def runtime(tmp_path, monkeypatch):
         containers.ensure_container(rid)
         yield rid
     finally:
-        containers.stop_container(rid)
+        containers.stop_container(rid, strict=True)
+        containers.delete_workspace(rid)
 
 
 def test_native_tools_media_files_and_isolation(runtime, tmp_path):
@@ -106,3 +106,15 @@ def test_malformed_and_oversized_document_inputs(runtime):
     assert native.invoke(runtime, 'view', {'path': 'oversized.png'})['error']
     assert native.invoke(runtime, 'view', {'path': 'pipe'})['error']
     assert native.invoke(runtime, 'view', {'path': '/workspace', 'range': '1:2'})['error']
+
+
+def test_workspace_volume_survives_container_recreation(runtime):
+    info = containers.ensure_container(runtime)
+    native.invoke(runtime, 'write', {'path': 'persist.txt', 'content': 'retained'})
+    containers.stop_container(runtime, strict=True)
+    replacement = containers.ensure_container(runtime)
+    assert replacement.volume_name == info.volume_name
+    assert 'retained' in native.invoke(runtime, 'view', {'path': 'persist.txt'})['text']
+    inspected = json.loads(docker_cli.run(['inspect', containers.container_name(runtime)]).stdout)[0]
+    assert inspected['Mounts'][0]['Type'] == 'volume'
+    assert inspected['Mounts'][0]['Name'] == info.volume_name

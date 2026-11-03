@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import container_service
@@ -12,11 +11,6 @@ CONTAINER_WORKDIR = "/workspace"
 
 class ContainerConversationRequired(RuntimeError):
     """Raised when a container-runtime MCP server is used without a chat id."""
-
-
-def conversation_working_directory(conversation_id: str) -> Path:
-    """Return the host-side workspace mounted as /workspace in containers."""
-    return container_service.conversation_workspace(conversation_id)
 
 
 def apply_workspace_process_options(

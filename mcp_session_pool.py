@@ -242,7 +242,7 @@ class McpSessionPool:
                 reason = 'MCP worker response timeout'
             if self.conv_id and time.monotonic() >= next_disk_check:
                 try:
-                    storage_safeguards.check(self.conv_id, docker=True)
+                    storage_safeguards.check(self.conv_id)
                 except Exception as exc:
                     reason = str(exc)
                 next_disk_check = time.monotonic() + 2

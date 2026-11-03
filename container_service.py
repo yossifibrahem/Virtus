@@ -5,24 +5,18 @@ import logging
 import json
 import os
 import re
-import shutil
 import subprocess
 import threading
 import weakref
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Mapping, Literal
 
 import advanced_config as _adv_cfg
 import build_info
 import docker_cli
-from docker_path_utils import host_path_to_docker_src, parse_volume_source
 
 log = logging.getLogger(__name__)
-
-CONTAINERS_ROOT = Path(os.path.expanduser(os.getenv("VIRTUS_CONTAINERS_ROOT", "~/.virtus/containers")))
-CONTAINERS_ROOT.mkdir(parents=True, exist_ok=True)
 
 CONTAINER_PREFIX = os.getenv("VIRTUS_CONTAINER_PREFIX", "virtus-chat-")
 DISCOVERY_CONTAINER_ID = "mcp-discovery"
@@ -42,7 +36,7 @@ _last_used_lock = threading.Lock()
 class ContainerInfo:
     conv_id: str
     name: str
-    workspace: Path
+    volume_name: str
     status: ContainerStatus
     reset_reason: str = ""
 
@@ -64,10 +58,22 @@ def _container_lock(conv_id: str) -> threading.Lock:
         return lock
 
 
-def _workspace(conv_id: str) -> Path:
-    path = CONTAINERS_ROOT / _safe_id(conv_id)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+WORKSPACE_PATH = '/workspace'
+VOLUME_LABEL = 'com.virtus.workspace'
+RUNTIME_LABEL = 'com.virtus.runtime'
+
+
+def workspace_volume(conv_id: str) -> str:
+    return container_name(conv_id) + '-workspace'
+
+
+def _create_volume(conv_id: str) -> str:
+    name = workspace_volume(conv_id)
+    result = _run(['docker', 'volume', 'create', '--label', f'{VOLUME_LABEL}=1',
+                   '--label', f'{RUNTIME_LABEL}={_safe_id(conv_id)}', name])
+    if result.returncode:
+        raise RuntimeError(f'Could not create workspace volume {name}: {result.stderr.strip()}')
+    return name
 
 
 def _run(
@@ -92,11 +98,6 @@ def _invalidate_mcp_pool(conv_id: str) -> None:
     mcp_service.close_persistent_pool(conv_id)
 
 
-# Internal alias kept so the rest of this module can call _volume_source
-# without knowing about docker_path_utils.
-_volume_source = parse_volume_source
-
-
 def _inspect_container(name: str) -> dict | None:
     result = _run(["docker", "inspect", "--format", "{{json .}}", name])
     if result.returncode:
@@ -107,10 +108,11 @@ def _inspect_container(name: str) -> dict | None:
     return info
 
 
-def _mounts_match(mounts: list[dict], workspace: Path) -> bool:
-    expected = {"/workspace": (host_path_to_docker_src(str(workspace)), True)}
-    actual = {m["Destination"]: (m["Source"], m.get("RW")) for m in mounts if m.get("Type") == "bind"}
-    return len(mounts) == len(expected) and actual == expected
+def _mounts_match(mounts: list[dict], volume_name: str) -> bool:
+    return (len(mounts) == 1 and mounts[0].get('Type') == 'volume'
+            and mounts[0].get('Name') == volume_name
+            and mounts[0].get('Destination') == WORKSPACE_PATH
+            and mounts[0].get('RW') is True)
 
 
 _CAPABILITIES = ('CHOWN', 'DAC_OVERRIDE', 'SETUID', 'SETGID')
@@ -194,8 +196,8 @@ def _container_image_changed(info: dict, expected_image: str) -> bool:
     )
 
 
-def _volume_args(workspace: Path) -> list[str]:
-    return ["--volume", f"{host_path_to_docker_src(str(workspace))}:/workspace"]
+def _volume_args(volume_name: str) -> list[str]:
+    return ["--mount", f"type=volume,src={volume_name},dst=/workspace,volume-nocopy"]
 
 
 def get_status(conv_id: str) -> ContainerStatus:
@@ -216,9 +218,7 @@ def ensure_container(conv_id: str, extra_volumes: list[str] | None = None) -> Co
 
 def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     name = container_name(conv_id)
-    workspace = _workspace(conv_id)
-    import storage_safeguards
-    storage_safeguards.check(conv_id)
+    workspace = workspace_volume(conv_id)
 
     reset_reason = ""
     info = _inspect_container(name)
@@ -240,6 +240,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
         else:
             return ContainerInfo(conv_id, name, workspace, "running")
 
+    _create_volume(conv_id)
     result = _run(_docker_run_command(name, workspace))
     if result.returncode == 0:
         log.info("[container] created %s (%s)", name, result.stdout.strip()[:12])
@@ -253,7 +254,7 @@ def _ensure_container_locked(conv_id: str) -> ContainerInfo:
     raise RuntimeError(f"Failed to create container {name}: {result.stderr.strip()}")
 
 
-def _docker_run_command(name: str, workspace: Path) -> list[str]:
+def _docker_run_command(name: str, volume_name: str) -> list[str]:
     spec = _runtime_spec()
     image = spec.image
     return [
@@ -262,7 +263,7 @@ def _docker_run_command(name: str, workspace: Path) -> list[str]:
         "--name", name,
         "--label", f"{build_info.CONTAINER_BUILD_LABEL}={image}",
         "--label", f"{build_info.CONTAINER_IDENTITY_LABEL}={build_info.sandbox_identity()}",
-        *_volume_args(workspace),
+        *_volume_args(volume_name),
         "--workdir", "/workspace",
         "--user", spec.user,
         "--ipc", spec.ipc_mode,
@@ -295,12 +296,12 @@ def _reuse_conflicting_container(conv_id: str) -> ContainerInfo:
     if info is None:
         raise RuntimeError(f"Container {name} name conflict, but docker inspect cannot find it")
 
-    if not _runtime_matches(info, _workspace(conv_id)):
+    if not _runtime_matches(info, workspace_volume(conv_id)):
         raise RuntimeError(f"Container {name} already exists with incompatible runtime settings; retry when idle for a compatibility reset (workspace retained, installed packages reset)")
     if info["State"]["Status"] != "running":
         _start_existing(name)
     log.info("[container] reused concurrently-created %s", name)
-    return ContainerInfo(conv_id, name, _workspace(conv_id), "running")
+    return ContainerInfo(conv_id, name, workspace_volume(conv_id), "running")
 
 
 def stop_container_process(conv_id: str) -> bool:
@@ -352,6 +353,16 @@ def cleanup_stale(known_ids: list[str]) -> list[str]:
             removed.append(name[len(CONTAINER_PREFIX):])
         else:
             log.warning("[container] could not remove stale %s: %s", name, result.stderr.strip())
+    volumes = _run(['docker', 'volume', 'ls', '--filter', f'label={VOLUME_LABEL}=1', '--format', '{{.Name}}'])
+    if volumes.returncode:
+        log.warning('Workspace cleanup skipped: %s', volumes.stderr.strip())
+        return removed
+    known_volumes = {workspace_volume(cid) for cid in known_ids + [DISCOVERY_CONTAINER_ID]}
+    for volume in volumes.stdout.splitlines():
+        if volume.startswith(CONTAINER_PREFIX) and volume not in known_volumes:
+            result = _run(['docker', 'volume', 'rm', volume])
+            if result.returncode:
+                log.warning('Could not remove stale workspace %s: %s', volume, result.stderr.strip())
     return removed
 
 
@@ -371,18 +382,11 @@ def wrap_command_for_exec(
     return docker_cli.executable(), docker_args
 
 
-def conversation_workspace(conv_id: str) -> Path:
-    return _workspace(conv_id)
-
-
 def delete_workspace(conv_id: str) -> None:
-    path = CONTAINERS_ROOT / _safe_id(conv_id)
-    if not path.exists():
-        return
-    if not path.is_dir():
-        raise RuntimeError(f"Refusing to delete non-directory workspace: {path}")
-    shutil.rmtree(path)
-    log.info("[container] deleted workspace %s", path)
+    name = workspace_volume(conv_id)
+    result = _run(['docker', 'volume', 'rm', name])
+    if result.returncode and 'no such volume' not in result.stderr.lower():
+        raise RuntimeError(f'Could not remove workspace volume {name}: {result.stderr.strip()}')
 
 
 def _remaining_shutdown_timeout(deadline: float | None) -> float:

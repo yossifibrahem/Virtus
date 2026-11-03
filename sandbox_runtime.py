@@ -78,7 +78,7 @@ class Capture:
 def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, limit=8*1024*1024, tail=False):
     """Bound both transport output and wall time; never invoke a host shell."""
     container_service.ensure_container(runtime_id)
-    storage_safeguards.check(runtime_id, docker=True)
+    storage_safeguards.check(runtime_id)
     command = ['exec', '-i', '--workdir', '/workspace', container_service.container_name(runtime_id), *argv]
     proc = subprocess.Popen(docker_cli.argv(command), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, **docker_cli._windowless_process_kwargs())
@@ -114,7 +114,7 @@ def docker_operation(runtime_id, argv, payload=b'', timeout=30, cancel=None, lim
             interrupted = 'Worker output exceeded limit'
         if time.monotonic() >= next_disk_check:
             try:
-                storage_safeguards.check(runtime_id, docker=True)
+                storage_safeguards.check(runtime_id)
             except Exception as exc:
                 interrupted = str(exc)
             next_disk_check = time.monotonic() + 2
