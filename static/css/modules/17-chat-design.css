@@ -1,7 +1,7 @@
 /* Restrained chat refinements. Sidebar rows use the file browser's surface,
    borders, density, and selection treatment. File-panel styles stay untouched. */
 :root { --sidebar-w: 240px; }
-#sidebar { background: var(--bg); border-right-color: var(--border); }
+#sidebar { background: var(--surface); border-right-color: var(--border); }
 #sidebar-header { min-height: 54px; padding: 10px 12px; }
 .logo { gap: 8px; }
 .logo-mark { width: 32px; height: 32px; border: 0; border-radius: 0; color: var(--text); }
