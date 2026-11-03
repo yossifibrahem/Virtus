@@ -6,6 +6,18 @@ import pytest
 import desktop_runtime
 
 
+def test_network_preference_defaults_off_and_survives_restart(tmp_path):
+    path = tmp_path / "settings" / "network.json"
+    assert not desktop_runtime.load_lan_access(path)
+    desktop_runtime.save_lan_access(path, True)
+    assert desktop_runtime.load_lan_access(path)
+    desktop_runtime.save_lan_access(path, False)
+    assert not desktop_runtime.load_lan_access(path)
+    for invalid in ('{', '[]', '{"lan_access": "true"}'):
+        path.write_text(invalid)
+        assert not desktop_runtime.load_lan_access(path)
+
+
 @pytest.mark.parametrize("payload, expected", [({"app": "virtus-ai-chat"}, {"app": "virtus-ai-chat"}), ([], None), ("invalid", None)])
 def test_health_probe_bounds_reads_and_accepts_only_objects(monkeypatch, payload, expected):
     body = b"not json" if payload == "invalid" else json.dumps(payload).encode()

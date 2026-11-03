@@ -39,6 +39,18 @@ Virtus remains in the menu bar using the bundled Virtus artwork, with **Open Vir
 
 Internet access is required during the first sandbox installation for the Ubuntu image and package repositories. No MCP server source is fetched or compiled by this build.
 
+### Access from another device (macOS)
+
+In the Virtus menu bar menu, select **Allow local network access**. Virtus restarts
+its web listener and shows the address to open on another device connected to the
+same network, such as `http://192.168.1.5:38492`. Use **Show network address** to
+view it again. Allow incoming connections if macOS asks, and keep your Mac awake.
+
+This shares access to your chats, files, settings, and tools with devices on that
+network; use a trusted network. The switch is off by default, and your choice is
+saved in `~/.virtus/desktop-network.json` for future launches. Turn it off to return
+to access from this Mac only. Browser sessions are preserved when switching.
+
 To uninstall, quit Virtus and move `Virtus AI Chat.app` to Trash. Remove `~/.virtus/` separately only if you also want to permanently delete chats, settings, memory, and workspace files. Docker images can be removed separately through Docker Desktop.
 
 ## Developer Quick Start

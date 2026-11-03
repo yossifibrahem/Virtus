@@ -2,14 +2,55 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import socket
+import tempfile
 import time
 import urllib.request
 
 import build_info
+from fs_utils import atomic_replace
+
+
+def load_lan_access(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("lan_access") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def save_lan_access(path: Path, enabled: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
+        temporary = Path(handle.name)
+        json.dump({"lan_access": enabled}, handle)
+    try:
+        atomic_replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def lan_addresses() -> list[str]:
+    """Find local IPv4 addresses without sending network traffic."""
+    addresses = set()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            addresses.add(probe.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        addresses.update(info[4][0] for info in socket.getaddrinfo(
+            socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM
+        ))
+    except OSError:
+        pass
+    return sorted(address for address in addresses
+                  if not ipaddress.ip_address(address).is_loopback
+                  and not ipaddress.ip_address(address).is_unspecified)
 
 
 def configure_logging(log_file: Path) -> None:

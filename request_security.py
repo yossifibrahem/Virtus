@@ -14,6 +14,7 @@ def install(app):
             return None
         host = (urlsplit(request.host_url).hostname or '').lower()
         allowed = {'localhost', '127.0.0.1', '::1', *filter(None, os.getenv('VIRTUS_ALLOWED_HOSTS', '').split(','))}
+        allowed.update(app.config.get('VIRTUS_LAN_HOSTS', ()))
         if host not in allowed:
             return jsonify({'error': 'Untrusted Host header'}), 403
         origin = request.headers.get('Origin')

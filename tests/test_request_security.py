@@ -2,6 +2,22 @@ import store
 import routes_chat
 
 
+def test_desktop_lan_hosts_keep_session_origin_and_csrf_protection(app):
+    app.config['DISABLE_REQUEST_SECURITY'] = False
+    client = app.test_client()
+    base = 'http://192.168.1.5:38492'
+    assert client.get('/', base_url=base).status_code == 403
+    app.config['VIRTUS_LAN_HOSTS'] = ['192.168.1.5']
+    assert client.get('/api/conversations', base_url=base).status_code == 403
+    assert client.get('/', base_url=base).status_code == 200
+    assert client.get('/api/conversations', base_url=base).status_code == 200
+    assert client.post('/api/conversations', base_url=base, json={}).status_code == 403
+    assert client.get('/', base_url=base, headers={'Origin': 'http://evil.example'}).status_code == 403
+    assert client.get('/', base_url='http://192.168.1.99:38492').status_code == 403
+    app.config['VIRTUS_LAN_HOSTS'] = []
+    assert client.get('/', base_url=base).status_code == 403
+
+
 def test_session_and_csrf_required(app):
     app.config['DISABLE_REQUEST_SECURITY'] = False
     client = app.test_client()
