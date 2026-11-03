@@ -1,21 +1,4 @@
-"""
-Tests for chat-turn helpers and orchestration with mocked model responses.
-These tests do not require a live provider or network access.
-
-Functions under test (chat_turn_service):
-  _parse_stream_payload   — typed dict event passthrough
-  _safe_tool_args         — bounded JSON object parser for tool arguments
-  _tool_call_message      — OpenAI tool-call message constructor
-  TurnRecorder            — throttled persistence helper
-
-Functions under test (title_service — stateless, independently importable):
-  _messages_to_text       — title-generation input formatter
-  _extract_title          — 3-path title extractor (tool_calls / XML)
-
-Note: title_service functions have their own dedicated test module
-(test_title_service.py).  The tests here exercise them via the title_service
-module directly, matching their new home after the split.
-"""
+"""Chat-turn orchestration, argument validation, and persistence with mocked providers."""
 from __future__ import annotations
 
 import json
@@ -24,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import chat_turn_service as svc
-import title_service
 
 
 def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, monkeypatch):
@@ -120,10 +102,6 @@ def test_image_fallback_does_not_loop_or_retry_after_output(tmp_virtus, monkeypa
         assert store.load(conv['id'])['messages'][-1]['content'] == 'Partial'
 
 
-# ---------------------------------------------------------------------------
-# _parse_stream_payload
-# ---------------------------------------------------------------------------
-
 def test_stream_snapshots_preserve_manual_renames_and_settings(tmp_virtus):
     import store
 
@@ -159,9 +137,6 @@ class TestParseStreamPayload:
         payload = {"type": "text", "content": "hi"}
         assert svc._parse_stream_payload(payload) is payload
 
-    def test_done_dict_is_returned(self):
-        payload = {"type": "done"}
-        assert svc._parse_stream_payload(payload) is payload
 
     def test_sse_string_is_ignored(self):
         assert svc._parse_stream_payload('data: {"type": "text", "content": "hi"}') is None
@@ -170,127 +145,6 @@ class TestParseStreamPayload:
         assert svc._parse_stream_payload(None) is None
         assert svc._parse_stream_payload(123) is None
 
-
-# ---------------------------------------------------------------------------
-# _messages_to_text
-# ---------------------------------------------------------------------------
-
-class TestMessagesToText:
-    """
-    Input to the title-generation model. Must include only user/assistant turns,
-    handle list-format content (vision messages), and strip formatting noise.
-
-    _messages_to_text now lives in title_service; tests use that module directly.
-    """
-
-    def test_simple_user_and_assistant_messages(self):
-        messages = [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi there"},
-        ]
-        result = title_service._messages_to_text(messages)
-        assert "user: Hello" in result
-        assert "assistant: Hi there" in result
-
-    def test_system_messages_excluded(self):
-        messages = [
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "Question"},
-        ]
-        result = title_service._messages_to_text(messages)
-        assert "system" not in result
-        assert "Question" in result
-
-    def test_tool_messages_excluded(self):
-        messages = [
-            {"role": "user", "content": "Run it"},
-            {"role": "tool", "content": "result output"},
-        ]
-        result = title_service._messages_to_text(messages)
-        assert "result output" not in result
-
-    def test_list_content_blocks_joined(self):
-        """Vision messages have content as a list of typed blocks."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Describe this"},
-                    {"type": "image_url", "image_url": {"url": "data:..."}},
-                ],
-            }
-        ]
-        result = title_service._messages_to_text(messages)
-        assert "Describe this" in result
-
-    def test_double_newlines_collapsed(self):
-        messages = [{"role": "user", "content": "Line one\n\nLine two"}]
-        result = title_service._messages_to_text(messages)
-        assert "\n\n" not in result
-
-    def test_empty_messages_returns_empty_string(self):
-        assert title_service._messages_to_text([]) == ""
-
-    def test_only_four_messages_consumed(self):
-        """Only the first 4 messages are passed by the caller — function must not crash on fewer."""
-        messages = [{"role": "user", "content": f"msg{i}"} for i in range(2)]
-        result = title_service._messages_to_text(messages)
-        assert "msg0" in result
-
-
-# ---------------------------------------------------------------------------
-# _extract_title
-# ---------------------------------------------------------------------------
-
-class TestExtractTitle:
-    """
-    Three distinct code paths exist because different model families return
-    the set_title tool call in different formats.
-
-    _extract_title now lives in title_service; tests use that module directly.
-    """
-
-    def _tool_call_message(self, title: str) -> MagicMock:
-        tc = MagicMock()
-        tc.function.arguments = json.dumps({"title": title})
-        msg = MagicMock()
-        msg.tool_calls = [tc]
-        msg.reasoning_content = None
-        return msg
-
-    def _reasoning_message(self, reasoning: str) -> MagicMock:
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = reasoning
-        return msg
-
-    def test_standard_tool_call_path(self):
-        msg = self._tool_call_message("Docker Volume Permissions")
-        assert title_service._extract_title(msg) == "Docker Volume Permissions"
-
-    def test_reasoning_xml_tool_call_path(self):
-        """Some reasoning models embed the call in <tool_call> XML in reasoning_content."""
-        reasoning = '<tool_call>{"name": "set_title", "arguments": {"title": "JWT Token Bug"}}</tool_call>'
-        msg = self._reasoning_message(reasoning)
-        assert title_service._extract_title(msg) == "JWT Token Bug"
-
-    def test_reasoning_parameter_xml_path(self):
-        """Alternate XML format used by some models."""
-        reasoning = "<parameter=title>Fibonacci in Python</parameter>"
-        msg = self._reasoning_message(reasoning)
-        assert title_service._extract_title(msg) == "Fibonacci in Python"
-
-    def test_no_tool_call_and_no_xml_raises(self):
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = "I was just thinking..."
-        with pytest.raises(ValueError, match="tool call"):
-            title_service._extract_title(msg)
-
-
-# ---------------------------------------------------------------------------
-# _safe_tool_args
-# ---------------------------------------------------------------------------
 
 class TestSafeToolArgs:
     """
@@ -303,7 +157,8 @@ class TestSafeToolArgs:
     def test_empty_string_returns_empty_dict(self):
         assert svc._safe_tool_args("") == {}
 
-    @pytest.mark.parametrize("raw", ['{bad json', '[]', 'null', '1', None, 'x' * (svc.MAX_TOOL_ARGUMENT_BYTES + 1)])
+    @pytest.mark.parametrize("raw", ['{bad json', '[]', 'null', '1', None, 'x' * (svc.MAX_TOOL_ARGUMENT_BYTES + 1)],
+                             ids=['malformed', 'array', 'null', 'number', 'missing', 'oversized'])
     def test_invalid_arguments_are_rejected(self, raw):
         with pytest.raises(ValueError):
             svc._safe_tool_args(raw)
@@ -316,10 +171,6 @@ class TestSafeToolArgs:
         assert svc._safe_tool_args(args) == {"options": {"flag": True, "count": 3}}
 
 
-# ---------------------------------------------------------------------------
-# _tool_call_message
-# ---------------------------------------------------------------------------
-
 class TestToolCallMessage:
     """
     Constructs the assistant message that gets appended to api_messages for
@@ -329,13 +180,6 @@ class TestToolCallMessage:
     def _make_call(self, call_id: str, name: str, args: str = "{}") -> dict:
         return {"id": call_id, "function": {"name": name, "arguments": args}}
 
-    def test_role_is_assistant(self):
-        msg = svc._tool_call_message([self._make_call("c1", "bash")], None)
-        assert msg["role"] == "assistant"
-
-    def test_tool_calls_list_present(self):
-        msg = svc._tool_call_message([self._make_call("c1", "bash")], None)
-        assert len(msg["tool_calls"]) == 1
 
     def test_each_call_has_openai_shape(self):
         msg = svc._tool_call_message([self._make_call("c1", "read_file", '{"path":"/f"}')], None)
@@ -360,10 +204,6 @@ class TestToolCallMessage:
         msg = svc._tool_call_message([self._make_call("c1", "bash")], None)
         assert msg["content"] is None
 
-
-# ---------------------------------------------------------------------------
-# TurnRecorder
-# ---------------------------------------------------------------------------
 
 class TestTurnRecorder:
     """

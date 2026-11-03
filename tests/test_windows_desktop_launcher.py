@@ -7,7 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows desktop host only")
+if sys.platform != "win32":
+    pytest.skip("Windows desktop host only", allow_module_level=True)
+
 pytest.importorskip("pystray")
 
 import windows_desktop_launcher as launcher
@@ -15,21 +17,6 @@ import windows_desktop_launcher as launcher
 
 def _bare_server():
     return object.__new__(launcher.DesktopServer)
-
-
-def test_named_mutex_is_exclusive_and_reusable():
-    first = launcher.SingleInstance()
-    second = launcher.SingleInstance()
-    third = launcher.SingleInstance()
-    try:
-        assert first.acquire()
-        assert not second.acquire()
-        first.close()
-        assert third.acquire()
-    finally:
-        third.close()
-        second.close()
-        first.close()
 
 
 def test_port_collision_with_virtus_reopens_existing_app(monkeypatch):

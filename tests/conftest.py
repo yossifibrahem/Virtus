@@ -1,12 +1,4 @@
-"""
-Shared pytest fixtures for Virtus AI Chat tests.
-
-Key responsibilities:
-  - Redirect all persistence paths (database and worker fixtures) to tmp_path
-    so tests never touch ~/.virtus.
-  - Create a Flask test app with runtime requirement checks mocked as ready.
-  - Expose a `client` fixture for HTTP integration tests.
-"""
+"""Isolated persistence, mocked startup, and shared file helpers."""
 from __future__ import annotations
 
 import pytest
@@ -15,35 +7,18 @@ from unittest.mock import patch
 
 @pytest.fixture(autouse=True)
 def _clear_persistent_pools(monkeypatch):
-    """Reset the persistent MCP session pool registry before every test.
-
-    The registry is module-level state in mcp_service.  Without this fixture,
-    a pool created by one test could leak into the next test, causing
-    unexpected reuse or interference.
-
-    Pools must be closed before the registry is replaced, not just discarded.
-    Discarding a live pool without closing it leaks its worker thread.
-    """
+    """Close worker threads before monkeypatch restores test doubles."""
     import mcp_service
-    # Close any pools left over from a previous test before wiping the registry.
-    mcp_service.close_all_persistent_pools()
+    close_pools = mcp_service.close_all_persistent_pools
+    close_pools()
     monkeypatch.setattr("mcp_service._persistent_pools", {})
+    yield
+    close_pools()
 
-
-# ---------------------------------------------------------------------------
-# Filesystem isolation
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
-def tmp_virtus(tmp_path, monkeypatch):
-    """
-    Redirect every Virtus storage path to an isolated temp directory.
-
-    Provides isolated database and container-worker test paths. Docker volume
-    operations are mocked separately.
-
-    Returns the isolated database and workspace paths.
-    """
+def tmp_virtus(tmp_path):
+    """Paths used by the isolated database and fake Docker volume worker."""
     containers_dir = tmp_path / "containers"
     containers_dir.mkdir()
 
@@ -57,10 +32,6 @@ def tmp_virtus(tmp_path, monkeypatch):
     }
 
 
-# ---------------------------------------------------------------------------
-# Flask app / test client
-# ---------------------------------------------------------------------------
-
 @pytest.fixture
 def image_chat(tmp_virtus):
     import store
@@ -69,14 +40,7 @@ def image_chat(tmp_virtus):
 
 @pytest.fixture
 def app(tmp_virtus, monkeypatch):
-    """
-    Create a Flask test application with Docker-backed startup checks mocked out.
-
-    `create_app()` now asks runtime_requirements.check_requirements() for a
-    non-exiting status object, then cleans stale containers only when that
-    status is ok. Patch the new requirement entry point directly so tests do
-    not need Docker or a locally built sandbox image.
-    """
+    """Create a test app without Docker startup checks."""
     import app as app_module
 
     ready_status = app_module.runtime_requirements.RequirementStatus(
@@ -108,10 +72,6 @@ def client(app):
     return app.test_client()
 
 
-# ---------------------------------------------------------------------------
-# Helpers shared across test modules
-# ---------------------------------------------------------------------------
-
 def make_png_bytes() -> bytes:
     """Return a valid 1×1 red PNG as raw bytes."""
     return (
@@ -131,10 +91,13 @@ def make_png_b64() -> str:
 
 @pytest.fixture(autouse=True)
 def _isolate_persistent_state(tmp_path, monkeypatch):
+    import app as app_module
     import store
     import memory_service
     import advanced_config
     import container_service
+    monkeypatch.setattr(container_service, 'start_reaper', lambda: None)
+    monkeypatch.setattr(app_module, '_register_shutdown_cleanup', lambda: None)
     monkeypatch.setattr(store, 'DATABASE_FILE', tmp_path / 'virtus.sqlite3')
     monkeypatch.setattr(container_service, '_last_used', {})
     monkeypatch.setattr(memory_service, 'MEMORY_FILE', tmp_path / 'memory.json')

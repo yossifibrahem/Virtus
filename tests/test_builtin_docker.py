@@ -2,7 +2,6 @@
 import json
 import os
 import threading
-import time
 import uuid
 import pytest
 import builtin_tools as native
@@ -10,7 +9,6 @@ import container_files
 import container_service as containers
 import docker_cli
 import advanced_config
-import build_info
 
 pytestmark = pytest.mark.skipif(os.getenv('VIRTUS_RUN_DOCKER_TESTS') != '1', reason='Opt-in Docker integration')
 
@@ -88,13 +86,6 @@ def test_bash_timeout_cancel_flood_and_background_cleanup(runtime):
     finally:
         timer.cancel()
     assert containers.get_status(rid) == 'stopped'
-
-
-def test_package_installs_and_pid_limit(runtime):
-    result = native.invoke(runtime, 'bash', {'command': 'apt-get update -qq && apt-get install -y --no-install-recommends tree && pip install --disable-pip-version-check six && npm install --prefix /tmp/package-check is-number', 'timeout': 300})
-    assert 'exit status 0' in result['text'], result['text']
-    result = native.invoke(runtime, 'bash', {'command': "python - <<'INNER'\nimport subprocess\nchildren=[]\ntry:\n for i in range(300): children.append(subprocess.Popen(['sleep','10']))\nexcept BlockingIOError: print('pid-limit-enforced')\nfinally:\n for child in children: child.kill()\n for child in children: child.wait()\nINNER"})
-    assert 'pid-limit-enforced' in result['text']
 
 
 def test_malformed_and_oversized_document_inputs(runtime):

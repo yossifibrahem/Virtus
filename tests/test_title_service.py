@@ -1,15 +1,4 @@
-"""
-Tests for title_service.py — stateless, independently importable.
-
-title_service was split out of chat_turn_service.py.  It has no Flask context,
-no DB, and no network dependency, so it can be imported and unit-tested in
-isolation without any other Virtus module.
-
-Functions under test:
-  _messages_to_text  — converts message history to a compact plain-text block
-  _extract_title     — extracts a title string from three possible model response shapes
-  generate_title     — end-to-end orchestration (mocked client)
-"""
+"""Bounded title generation, response compatibility, and persisted turn titles."""
 from __future__ import annotations
 
 import json
@@ -24,204 +13,38 @@ import pytest
 import title_service as svc
 
 
-# ---------------------------------------------------------------------------
-# _messages_to_text
-# ---------------------------------------------------------------------------
-
-class TestMessagesToText:
-    """
-    Converts a message list into a compact plain-text block for the title model.
-    Only user/assistant roles are included; system, tool, and other roles are
-    filtered out.
-    """
-
-    def test_simple_user_and_assistant_messages(self):
-        messages = [
-            {"role": "user", "content": "Hello"},
-            {"role": "assistant", "content": "Hi there"},
-        ]
-        result = svc._messages_to_text(messages)
-        assert "user: Hello" in result
-        assert "assistant: Hi there" in result
-
-    def test_roles_appear_as_prefixes(self):
-        messages = [{"role": "user", "content": "What is 2+2?"}]
-        assert svc._messages_to_text(messages).startswith("user:")
-
-    def test_system_messages_excluded(self):
-        messages = [
-            {"role": "system", "content": "You are helpful."},
-            {"role": "user", "content": "Question"},
-        ]
-        result = svc._messages_to_text(messages)
-        assert "system" not in result
-        assert "Question" in result
-
-    def test_tool_messages_excluded(self):
-        messages = [
-            {"role": "user", "content": "Run it"},
-            {"role": "tool", "content": "result output"},
-        ]
-        result = svc._messages_to_text(messages)
-        assert "result output" not in result
-
-    def test_list_content_blocks_joined(self):
-        """Vision messages carry content as a list of typed blocks."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Describe this"},
-                    {"type": "image_url", "image_url": {"url": "data:..."}},
-                ],
-            }
-        ]
-        result = svc._messages_to_text(messages)
-        assert "Describe this" in result
-
-    def test_image_blocks_excluded_from_text(self):
-        """Non-text blocks must not inject garbage like 'image_url' into the text."""
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
-                    {"type": "text", "text": "Caption this"},
-                ],
-            }
-        ]
-        result = svc._messages_to_text(messages)
-        assert "image_url" not in result
-        assert "Caption this" in result
-
-    def test_double_newlines_collapsed(self):
-        messages = [{"role": "user", "content": "Line one\n\nLine two"}]
-        result = svc._messages_to_text(messages)
-        assert "\n\n" not in result
-
-    def test_empty_messages_returns_empty_string(self):
-        assert svc._messages_to_text([]) == ""
-
-    def test_multiple_messages_separated_by_newline(self):
-        messages = [
-            {"role": "user", "content": "Ping"},
-            {"role": "assistant", "content": "Pong"},
-        ]
-        result = svc._messages_to_text(messages)
-        lines = result.strip().splitlines()
-        assert len(lines) == 2
-
-    def test_whitespace_stripped_from_content(self):
-        messages = [{"role": "user", "content": "  trimmed  "}]
-        result = svc._messages_to_text(messages)
-        assert "  trimmed  " not in result
-        assert "trimmed" in result
-
-    def test_empty_content_message_omitted(self):
-        """A message with empty content after stripping should not produce a blank line."""
-        messages = [
-            {"role": "user", "content": "   "},
-            {"role": "user", "content": "real"},
-        ]
-        result = svc._messages_to_text(messages)
-        assert result.strip() == "user: real"
+def test_title_context_keeps_only_nonempty_conversation_text():
+    messages = [
+        {"role": "system", "content": "Hidden instructions"},
+        {"role": "tool", "content": "Hidden output"},
+        {"role": "user", "content": "  Hello\n\nworld  "},
+        {"role": "assistant", "content": [
+            {"type": "image_url", "image_url": {"url": "data:..."}},
+            {"type": "text", "text": "Caption"},
+        ]},
+        {"role": "user", "content": " "},
+    ]
+    assert svc._messages_to_text(messages) == "user: Hello world\nassistant: Caption"
+    assert svc._messages_to_text([]) == ""
 
 
-# ---------------------------------------------------------------------------
-# _extract_title
-# ---------------------------------------------------------------------------
-
-class TestExtractTitle:
-    """
-    Three distinct response shapes are supported because different model
-    families return the set_title tool call differently.
-    """
-
-    def _tool_call_message(self, title: str) -> MagicMock:
-        tc = MagicMock()
-        tc.function.arguments = json.dumps({"title": title})
-        msg = MagicMock()
-        msg.tool_calls = [tc]
-        msg.reasoning_content = None
-        return msg
-
-    def _reasoning_message(self, reasoning: str) -> MagicMock:
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = reasoning
-        return msg
-
-    # -- standard tool_calls path -------------------------------------------
-
-    def test_standard_tool_call_path(self):
-        msg = self._tool_call_message("Docker Volume Permissions")
-        assert svc._extract_title(msg) == "Docker Volume Permissions"
-
-    def test_tool_call_title_with_spaces(self):
-        msg = self._tool_call_message("JWT Token Expiry Bug")
-        assert svc._extract_title(msg) == "JWT Token Expiry Bug"
-
-    def test_tool_call_title_unicode(self):
-        msg = self._tool_call_message("Débogage Python")
-        assert svc._extract_title(msg) == "Débogage Python"
-
-    # -- <tool_call> XML in reasoning_content path --------------------------
-
-    def test_reasoning_xml_tool_call_path(self):
-        """Some reasoning models embed the call in <tool_call> XML."""
-        reasoning = '<tool_call>{"name": "set_title", "arguments": {"title": "JWT Token Bug"}}</tool_call>'
-        msg = self._reasoning_message(reasoning)
-        assert svc._extract_title(msg) == "JWT Token Bug"
-
-    def test_reasoning_xml_with_whitespace_inside_tags(self):
-        reasoning = (
-            "<tool_call>\n"
-            '  {"name": "set_title", "arguments": {"title": "Async Race Condition"}}\n'
-            "</tool_call>"
-        )
-        msg = self._reasoning_message(reasoning)
-        assert svc._extract_title(msg) == "Async Race Condition"
-
-    # -- <parameter=title> XML path -----------------------------------------
-
-    def test_reasoning_parameter_xml_path(self):
-        """Alternate XML format used by some models."""
-        reasoning = "<parameter=title>Fibonacci in Python</parameter>"
-        msg = self._reasoning_message(reasoning)
-        assert svc._extract_title(msg) == "Fibonacci in Python"
-
-    def test_parameter_xml_with_leading_trailing_whitespace(self):
-        reasoning = "<parameter=title>  Spaced Title  </parameter>"
-        msg = self._reasoning_message(reasoning)
-        assert svc._extract_title(msg) == "Spaced Title"
-
-    # -- error path ---------------------------------------------------------
-
-    def test_no_tool_call_and_no_xml_raises(self):
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = "I was just thinking..."
-        with pytest.raises(ValueError, match="tool call"):
-            svc._extract_title(msg)
-
-    def test_empty_reasoning_content_raises(self):
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = ""
-        with pytest.raises(ValueError, match="tool call"):
-            svc._extract_title(msg)
-
-    def test_none_reasoning_content_raises(self):
-        msg = MagicMock()
-        msg.tool_calls = None
-        msg.reasoning_content = None
-        with pytest.raises(ValueError, match="tool call"):
-            svc._extract_title(msg)
+@pytest.mark.parametrize("message", [
+    SimpleNamespace(tool_calls=[SimpleNamespace(function=SimpleNamespace(
+        arguments=json.dumps({"title": "Débogage Python"})))], reasoning_content=None),
+    SimpleNamespace(tool_calls=None, reasoning_content=(
+        '<tool_call>\n{"arguments": {"title": "Débogage Python"}}\n</tool_call>')),
+    SimpleNamespace(tool_calls=None, reasoning_content=(
+        '<parameter=title>  Débogage Python  </parameter>')),
+], ids=["tool-call", "reasoning-tool-call", "reasoning-parameter"])
+def test_legacy_structured_title_responses(message):
+    assert svc._extract_title(message) == "Débogage Python"
 
 
-# ---------------------------------------------------------------------------
-# generate_title
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("reasoning", [None, "", "I was just thinking..."])
+def test_free_form_reasoning_is_not_a_title(reasoning):
+    with pytest.raises(ValueError, match="title or tool call"):
+        svc._extract_title(SimpleNamespace(tool_calls=None, reasoning_content=reasoning))
+
 
 class TestGenerateTitle:
     messages = [{"role": "user", "content": "How do I fix Docker volume permissions?"}]

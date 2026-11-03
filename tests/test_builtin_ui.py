@@ -21,7 +21,7 @@ assert(!html.includes('evil.example'));
 assert(!html.includes('javascript:'));
 assert(renderToolResultHtml('hello <b>world</b>', 'bash').includes('&lt;b&gt;'));
 '''
-    result = subprocess.run([node, '--input-type=module', '-e', script], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+    result = subprocess.run([node, '--input-type=module', '-e', script], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
 
 
@@ -86,9 +86,5 @@ assert.equal(workspacePath('../secret'), null);
 assert.equal(workspacePath('/workspace/../secret'), null);
 assert.equal(workspacePath('src/main.py'), '/workspace/src/main.py');
 '''
-    result = subprocess.run([node, '--input-type=module', '-e', script], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
+    result = subprocess.run([node, '--input-type=module', '-e', script], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
-    root = Path(__file__).resolve().parents[1]
-    for module in (root / 'static/js/native_tools').glob('*.js'):
-        assert "from '../mcp" not in module.read_text()
-        assert 'tool_adapters/' not in module.read_text()

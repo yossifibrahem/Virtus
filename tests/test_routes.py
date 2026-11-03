@@ -1,17 +1,4 @@
-"""
-Flask route integration tests for Virtus AI Chat.
-
-Uses the `client` fixture (Flask test client against an isolated test app).
-Docker and OpenAI calls are mocked throughout.
-
-Coverage:
-  - GET/POST/PUT/DELETE /api/conversations
-  - GET /api/conversations/<id>/workspace and /container
-  - GET/POST /api/mcp/config
-  - POST/GET /api/conversations/<id>/images
-  - GET /api/conversations/<id>/files (list + content + download)
-  - POST /api/chat/stream (attach, cancel, approve)
-"""
+"""Flask route contracts with isolated storage and mocked Docker/providers."""
 from __future__ import annotations
 
 import os
@@ -24,21 +11,28 @@ import store
 from tests.conftest import make_png_b64
 
 
-# ===========================================================================
-# Conversation CRUD
-# ===========================================================================
+def test_conversation_crud(client):
+    assert client.get("/api/conversations").json == []
+    response = client.post("/api/conversations", json={"title": "First"})
+    assert response.status_code == 201
+    conversation = response.json
+    url = f"/api/conversations/{conversation['id']}"
+    assert client.get(url).json["title"] == "First"
+    assert conversation["working_directory"].startswith("/workspace")
+    assert [item["id"] for item in client.get("/api/conversations").json] == [conversation["id"]]
+    updated = client.put(url, json={"title": "Renamed"})
+    assert updated.status_code == 200
+    assert updated.json["id"] == conversation["id"]
+    assert updated.json["title"] == "Renamed"
+    with patch("container_service.stop_container"), patch("container_service.delete_workspace"):
+        deleted = client.delete(url)
+    assert deleted.status_code == 200 and deleted.json["ok"]
+    assert client.get(url).status_code == 404
+    assert client.get("/api/conversations").json == []
+
 
 class TestListConversations:
 
-    def test_empty_list(self, client, tmp_virtus):
-        resp = client.get("/api/conversations")
-        assert resp.status_code == 200
-        assert resp.json == []
-
-    def test_includes_created_conversation(self, client, tmp_virtus):
-        store.create("Alpha")
-        resp = client.get("/api/conversations")
-        assert any(c["title"] == "Alpha" for c in resp.json)
 
     def test_activity_returns_only_active_ids_and_streams(self, client, tmp_virtus):
         store.create("Idle")
@@ -61,13 +55,6 @@ class TestCreateConversation:
         assert renamed.status_code == 200
         assert renamed.json["title"] == "Untitled"
 
-    def test_returns_201_with_id(self, client, tmp_virtus):
-        resp = client.post("/api/conversations",
-                           json={"title": "Named"},
-                           content_type="application/json")
-        assert resp.status_code == 201
-        assert "id" in resp.json
-        assert resp.json["title"] == "Named"
 
     def test_default_title_when_missing(self, client, tmp_virtus):
         resp = client.post("/api/conversations",
@@ -132,34 +119,8 @@ class TestFolders:
         delete_workspace.assert_called_once_with(f"folder_{folder['id']}")
 
 
-class TestGetConversation:
-
-    def test_returns_200_for_existing(self, client, tmp_virtus):
-        conv = store.create("get-me")
-        resp = client.get(f"/api/conversations/{conv['id']}")
-        assert resp.status_code == 200
-        assert resp.json["title"] == "get-me"
-
-    def test_returns_404_for_missing(self, client, tmp_virtus):
-        resp = client.get("/api/conversations/does-not-exist")
-        assert resp.status_code == 404
-
-    def test_response_includes_working_directory(self, client, tmp_virtus):
-        conv = store.create("wd-check")
-        resp = client.get(f"/api/conversations/{conv['id']}")
-        assert "working_directory" in resp.json
-
-
 class TestUpdateConversation:
 
-    def test_updates_title(self, client, tmp_virtus):
-        conv = store.create("old")
-        resp = client.put(f"/api/conversations/{conv['id']}",
-                          json={"title": "new"},
-                          content_type="application/json")
-        assert resp.status_code == 200
-        assert resp.json["title"] == "new"
-        assert resp.json["id"] == conv["id"]  # id must be preserved
 
     def test_update_ignores_internal_field_overwrites(self, client, tmp_virtus):
         conv = store.create("locked")
@@ -185,20 +146,6 @@ class TestUpdateConversation:
 
 class TestDeleteConversation:
 
-    def test_returns_ok_true(self, client, tmp_virtus):
-        conv = store.create("delete-me")
-        with patch("container_service.stop_container"), \
-             patch("container_service.delete_workspace"):
-            resp = client.delete(f"/api/conversations/{conv['id']}")
-        assert resp.status_code == 200
-        assert resp.json["ok"] is True
-
-    def test_conversation_gone_after_delete(self, client, tmp_virtus):
-        conv = store.create("gone")
-        with patch("container_service.stop_container"), \
-             patch("container_service.delete_workspace"):
-            client.delete(f"/api/conversations/{conv['id']}")
-        assert store.load(conv["id"]) is None
 
     def test_returns_404_for_nonexistent(self, client, tmp_virtus):
         with patch("container_service.stop_container"), \
@@ -236,10 +183,6 @@ class TestConversationMetaRoutes:
         assert resp.json["status"] == "missing"
         assert resp.json["conv_id"] == conv["id"]
 
-
-# ===========================================================================
-# MCP config
-# ===========================================================================
 
 class TestMcpConfigRoutes:
 
@@ -299,10 +242,6 @@ class TestMcpConfigRoutes:
         resp = client.post("/api/mcp/call", json={"server": "agent_tools", "tool": "read"})
         assert resp.status_code == 404
 
-
-# ===========================================================================
-# Image upload and serving
-# ===========================================================================
 
 class TestImageRoutes:
     @pytest.fixture(autouse=True)
@@ -401,10 +340,6 @@ class TestImageRoutes:
             assert client.delete(f"/api/conversations/{self.chat_id}").status_code == 503
         assert client.get(uploaded["url"]).status_code == 200
 
-
-# ===========================================================================
-# Workspace file routes
-# ===========================================================================
 
 class TestWorkspaceFileRoutes:
 
@@ -615,10 +550,6 @@ class TestWorkspaceFileRoutes:
         assert client.get(f"/api/folders/{missing_id}/files").status_code == 404
 
 
-# ===========================================================================
-# Chat stream routes (minimal — no real OpenAI call)
-# ===========================================================================
-
 class TestChatStreamRoutes:
 
     def test_cancel_unknown_stream_returns_404(self, client, tmp_virtus):
@@ -641,10 +572,6 @@ class TestChatStreamRoutes:
                            content_type="application/json")
         assert resp.status_code == 404
 
-
-# ===========================================================================
-# Models route
-# ===========================================================================
 
 class TestModelsRoute:
 
@@ -674,10 +601,6 @@ class TestModelsRoute:
         assert "error" in resp.json
 
 
-# ===========================================================================
-# Index route
-# ===========================================================================
-
 class TestIndexRoute:
 
     def test_renders_app_shell(self, client, tmp_virtus):
@@ -706,10 +629,6 @@ class TestIndexRoute:
         assert b"Please start Docker, then click Retry." in resp.data
         assert b'name="virtus-startup-token"' in resp.data
 
-
-# ===========================================================================
-# Startup requirement routes
-# ===========================================================================
 
 class TestStartupRequirementRoutes:
 
@@ -859,9 +778,6 @@ class TestStartupRequirementRoutes:
         assert b"event: log" in response.data
         assert b"event: done" in response.data
 
-# ===========================================================================
-# MCP tools discovery
-# ===========================================================================
 
 class TestMcpToolsDiscoveryRoutes:
 
