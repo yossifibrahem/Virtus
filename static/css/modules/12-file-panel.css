@@ -263,24 +263,17 @@ body.file-panel-resizing { cursor: col-resize; user-select: none; }
 }
 
 .file-preview-visual { width: 100%; min-width: 0; }
+/* Scrollable PDF pages rendered by PDF.js core. */
 .file-preview-pdf { width: 100%; min-width: 0; }
-.pdf-preview-status { padding: 24px 12px; text-align: center; color: var(--text3); font-size: .74rem; }
-.pdf-preview-page { margin: 0 0 18px; }
 .pdf-preview-sheet {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+  margin-bottom: 10px;
+  background: white;
 }
 .pdf-preview-sheet canvas { display: block; width: 100%; height: auto; }
-.pdf-preview-page figcaption {
-  padding: 7px 0 0;
+.pdf-preview-status {
+  padding: 20px;
   color: var(--text3);
-  font-family: var(--font-mono);
-  font-size: .6rem;
+  font-size: .74rem;
   text-align: center;
 }
 .file-preview-visual figure { margin: 0 0 16px; }

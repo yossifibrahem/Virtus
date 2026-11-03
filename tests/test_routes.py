@@ -451,7 +451,9 @@ class TestWorkspaceFileRoutes:
         assert b"download me" in resp.data
 
     @pytest.mark.parametrize('scope', ['conversation', 'folder'])
-    def test_pdf_preview_serves_complete_inline_file(self, client, tmp_virtus, scope):
+    @pytest.mark.parametrize('name', ['report.pdf', 'مطالبة توريد الفهد_.pdf', '报告.pdf',
+                                      'café.pdf', 'report "draft".pdf'])
+    def test_pdf_preview_serves_complete_inline_file(self, client, tmp_virtus, scope, name):
         if scope == 'conversation':
             identifier, root = self._make_workspace(tmp_virtus)
             base = f'/api/conversations/{identifier}'
@@ -459,28 +461,34 @@ class TestWorkspaceFileRoutes:
             identifier, root = self._make_folder_workspace(tmp_virtus)
             base = f'/api/folders/{identifier}'
         raw = b'%PDF-1.7\ncomplete PDF bytes'
-        (root / 'report.pdf').write_bytes(raw)
-        preview = client.get(f'{base}/files/content', query_string={'path': 'report.pdf'})
+        (root / name).write_bytes(raw)
+        preview = client.get(f'{base}/files/content', query_string={'path': name})
         assert preview.json['preview_kind'] == 'pdf'
         assert preview.json['content'] is None and 'images' not in preview.json
-        response = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'})
+        response = client.get(f'{base}/files/pdf', query_string={'path': name})
         assert response.status_code == 200 and response.data == raw
         assert response.mimetype == 'application/pdf'
-        assert response.headers['Content-Disposition'].startswith('inline;')
+        from werkzeug.http import parse_options_header
+        disposition, options = parse_options_header(response.headers['Content-Disposition'])
+        assert disposition == 'inline' and options['filename'] == name
         assert response.headers['X-Content-Type-Options'] == 'nosniff'
         assert response.headers['X-Frame-Options'] == 'SAMEORIGIN'
-        partial = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+        partial = client.get(f'{base}/files/pdf', query_string={'path': name},
                              headers={'Range': 'bytes=5-10'})
         assert partial.status_code == 206 and partial.data == raw[5:11]
         assert partial.headers['Accept-Ranges'] == 'bytes'
         assert partial.headers['Content-Range'] == f'bytes 5-10/{len(raw)}'
-        cached = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+        cached = client.get(f'{base}/files/pdf', query_string={'path': name},
                             headers={'If-None-Match': response.headers['ETag']})
         assert cached.status_code == 304 and cached.data == b''
-        invalid = client.get(f'{base}/files/pdf', query_string={'path': 'report.pdf'},
+        invalid = client.get(f'{base}/files/pdf', query_string={'path': name},
                              headers={'Range': 'bytes=1000-'})
         assert invalid.status_code == 416
         assert invalid.headers['Content-Range'] == f'bytes */{len(raw)}'
+        # The development server encodes headers as Latin-1 on the wire.
+        for reply in (response, partial, cached, invalid):
+            for key, value in reply.headers:
+                f'{key}: {value}'.encode('latin-1')
         (root / 'fake.pdf').write_text('<script>alert(1)</script>')
         assert client.get(f'{base}/files/pdf', query_string={'path': 'fake.pdf'}).status_code == 400
         assert client.get(f'{base}/files/pdf', query_string={'path': '../escape.pdf'}).status_code == 400

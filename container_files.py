@@ -2,6 +2,7 @@
 import io
 import json
 import unicodedata
+from urllib.parse import quote
 from contextlib import nullcontext
 
 import advanced_config
@@ -146,7 +147,14 @@ def pdf_response(result, status):
             if status == 206:
                 headers['Content-Range'] = f'bytes {start}-{end}/{total}'
         response = Response(data, status=status, mimetype='application/pdf', headers=headers)
-        response.headers.set('Content-Disposition', 'inline', filename=result['name'])
+        # HTTP headers are Latin-1. Preserve Unicode names using RFC 5987,
+        # alongside an ASCII fallback for older clients.
+        name = str(result['name'])
+        fallback = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+        options = {'filename': fallback or 'document.pdf'}
+        if name != fallback:
+            options['filename*'] = "UTF-8''" + quote(name, safe='')
+        response.headers.set('Content-Disposition', 'inline', **options)
         return response
     except (KeyError, ValueError, TypeError):
         return jsonify({'error': 'Invalid PDF response'}), 400
