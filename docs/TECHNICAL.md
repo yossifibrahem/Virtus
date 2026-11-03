@@ -185,6 +185,14 @@ folder. `app_policy.js` supplies app/workspace guidance, tool schemas describe t
 contracts, and attachment paths are attached to their user messages. Branches share
 the current runtime; message history cannot roll back filesystem changes.
 
+Keep app-owned guidance in one place: the app policy covers chat/UI context,
+schemas cover tool arguments and behavior, and runtime results supply recovery
+guidance when an event occurs (such as truncation, a memory conflict, or a sandbox
+reset). Memory authority is defined by its injected heading; its content and
+revision are refreshed for each provider request without accumulating in history.
+User/folder prompts, remembered facts, and third-party MCP schemas are passed
+through without rewriting or semantic deduplication.
+
 Each turn creates and closes a provider client, injects current enabled memory,
 adds native tools, streams a response, executes tool calls, and repeats until
 completion or cancellation. Provider credentials come from server configuration.

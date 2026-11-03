@@ -18,7 +18,8 @@ def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, mon
     conv = store.create()
     ref = store.save_image(conv['id'], make_png_bytes(), 'image/png')
     messages = [
-        {'role': 'user', 'content': [{'type': 'text', 'text': 'Read this'}, {'type': 'image_ref', 'ref': ref}]},
+        {'role': 'user', 'content': [{'type': 'text', 'text': 'Read this'},
+                                     {'type': 'image_ref', 'ref': ref}, {'type': 'image_ref', 'ref': ref}]},
         {'role': 'assistant', 'content': 'Earlier answer'},
         {'role': 'user', 'content': [{'type': 'image_ref', 'ref': ref}]},
     ]
@@ -26,7 +27,7 @@ def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, mon
     monkeypatch.setattr(svc, 'openai_client', lambda body: MagicMock())
     monkeypatch.setattr(svc, '_inject_memory', lambda messages: messages)
     monkeypatch.setattr(svc.builtin_tools, 'invoke', lambda *a: {
-        'text': 'Page 1: extracted PDF text', 'images': [{'data': make_png_b64()}]})
+        'text': 'Page 1: extracted PDF text', 'images': [{'data': make_png_b64()}, {'data': make_png_b64()}]})
     requests, events = [], []
     def stream(*args, **kwargs):
         requests.append(copy.deepcopy({k: v for k, v in kwargs.items() if k != 'cancel_event'}))
@@ -47,6 +48,8 @@ def test_image_fallback_preserves_history_and_covers_tool_rounds(tmp_virtus, mon
         assert all(isinstance(m.get('content'), (str, type(None))) for m in request['messages'])
         assert 'Read this' in request['messages'][0]['content']
         assert 'Image unavailable' in request['messages'][2]['content']
+        for message in request['messages']:
+            assert (message.get('content') or '').count('Image unavailable') <= 1
         assert request['model'] == 'local-model' and request['temperature'] == .3
         assert request['tools'] == requests[0]['tools']
     assert 'extracted PDF text' in requests[2]['messages'][-2]['content']
@@ -468,3 +471,47 @@ def test_memory_injection_supports_system_text_blocks(monkeypatch):
     assert 'subordinate' in messages[0]['content'][1]['text']
     assert original[0]["content"] is blocks
     assert len(blocks) == 1
+
+
+def test_memory_context_refreshes_without_accumulating_across_tool_rounds(tmp_virtus, monkeypatch):
+    import copy
+    import threading
+    import store
+
+    svc.memory_service.update('Earlier fact', svc.memory_service.snapshot()['revision'])
+    conversation = store.create()
+    history = [{'role': 'user', 'content': 'Continue'}]
+    messages = [{'role': 'system', 'content': 'Configured chat instructions'}, *history]
+    original = copy.deepcopy(messages)
+    requests = []
+
+    def stream(*args, **kwargs):
+        requests.append(copy.deepcopy(kwargs['messages']))
+        if len(requests) == 1:
+            yield {'type': 'tool_calls', 'calls': [{'id': 'one', 'function': {
+                'name': 'bash', 'arguments': '{"command":"true"}'}}]}
+        else:
+            yield {'type': 'text', 'content': 'Done'}
+
+    def invoke(*args):
+        svc.memory_service.update('Current fact', svc.memory_service.snapshot()['revision'])
+        return {'text': 'ok'}
+
+    monkeypatch.setattr(svc, 'openai_client', lambda body: MagicMock())
+    monkeypatch.setattr(svc.stream_module, 'stream_chat_completion', stream)
+    monkeypatch.setattr(svc.builtin_tools, 'invoke', invoke)
+    svc.run_persistent_chat_turn({
+        'conv_id': conversation['id'], 'messages': messages,
+        'conversation_messages': history, 'auto_generate_titles': False,
+    }, threading.Event(), 'memory-refresh', lambda event: None)
+
+    assert len(requests) == 2
+    for request in requests:
+        assert sum(message['role'] == 'system' for message in request) == 1
+        assert request[0]['content'].count('Configured chat instructions') == 1
+        assert request[0]['content'].count('## Persistent Memory') == 1
+    assert 'Earlier fact' in requests[0][0]['content']
+    assert 'Earlier fact' not in requests[1][0]['content']
+    assert requests[1][0]['content'].count('Current fact') == 1
+    assert messages == original
+    assert all(message['role'] != 'system' for message in store.load(conversation['id'])['messages'])

@@ -14,26 +14,135 @@ NAMES = frozenset({'bash', 'view', 'write', 'edit', 'update_memory'})
 
 
 def schema(name, description, properties, required):
-    return {'type': 'function', 'function': {'name': name, 'description': description,
-        'parameters': {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}}}
+    return {
+        'type': 'function',
+        'function': {
+            'name': name,
+            'description': description,
+            'parameters': {
+                'type': 'object',
+                'properties': properties,
+                'required': required,
+                'additionalProperties': False,
+            },
+        },
+    }
 
 
-STRING = {'type': 'string'}
+# Chat/UI guidance belongs in app_policy.js; event-specific recovery guidance
+# belongs in runtime results, rather than being repeated in these schemas.
+CONTAINER_PATH = {
+    'type': 'string',
+    'description': 'Literal container path, absolute or relative to /workspace. No shell expansion of ~, variables, or wildcards.',
+    'minLength': 1,
+    'maxLength': 4096,
+}
+
 SCHEMAS = [
-    schema('bash', 'Run noninteractive Bash inside the container at /workspace. Files persist; shell state does not. Supports apt/pip/npm. Foreground only; default timeout 120 seconds, maximum 600. Output capped at 32 KiB; redirect to a file for full logs.',
-           {'command': STRING, 'timeout': {'type': 'integer', 'minimum': 1, 'maximum': 600}}, ['command']),
-    schema('view', 'View a container path, relative to /workspace. Text: numbered UTF-8 lines, max 200 lines/32 KiB. Optional inclusive 1-based range start:end selects lines, PDF pages (max 5, default 1), or notebook cells (max 200, default 20). Images returned visually. Directories list two levels, skipping dotfiles/node_modules (max 200 entries); no range for images/directories. Does not execute notebooks.',
-           {'path': STRING, 'range': STRING}, ['path']),
-    schema('write', 'Create or overwrite a UTF-8 file inside the container; creates parents. Relative paths use /workspace. Maximum 1 MiB of text, including empty text.',
-           {'path': STRING, 'content': STRING}, ['path', 'content']),
-    schema('edit', 'Replace exact text in a container UTF-8 file (max 1 MiB). Relative paths use /workspace. Requires one match unless replace_all=true. Empty old_text is invalid. Preserve original line endings in supplied text.',
-           {'path': STRING, 'old_text': STRING, 'new_text': STRING, 'replace_all': {'type': 'boolean'}}, ['path', 'old_text', 'new_text']),
+    schema(
+        'bash',
+        'Run commands or scripts in a noninteractive Linux Bash shell, starting at /workspace. '
+        'Use for searches, builds, package installation (apt/pip/npm), and operations unsupported by view/write/edit. '
+        'Working directory and shell variables do not carry between calls. Background processes are terminated when the command ends. '
+        'Returns combined stdout/stderr and exit status; output is capped at 32 KiB, retaining the beginning and end. '
+        'Timeout or cancellation may stop the runtime.',
+        {
+            'command': {
+                'type': 'string',
+                'description': 'Bash command or multiline script to execute, at most 1 MiB encoded as UTF-8.',
+                'minLength': 1,
+                'maxLength': FILE_LIMIT,
+            },
+            'timeout': {
+                'type': 'integer',
+                'description': 'Maximum execution time in seconds.',
+                'minimum': 1,
+                'maximum': 600,
+                'default': 120,
+            },
+        },
+        ['command'],
+    ),
+    schema(
+        'view',
+        'Inspect a file or directory. UTF-8 text includes line numbers; text output is capped at 32 KiB. '
+        'Directories list two levels and at most 200 entries, skipping dotfiles and node_modules; use bash to inspect omitted entries. '
+        'Images return resized visual previews; PDFs return extracted text and page images; notebooks return cell source and saved outputs without execution. '
+        'Image, PDF, and notebook inputs are limited to 20 MiB.',
+        {
+            'path': dict(CONTAINER_PATH),
+            'range': {
+                'type': 'string',
+                'description': 'Inclusive, 1-based start:end, e.g. 20:40. Text: up to 200 lines, default 1:200. PDF: up to 5 pages, default 1:1. '
+                               'Notebook: up to 200 cells, default 1:20. End must be at least start and at most 10000000. Omit for images and directories.',
+                'pattern': '^[1-9][0-9]*:[1-9][0-9]*$',
+            },
+        },
+        ['path'],
+    ),
+    schema(
+        'write',
+        'Create or fully overwrite a UTF-8 text file, creating missing parent directories. '
+        'Use edit for targeted replacements and bash for binary files. '
+        'Returns the resolved path and number of bytes written.',
+        {
+            'path': dict(CONTAINER_PATH),
+            'content': {
+                'type': 'string',
+                'description': 'Text to write, at most 1 MiB encoded as UTF-8. An empty string creates or truncates the file to zero bytes.',
+                'maxLength': FILE_LIMIT,
+            },
+        },
+        ['path', 'content'],
+    ),
+    schema(
+        'edit',
+        'Replace text in an existing UTF-8 file. '
+        'Both the original and resulting file must fit within 1 MiB. '
+        'Returns the resolved path, resulting byte count, and replacement count.',
+        {
+            'path': dict(CONTAINER_PATH),
+            'old_text': {
+                'type': 'string',
+                'description': 'Exact text to find, including whitespace and line endings. No regex or View line-number prefixes.',
+                'minLength': 1,
+                'maxLength': FILE_LIMIT,
+            },
+            'new_text': {
+                'type': 'string',
+                'description': 'Replacement text. An empty string deletes the matched text.',
+                'maxLength': FILE_LIMIT,
+            },
+            'replace_all': {
+                'type': 'boolean',
+                'description': 'Replace every non-overlapping occurrence of old_text; otherwise exactly one match is required. No matches is always an error.',
+                'default': False,
+            },
+        },
+        ['path', 'old_text', 'new_text'],
+    ),
 ]
 
-MEMORY_SCHEMA = schema('update_memory',
-    'Remember stable user facts and preferences across chats, correct outdated facts, and keep concise entries. Do not store histories, secrets, transient tasks or command state. Replace the bounded store using its current revision from remembered context or a conflict response. A stale revision is rejected: merge with returned current content before retrying.',
-    {'content': {'type': 'string', 'maxLength': 32768},
-     'revision': {'type': 'string', 'minLength': 64, 'maxLength': 64}}, ['content', 'revision'])
+MEMORY_SCHEMA = schema(
+    'update_memory',
+    'Replace the global memory shared across chats. Keep concise, stable user facts and preferences; correct outdated entries. '
+    'Do not store histories, secrets, transient tasks, or command state. Preserve still-valid entries.',
+    {
+        'content': {
+            'type': 'string',
+            'description': 'UTF-8 text, at most 32 KiB. An empty string clears all global memory.',
+            'maxLength': memory_service.LIMIT,
+        },
+        'revision': {
+            'type': 'string',
+            'description': 'Current memory revision, copied unchanged from the injected memory context or a conflict response.',
+            'minLength': 64,
+            'maxLength': 64,
+            'pattern': '^[0-9a-f]{64}$',
+        },
+    },
+    ['content', 'revision'],
+)
 SCHEMAS.append(MEMORY_SCHEMA)
 
 

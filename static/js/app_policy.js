@@ -1,3 +1,4 @@
+// Tool contracts and runtime recovery notices belong at their respective sources.
 export function buildAppSystemPrompt(folderId = null) {
   const now = new Date();
   const localDate = [
@@ -14,7 +15,7 @@ You are operating inside Virtus, a chat application with a container workspace.
 User's local date: ${localDate}.
 ${workspaceContext}
 
-Editing messages, regenerating responses, and switching branches do not undo tool effects. Inspect current files before relying on earlier descriptions. Workspace files survive container recreation; installed packages outside the workspace may be lost.
+Editing messages, regenerating responses, and switching branches do not undo tool effects.
 
 The Workspace files panel exposes only /workspace, not the user's host files. Save deliverables there and link them using [name](/workspace/path), which opens preview and download controls. Files elsewhere cannot be opened through this panel.
 

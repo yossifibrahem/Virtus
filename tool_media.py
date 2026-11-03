@@ -9,12 +9,16 @@ def without_images(messages: list[dict]) -> list[dict]:
     for message in messages:
         content = message.get('content')
         if isinstance(content, list) and any(part.get('type') == 'image_url' for part in content):
-            content = '\n'.join(
-                'Image unavailable: this model does not support image inputs.'
-                if part.get('type') == 'image_url' else part.get('text', '')
-                for part in content
-            )
-            message = {**message, 'content': content}
+            parts = []
+            notice_added = False
+            for part in content:
+                if part.get('type') == 'image_url':
+                    if not notice_added:
+                        parts.append('Image unavailable: this model does not support image inputs.')
+                        notice_added = True
+                else:
+                    parts.append(part.get('text', ''))
+            message = {**message, 'content': '\n'.join(parts)}
         output.append(message)
     return output
 
