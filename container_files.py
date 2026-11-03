@@ -1,7 +1,7 @@
 """Host transport for file-panel operations; never follows sandbox host paths."""
 import io
 import json
-import re
+import unicodedata
 from contextlib import nullcontext
 
 import advanced_config
@@ -24,7 +24,11 @@ def file_limits():
 
 def safe_upload_name(name):
     filename = str(name or '').replace('\\', '/').rsplit('/', 1)[-1]
-    return re.sub(r'[^A-Za-z0-9._ -]+', '_', filename).strip(' ._') or 'file'
+    filename = ''.join(
+        char if char in '._ -' or unicodedata.category(char)[0] in 'LNM' else '_'
+        for char in filename
+    )
+    return filename.strip(' ._') or 'file'
 
 
 def operation(runtime_id, action, path='', *, data=None, **kwargs):

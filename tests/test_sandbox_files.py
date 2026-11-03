@@ -317,6 +317,12 @@ def test_upload_symlink_escape(root, tmp_path):
     ('report.pdf', 'report.pdf'), ('a/b/c.txt', 'c.txt'),
     ('C:\\private\\report.txt', 'report.txt'), ('...hidden', 'hidden'),
     ('', 'file'), ('evil;rm.sh', 'evil_rm.sh'),
+    ('مطالبة توريد الفهد.pdf', 'مطالبة توريد الفهد.pdf'),
+    ('\u200e\u2068مطالبة توريد الفهد\u2069.pdf', 'مطالبة توريد الفهد_.pdf'),
+    ('报告.pdf', '报告.pdf'), ('Отчёт.docx', 'Отчёт.docx'),
+    ('cafe\u0301.txt', 'cafe\u0301.txt'), ('रिपोर्ट.pdf', 'रिपोर्ट.pdf'),
+    ('../../تقرير.pdf', 'تقرير.pdf'),
+    ('a\x00\r\n:*?"<>|b.pdf', 'a__________b.pdf'),
 ])
 def test_safe_upload_name(name, expected):
     assert container_files.safe_upload_name(name) == expected

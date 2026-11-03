@@ -463,6 +463,23 @@ class TestWorkspaceFileRoutes:
         assert client.delete(base + '/download', query_string=query).status_code == 405
         assert client.get(base + '/download', query_string=query).data == b'result'
 
+    @pytest.mark.parametrize('name', ['مطالبة توريد الفهد.pdf', '报告.pdf', 'रिपोर्ट.pdf', 'cafe\u0301.pdf'])
+    def test_unicode_upload_names_roundtrip(self, client, tmp_virtus, name):
+        import io
+        conv_id, root = self._make_workspace(tmp_virtus)
+        base = f'/api/conversations/{conv_id}/files'
+        content = b'%PDF-1.4\nexample'
+        for expected in (name, f'{Path(name).stem}-1.pdf'):
+            response = client.post(base, data={'files': (io.BytesIO(content), name)})
+            assert response.status_code == 200
+            uploaded = response.json['files'][0]
+            assert uploaded['name'] == expected
+            assert uploaded['path'] == f'/workspace/uploads/{expected}'
+            assert (root / 'uploads' / expected).read_bytes() == content
+            download = client.get(base + '/download', query_string={'path': uploaded['path']})
+            assert download.status_code == 200
+            assert download.data == content
+
     def test_list_unknown_conv_returns_error(self, client, tmp_virtus):
         resp = client.get("/api/conversations/ghost/files")
         # Service returns ({"error": ...}, 404) which route passes through
