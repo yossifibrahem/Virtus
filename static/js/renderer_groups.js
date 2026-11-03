@@ -4,7 +4,6 @@
 import { createElement, setVisible } from './dom.js';
 import { ICONS } from './icons.js';
 import { state } from './state.js';
-import { escapeHtml } from './format.js';
 import { messagesEl, createMessageRow } from './renderer_core.js';
 
 export function attachCollapsible(block, { headerSelector, bodySelector, chevronSelector, markManualToggle = false }) {
@@ -12,10 +11,14 @@ export function attachCollapsible(block, { headerSelector, bodySelector, chevron
   const body = block.querySelector(bodySelector);
   const chevron = block.querySelector(chevronSelector);
 
+  header?.setAttribute('aria-expanded', String(block.classList.contains('open')));
+  header?.setAttribute('type', 'button');
+  if (chevron) chevron.innerHTML = ICONS.chevronRight;
+
   header?.addEventListener('click', () => {
     if (markManualToggle) block.dataset.manualToggle = '1';
     const isOpen = block.classList.toggle('open');
-    if (chevron) chevron.innerHTML = isOpen ? ICONS.chevronDown : ICONS.chevronRight;
+    header.setAttribute('aria-expanded', String(isOpen));
     setVisible(body, isOpen);
   });
 }
@@ -48,9 +51,9 @@ function makeGroupSummary(elements) {
     else if (el.classList.contains('tool-strip')) tools++;
   });
   const parts = [];
-  if (thinks) parts.push(`${thinks} thinking`);
-  if (tools) parts.push(`${tools} tool use`);
-  return parts.join(' + ');
+  if (thinks) parts.push(`${thinks} thought${thinks === 1 ? '' : 's'}`);
+  if (tools) parts.push(`${tools} tool${tools === 1 ? '' : 's'}`);
+  return parts.join(' · ');
 }
 
 function getBlockLabel(el) {
@@ -66,10 +69,6 @@ function getBlockLabel(el) {
   return el.querySelector('.tr-tool-name')?.textContent?.trim() || name;
 }
 
-function getLastBlockLabel(elements) {
-  return getBlockLabel(elements[elements.length - 1]);
-}
-
 function isBlockActive(el) {
   if (el.classList.contains('thinking-block')) return el.classList.contains('thinking-streaming');
   if (el.classList.contains('tool-strip')) {
@@ -80,38 +79,38 @@ function isBlockActive(el) {
   return false;
 }
 
+let activitySequence = 0;
+
 export function updateGroupLabel(group) {
-  const body     = group?.querySelector('.group-body');
-  const elements = body ? [...body.children].filter(isGroupableBlock) : [];
-  const lbl = group?.querySelector('.group-label');
-  if (lbl) lbl.textContent = getLastBlockLabel(elements);
-  const active = elements.some(isBlockActive);
-  group?.classList.toggle('group-active', active);
+  if (!group) return;
+  const elements = [...group.querySelector('.group-body').children].filter(isGroupableBlock);
+  const activeBlock = elements.findLast(isBlockActive);
+  group.hidden = elements.length === 0;
+  group.classList.toggle('group-active', !!activeBlock);
+  group.querySelector('.group-label').textContent = activeBlock ? 'Working' : 'Work log';
+  group.querySelector('.group-desc').textContent = activeBlock ? getBlockLabel(activeBlock) : makeGroupSummary(elements);
+  group.querySelector('.group-count').textContent = String(elements.length);
+  group.querySelector('.group-count').setAttribute('aria-label', `${elements.length} steps`);
 }
 
-function createGroupBlock(elements) {
-  const label   = getLastBlockLabel(elements);
-  const expanded = !state.hideToolBlocks;
-
-  const anyActive = elements.some(isBlockActive);
-  const group = createElement('div', { className: `block-group${expanded ? ' open' : ''}${anyActive ? ' group-active' : ''}` });
+function createGroupBlock() {
+  const expanded = !state.collapseSequentialBlocks;
+  const group = createElement('div', { className: `block-group${expanded ? ' open' : ''}` });
+  group.id = `activity-${++activitySequence}`;
   group.innerHTML = `
-    <button class="group-header">
-      <span class="group-chevron">${expanded ? ICONS.chevronDown : ICONS.chevronRight}</span>
-      <span class="group-label">${escapeHtml(label)}</span>
+    <button class="group-header" type="button" aria-expanded="${expanded}" aria-controls="${group.id}-panel">
+      <span class="group-emblem" aria-hidden="true">${ICONS.layers}</span>
+      <span class="group-heading"><span class="group-label">Work log</span><span class="group-desc"></span></span>
+      <span class="group-count"></span><span class="group-chevron" aria-hidden="true">${ICONS.chevronRight}</span>
     </button>
-    <div class="group-body" style="${expanded ? '' : 'display:none'}"></div>`;
-
-  const header  = group.querySelector('.group-header');
-  const body    = group.querySelector('.group-body');
-  const chevron = group.querySelector('.group-chevron');
-
-  header.addEventListener('click', () => {
-    const isOpen = group.classList.toggle('open');
-    chevron.innerHTML = isOpen ? ICONS.chevronDown : ICONS.chevronRight;
-    setVisible(body, isOpen);
+    <div id="${group.id}-panel" class="activity-workspace" ${expanded ? '' : 'hidden'}>
+      <div class="group-body"></div>
+    </div>`;
+  group.querySelector('.group-header').addEventListener('click', () => {
+    const open = group.classList.toggle('open');
+    group.querySelector('.group-header').setAttribute('aria-expanded', String(open));
+    group.querySelector('.activity-workspace').hidden = !open;
   });
-
   return group;
 }
 
@@ -140,14 +139,16 @@ export function tryGroupBlock(el) {
     prev.querySelector('.group-body')?.appendChild(el);
     updateGroupLabel(prev);
   } else if (prev && isGroupableBlock(prev)) {
-    const group = createGroupBlock([prev, el]);
+    const group = createGroupBlock();
     row.insertBefore(group, prev);
     const body = group.querySelector('.group-body');
     body.appendChild(prev);
     body.appendChild(el);
+    updateGroupLabel(group);
   } else {
-    const group = createGroupBlock([el]);
+    const group = createGroupBlock();
     row.insertBefore(group, el);
     group.querySelector('.group-body')?.appendChild(el);
+    updateGroupLabel(group);
   }
 }

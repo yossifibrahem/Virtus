@@ -50,6 +50,7 @@ function popApprovalOutOfGroup(strip) {
   placeholder.hidden = true;
   body.insertBefore(placeholder, strip);
   group.after(strip);
+  strip.hidden = false;
 
   strip._groupPlaceholder = placeholder;
   updateGroupLabel(group);
@@ -68,7 +69,7 @@ function restorePoppedApproval(strip) {
 function regroupToolStrip(strip) {
   if (strip.closest('.block-group')) {
     updateGroupLabel(strip.closest('.block-group'));
-  } else if (state.groupSequentialBlocks) {
+  } else {
     tryGroupBlock(strip);
   }
 }
@@ -83,9 +84,11 @@ export function createToolStrip(toolName, displayName = '') {
   strip.dataset.displayName = usingLabel;
   strip.innerHTML = `
     <span class="tool-icon">${getToolIconSvg(toolName)}</span>
-    <span class="tui-name">${escapeHtml(usingLabel)}</span>`;
+    <span class="tui-name">${escapeHtml(usingLabel)}</span>
+    <span class="activity-state">Preparing</span>
+    <div class="activity-pending">Preparing this step…</div>`;
   row.appendChild(strip);
-  if (state.groupSequentialBlocks) tryGroupBlock(strip);
+  tryGroupBlock(strip);
   scrollToBottom();
   return strip;
 }
@@ -154,16 +157,21 @@ export function toolStripSetRunning(strip, args = {}) {
   const name = strip.dataset.toolName || '';
   const displayName = getToolDisplayLabel(name, args);
   strip.dataset.displayName = displayName;
-  const runningArgs = getToolRunningArgs(name, args);
+  const runningArgs = getToolKind(name) === 'native' ? args : getToolRunningArgs(name, args);
   const hasArgs = Object.keys(runningArgs).length > 0;
   strip.className = 'tool-strip tool-strip-running';
+  const rowTag = hasArgs ? 'button' : 'div';
   strip.innerHTML = `
-    <div class="tool-strip-running-row">
+    <${rowTag} class="tool-strip-running-row" ${hasArgs ? 'type="button"' : ''}>
       <span class="tool-icon">${getToolIconSvg(name)}</span>
       <span class="tui-name">${escapeHtml(displayName)}</span>
-    </div>
+      <span class="activity-state">Running</span>
+      ${hasArgs ? `<span class="tr-chevron">${ICONS.chevronRight}</span>` : ''}
+    </${rowTag}>
     ${hasArgs ? `<div class="tc-item-args" style="display:none">${formatArgsHtml(runningArgs)}</div>` : ''}`;
 
+  if (hasArgs) attachCollapsible(strip, { headerSelector: '.tool-strip-running-row', bodySelector: '.tc-item-args', chevronSelector: '.tr-chevron' });
+  else strip.insertAdjacentHTML('beforeend', '<div class="activity-pending">Waiting for the tool to respond…</div>');
   updateGroupLabel(strip.closest('.block-group'));
   scrollToBottom();
 }

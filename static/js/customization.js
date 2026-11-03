@@ -92,7 +92,13 @@ function rgbToHex(rgb) {
 
 export function loadCustomization() {
   const saved = storage.get(STORAGE_KEYS.customization, {});
-  Object.assign(state, { ...CUSTOMIZATION_DEFAULTS, ...saved });
+  // Retain the old toggle value while migrating to the work-log collapse preference.
+  const { groupSequentialBlocks: legacyGrouping, ...preferences } = saved;
+  Object.assign(state, {
+    ...CUSTOMIZATION_DEFAULTS,
+    ...preferences,
+    collapseSequentialBlocks: preferences.collapseSequentialBlocks ?? legacyGrouping ?? CUSTOMIZATION_DEFAULTS.collapseSequentialBlocks,
+  });
   state.fontFamily = normalizeFontFamily(state.fontFamily);
   applyCustomization();
   syncCustomizationUI();
@@ -110,12 +116,22 @@ export function loadCustomization() {
 // ── Save ──────────────────────────────────────────────────────────────────────
 
 export function saveCustomization() {
+  const wasCollapsed = state.collapseSequentialBlocks;
   _readControlsIntoState();
+  if (wasCollapsed !== state.collapseSequentialBlocks) {
+    document.querySelectorAll('.block-group').forEach(group => {
+      const expanded = !state.collapseSequentialBlocks;
+      group.classList.toggle('open', expanded);
+      group.querySelector('.group-header')?.setAttribute('aria-expanded', String(expanded));
+      const workspace = group.querySelector('.activity-workspace');
+      if (workspace) workspace.hidden = !expanded;
+    });
+  }
   storage.set(STORAGE_KEYS.customization, {
     sidebarDefaultOpen:    state.sidebarDefaultOpen,
     showSuggestionChips:   state.showSuggestionChips,
     hideToolBlocks:        state.hideToolBlocks,
-    groupSequentialBlocks: state.groupSequentialBlocks,
+    collapseSequentialBlocks: state.collapseSequentialBlocks,
     hideThinkingTokens:    state.hideThinkingTokens,
     fontSize:              state.fontSize,
     fontFamily:            state.fontFamily,
@@ -179,7 +195,7 @@ export function syncCustomizationUI() {
   _setCheckbox('cust-suggestion-chips',state.showSuggestionChips);
   _setCheckbox('cust-hide-tool-blocks',   state.hideToolBlocks);
   _setCheckbox('cust-hide-thinking',     state.hideThinkingTokens);
-  _setCheckbox('cust-group-seq-blocks',  state.groupSequentialBlocks);
+  _setCheckbox('cust-collapse-seq-blocks',  state.collapseSequentialBlocks);
 
   const fs = document.getElementById('cust-font-size');
   if (fs) fs.value = state.fontSize;
@@ -212,7 +228,7 @@ function _readControlsIntoState() {
   state.showSuggestionChips   = document.getElementById('cust-suggestion-chips')?.checked  ?? state.showSuggestionChips;
   state.hideToolBlocks        = document.getElementById('cust-hide-tool-blocks')?.checked   ?? state.hideToolBlocks;
   state.hideThinkingTokens    = document.getElementById('cust-hide-thinking')?.checked     ?? state.hideThinkingTokens;
-  state.groupSequentialBlocks = document.getElementById('cust-group-seq-blocks')?.checked  ?? state.groupSequentialBlocks;
+  state.collapseSequentialBlocks = document.getElementById('cust-collapse-seq-blocks')?.checked  ?? state.collapseSequentialBlocks;
   state.fontSize              = document.getElementById('cust-font-size')?.value           ?? state.fontSize;
   state.fontFamily            = normalizeFontFamily(document.getElementById('cust-font-family')?.value ?? state.fontFamily);
   const themeRadio = document.querySelector('input[name="cust-theme"]:checked');

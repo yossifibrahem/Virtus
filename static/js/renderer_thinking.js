@@ -13,6 +13,7 @@ function createThinkingMarkup({ label, chevron, body = '', streaming = false, di
       <span class="thinking-chevron">${chevron}</span>
       <span class="thinking-icon">${ICONS.bulb}</span>
       <span class="thinking-label">${label}</span>
+      <span class="activity-state">${streaming ? 'Reasoning' : 'Notes'}</span>
     </button>
     <pre class="thinking-body" style="display:${display}">${body}</pre>`;
 }
@@ -38,7 +39,7 @@ export function createThinkingBlock() {
   });
 
   row.appendChild(block);
-  if (state.groupSequentialBlocks) tryGroupBlock(block);
+  tryGroupBlock(block);
   scrollToBottom();
   return block.querySelector('.thinking-body');
 }
@@ -54,12 +55,13 @@ export function finalizeThinkingBlock(bodyEl, fullText) {
 
   block.classList.remove('thinking-streaming');
   block.querySelector('.thinking-label').textContent = 'Thought process';
+  block.querySelector('.activity-state').textContent = 'Notes';
   bodyEl.textContent = fullText;
 
   // Collapse when done unless the user manually toggled it open mid-stream.
   if (!block.dataset.manualToggle) {
     block.classList.remove('open');
-    block.querySelector('.thinking-chevron').innerHTML = ICONS.chevronRight;
+    block.querySelector('.thinking-header').setAttribute('aria-expanded', 'false');
     setVisible(bodyEl, false);
   }
 
@@ -89,6 +91,6 @@ export function appendThinkingBlock(reasoningText, logIndex = -1) {
   });
 
   row.appendChild(block);
-  if (state.groupSequentialBlocks) tryGroupBlock(block);
+  tryGroupBlock(block);
   scrollToBottom();
 }

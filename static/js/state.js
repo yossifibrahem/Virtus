@@ -15,7 +15,7 @@ export const SETTINGS_DEFAULTS = {
 export const CUSTOMIZATION_DEFAULTS = {
   showSuggestionChips:   true,
   hideToolBlocks:         true,
-  groupSequentialBlocks:  true,
+  collapseSequentialBlocks: true,
   hideThinkingTokens:     true,
   fontSize:              'medium',    // 'small' | 'medium' | 'large'
   fontFamily:            'geist',     // 'geist' | 'system'

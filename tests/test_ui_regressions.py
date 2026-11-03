@@ -522,3 +522,135 @@ await assert.rejects(persistTurnConversation(turn),/History recovery is incomple
 await persistTurnConversation({convId:'review',...reopened});
 assert.equal(writes.length,2);
 ''')
+
+
+def test_stacked_activity_preserves_independent_disclosures_during_updates():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+class Element {
+ constructor(classes=[]) { this.classes=new Set(classes); this.dataset={}; this.attrs={}; this.events={}; this.children=[]; this.textContent=''; this.style={}; this.classList={contains:c=>this.classes.has(c),toggle:(c,on)=>{const enabled=on??!this.classes.has(c); enabled?this.classes.add(c):this.classes.delete(c); return enabled;}}; }
+ setAttribute(k,v){this.attrs[k]=v;}
+ addEventListener(k,fn){this.events[k]=fn;}
+}
+const makeBlock=(classes,label)=>{
+ const block=new Element(classes),header=new Element(),body=new Element(),chevron=new Element();
+ block.querySelector=s=>({'.header':header,'.body':body,'.chevron':chevron,'.thinking-label':{textContent:label},'.tr-tool-name':{textContent:label}})[s];
+ return {block,header,body};
+};
+const thought=makeBlock(['thinking-block'],'Thought process');
+const tool=makeBlock(['tool-strip','tool-strip-running'],'Bash · echo hello');
+tool.block.dataset={toolName:'bash',displayName:'Bash · echo hello'};
+const body=new Element();body.children=[thought.block,tool.block];
+const selectors=['.group-label','.group-desc','.group-count'];
+const nodes=Object.fromEntries(selectors.map(s=>[s,new Element()]));nodes['.group-body']=body;
+const group=new Element();group.querySelector=s=>nodes[s];
+const context=vm.createContext({});
+const mod=new vm.SourceTextModule(readFileSync('static/js/renderer_groups.js','utf8'),{context});
+const deps={
+ './dom.js':{createElement:()=>new Element(),setVisible:(el,on)=>{el.style.display=on?'block':'none';}},
+ './icons.js':{ICONS:{chevronRight:'right'}},'./state.js':{state:{}},
+ './renderer_core.js':{messagesEl:()=>null,createMessageRow:()=>null}
+};
+await mod.link(name=>new vm.SyntheticModule(Object.keys(deps[name]),function(){for(const [key,value] of Object.entries(deps[name]))this.setExport(key,value);},{context}));
+await mod.evaluate();
+const {updateGroupLabel:update,attachCollapsible}=mod.namespace;
+for(const {block} of [thought,tool]) attachCollapsible(block,{headerSelector:'.header',bodySelector:'.body',chevronSelector:'.chevron'});
+thought.header.events.click();tool.header.events.click();update(group);
+assert.equal(thought.body.style.display,'block');assert.equal(tool.body.style.display,'block');
+assert.equal(thought.header.attrs['aria-expanded'],'true');assert.equal(tool.header.attrs['aria-expanded'],'true');
+assert.equal(nodes['.group-label'].textContent,'Working');assert.equal(nodes['.group-count'].textContent,'2');
+tool.block.classList.toggle('tool-strip-running',false);update(group);
+assert.equal(nodes['.group-label'].textContent,'Work log');
+assert.equal(thought.block.classList.contains('open'),true);assert.equal(tool.block.classList.contains('open'),true);
+// Closing one step must leave the other step open.
+thought.header.events.click();update(group);
+assert.equal(thought.body.style.display,'none');assert.equal(tool.body.style.display,'block');
+assert.equal(thought.header.attrs['aria-expanded'],'false');
+// Removing an approval step updates counts without changing its neighbors.
+body.children=[tool.block];update(group);assert.equal(nodes['.group-count'].textContent,'1');
+assert.equal(tool.block.classList.contains('open'),true);
+body.children=[];update(group);assert.equal(group.hidden,true);
+''')
+
+
+def test_work_log_collapse_setting_migrates_and_updates_existing_groups():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+let saved={},written;
+const toggle={checked:false};
+const log={open:false,header:{setAttribute(k,v){this[k]=v;}},workspace:{hidden:true}};
+log.classList={toggle:(_name,on)=>{log.open=on;}};
+log.querySelector=s=>s==='.group-header'?log.header:log.workspace;
+const root={style:{setProperty(){}},classList:{toggle(){}},setAttribute(){},getAttribute(){return 'dark';}};
+const context=vm.createContext({
+ document:{documentElement:root,getElementById:id=>id==='cust-collapse-seq-blocks'?toggle:null,querySelector:()=>null,querySelectorAll:s=>s==='.block-group'?[log]:[]},
+ window:{innerWidth:1200,matchMedia:()=>({matches:false,addEventListener(){}})}
+});
+const stateModule=new vm.SourceTextModule(readFileSync('static/js/state.js','utf8'),{context});
+await stateModule.link(()=>{throw Error('Unexpected state dependency');});await stateModule.evaluate();
+const storageModule=new vm.SyntheticModule(['storage'],function(){this.setExport('storage',{get:()=>saved,set:(_key,value)=>{written=value;}});},{context});
+const mod=new vm.SourceTextModule(readFileSync('static/js/customization.js','utf8'),{context});
+await mod.link(name=>name==='./state.js'?stateModule:storageModule);await mod.evaluate();
+const {state}=stateModule.namespace;
+const {loadCustomization:load,saveCustomization:save}=mod.namespace;
+load();assert.equal(state.collapseSequentialBlocks,true);assert.equal(toggle.checked,true);
+for(const collapsed of [true,false]) {
+ saved={groupSequentialBlocks:collapsed,hideToolBlocks:true};load();
+ assert.equal(state.collapseSequentialBlocks,collapsed);assert.equal(toggle.checked,collapsed);
+}
+// A saved preference with the new name wins over the legacy field.
+saved={collapseSequentialBlocks:false,groupSequentialBlocks:true,hideToolBlocks:true};load();
+assert.equal(toggle.checked,false);
+toggle.checked=true;save();
+assert.equal(state.collapseSequentialBlocks,true);assert.equal(written.collapseSequentialBlocks,true);
+assert.equal(written.groupSequentialBlocks,undefined);assert.equal(written.hideToolBlocks,true);
+assert.equal(log.open,false);assert.equal(log.workspace.hidden,true);assert.equal(log.header['aria-expanded'],'false');
+toggle.checked=false;save();
+assert.equal(log.open,true);assert.equal(log.workspace.hidden,false);assert.equal(log.header['aria-expanded'],'true');
+// Applying an unrelated preference preserves a manually closed work log.
+log.open=false;log.workspace.hidden=true;save();assert.equal(log.open,false);assert.equal(log.workspace.hidden,true);
+saved=written;load();assert.equal(toggle.checked,false);
+
+''')
+
+
+def test_sequential_blocks_always_group_and_collapse_is_independent_of_tool_details():
+    run_node(r'''
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const state={};
+function element(classes=[]) {
+ const names=new Set(classes);
+ return {children:[],dataset:{},events:{},attrs:{},classList:{contains:c=>names.has(c),toggle(c,on){const enabled=on??!names.has(c);enabled?names.add(c):names.delete(c);return enabled;}},
+ setAttribute(k,v){this.attrs[k]=v;},addEventListener(k,fn){this.events[k]=fn;},appendChild(el){this.children.push(el);el.parentElement=this;}};
+}
+const context=vm.createContext({});
+const mod=new vm.SourceTextModule(readFileSync('static/js/renderer_groups.js','utf8'),{context});
+const deps={
+ './dom.js':{setVisible(){},createElement:(_tag,options)=>{
+  const group=element(options.className.split(' '));
+  const nodes=Object.fromEntries(['.group-header','.activity-workspace','.group-body','.group-label','.group-desc','.group-count'].map(s=>[s,element()]));
+  group.querySelector=s=>nodes[s];return group;
+ }},'./state.js':{state},'./icons.js':{ICONS:{layers:'',chevronRight:''}},
+ './renderer_core.js':{messagesEl:()=>null,createMessageRow:()=>null}
+};
+await mod.link(name=>new vm.SyntheticModule(Object.keys(deps[name]),function(){for(const [key,value] of Object.entries(deps[name]))this.setExport(key,value);},{context}));await mod.evaluate();
+for(const collapsed of [false,true])for(const hideDetails of [false,true]) {
+ Object.assign(state,{hideToolBlocks:hideDetails,collapseSequentialBlocks:collapsed});
+ const row=element();row.insertBefore=group=>{row.group=group;};
+ const block=element(['thinking-block']);block.querySelector=()=>({textContent:'Thought process'});block.parentElement=row;
+ mod.namespace.tryGroupBlock(block);
+ assert(row.group);
+ assert.equal(row.group.classList.contains('open'),!collapsed);
+ assert.equal(row.group.querySelector('.group-body').children[0],block);
+ assert(row.group.innerHTML.includes(`aria-expanded="${!collapsed}"`));
+ row.group.querySelector('.group-header').events.click();
+ assert.equal(row.group.classList.contains('open'),collapsed);
+ assert.equal(row.group.querySelector('.activity-workspace').hidden,!collapsed);
+}
+''')
