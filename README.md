@@ -16,8 +16,7 @@
 
 <p align="center">
   <a href="https://github.com/yossifibrahem/lumen-ai-chat/releases">Download</a> ·
-  <a href="docs/SETUP.md">Get started</a> ·
-  <a href="devs.md">Developer guide</a>
+  <a href="docs/SETUP.md">Get started</a>
 </p>
 
 ![Virtus home screen with a sidebar, a spacious composer, and shortcuts for building, drafting, learning, and exploring.](docs/images/virtus-home.jpg)
@@ -107,4 +106,4 @@ The first setup needs internet access. You'll need a compatible model provider; 
 
 ---
 
-**Explore further:** [Installation & builds](docs/SETUP.md) · [Using Virtus](docs/USAGE.md) · [Configuration](docs/CONFIGURATION.md) · [Development](devs.md) · [Architecture decisions](ARCHITECTURE-DECISIONS.md)
+**Explore further:** [Installation & builds](docs/SETUP.md) · [Using Virtus](docs/USAGE.md) · [Configuration](docs/CONFIGURATION.md) · [Technical reference](docs/TECHNICAL.md)

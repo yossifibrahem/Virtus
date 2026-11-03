@@ -1,6 +1,6 @@
 # Installation and builds
 
-[Showcase](../README.md) · [Configuration](CONFIGURATION.md) · [Developer guide](../devs.md)
+[Showcase](../README.md) · [Configuration](CONFIGURATION.md)
 
 Desktop users need Docker Desktop and an OpenAI-compatible model provider. The first sandbox installation needs internet access. API-provider charges, if any, are separate.
 
