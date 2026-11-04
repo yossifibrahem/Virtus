@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 import { ICONS } from './icons.js';
-import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
+import { copyText } from './clipboard.js';
 import { showToast } from './ui.js';
 //
 // Strategy: before running marked, stash every LaTeX block in a side
@@ -151,7 +151,7 @@ function addCodeCopyButton(block) {
     try {
       await copyText(block.innerText);
     } catch {
-      showToast(COPY_FAILURE_MESSAGE);
+      showToast('Copy failed');
       return;
     }
     btn.innerHTML = ICONS.check;

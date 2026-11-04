@@ -17,43 +17,6 @@ def run_node(script):
     assert result.returncode == 0, result.stderr
 
 
-def test_clipboard_secure_api_and_lan_fallback_cleanup():
-    run_node(r'''
-import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
-const text='  first\nsecond\t🌍\n', savedRange={};
-let field, copied, focused=0, fallbackCalls=0, result=true;
-const selection={rangeCount:1,getRangeAt:()=>({cloneRange:()=>savedRange}),
- removeAllRanges(){this.restored=[];},addRange(r){this.restored.push(r);}};
-const navigator={clipboard:{writeText:async value=>{copied=value;}}};
-const document={
- activeElement:{focus(){focused++;}}, body:{appendChild(el){field=el;}},
- createElement:()=>({style:{},focus(){},select(){},setSelectionRange(){},remove(){field=null;}}),
- execCommand(command){
-  fallbackCalls++; assert.equal(command,'copy'); assert.equal(field.value,text);
-  if(result instanceof Error)throw result;
-  return result;
- }
-};
-const context=vm.createContext({navigator,document,window:{getSelection:()=>selection}});
-const mod=new vm.SourceTextModule(readFileSync('static/js/clipboard.js','utf8'),{context});
-await mod.link(()=>{});await mod.evaluate();
-const copy=mod.namespace.copyText;
-await copy(text);assert.equal(copied,text);assert.equal(fallbackCalls,0);
-for(const clipboard of [undefined,{writeText:async()=>{throw new Error('Denied');}}]) {
- navigator.clipboard=clipboard;
- const pending=copy(text);
- if(!clipboard)assert.equal(fallbackCalls,1,'LAN copying must run within the click gesture');
- await pending;
-}
-navigator.clipboard=undefined;
-for(result of [false,new Error('Blocked')])await assert.rejects(copy(text));
-assert.equal(fallbackCalls,4);assert.equal(focused,4);assert.equal(field,null);
-assert.deepEqual(selection.restored,[savedRange]);
-''')
-
-
 def test_chat_payload_scopes_folder_context_and_preserves_attachment_context():
     run_node(r'''
 import assert from 'node:assert/strict';

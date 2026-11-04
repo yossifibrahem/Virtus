@@ -3,7 +3,7 @@
 import { api } from './api.js';
 import { STORAGE_KEYS, state } from './state.js';
 import { ICONS } from './icons.js';
-import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
+import { copyText } from './clipboard.js';
 
 import { applyMarkdown } from './markdown.js';
 import { renderSource } from './source_view.js';
@@ -700,7 +700,7 @@ export function initFilePanel() {
       await copyText(currentFileData?.content || '');
       showToast('Copied file content');
     } catch {
-      showToast(COPY_FAILURE_MESSAGE);
+      showToast('Copy failed');
     }
   });
 

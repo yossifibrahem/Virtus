@@ -51,10 +51,8 @@ network; use a trusted network. The switch is off by default, and your choice is
 saved in `~/.virtus/desktop-network.json` for future launches. Turn it off to return
 to access from this Mac only. Browser sessions are preserved when switching.
 
-LAN addresses using `http://` are not secure browser contexts, unlike
-`http://localhost`. Copy buttons for files, messages, and code use a compatibility
-fallback when the Clipboard API is unavailable or denied. If the browser also
-blocks that fallback, select and copy the text manually.
+Copy buttons use a compatibility fallback on local-network HTTP connections.
+If your browser blocks copying, select the text and copy it manually.
 
 To uninstall, quit Virtus and move `Virtus AI Chat.app` to Trash. Remove `~/.virtus/` separately only if you also want to permanently delete chats, settings, and memory. Delete workspace volumes separately in Docker Desktop. Docker images can be removed separately through Docker Desktop.
 

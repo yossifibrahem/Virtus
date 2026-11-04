@@ -2,7 +2,7 @@ import { createElement } from './dom.js';
 import { ICONS } from './icons.js';
 import { state } from './state.js';
 import { messagesEl } from './renderer_core.js';
-import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
+import { copyText } from './clipboard.js';
 import { showToast } from './ui.js';
 import { getRawText, normalizeContentAttachments, createAttachmentsGrid } from './renderer_attachments.js';
 
@@ -17,7 +17,7 @@ function createCopyAction(getText) {
     try {
       await copyText(getText());
     } catch {
-      showToast(COPY_FAILURE_MESSAGE);
+      showToast('Copy failed');
       return;
     }
     btn.innerHTML = ICONS.check;
