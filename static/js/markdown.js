@@ -2,6 +2,8 @@
 
 import { state } from './state.js';
 import { ICONS } from './icons.js';
+import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
+import { showToast } from './ui.js';
 //
 // Strategy: before running marked, stash every LaTeX block in a side
 // array (replacing it with a sentinel).  After markdown is rendered,
@@ -145,8 +147,13 @@ function addCodeCopyButton(block) {
   btn.innerHTML = ICONS.copy;
   btn.title = 'Copy code';
   btn.setAttribute('aria-label', 'Copy code');
-  btn.onclick = () => {
-    navigator.clipboard.writeText(block.innerText);
+  btn.onclick = async () => {
+    try {
+      await copyText(block.innerText);
+    } catch {
+      showToast(COPY_FAILURE_MESSAGE);
+      return;
+    }
     btn.innerHTML = ICONS.check;
     btn.title = 'Copied';
     btn.setAttribute('aria-label', 'Copied');

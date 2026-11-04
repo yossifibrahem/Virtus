@@ -2,6 +2,8 @@ import { createElement } from './dom.js';
 import { ICONS } from './icons.js';
 import { state } from './state.js';
 import { messagesEl } from './renderer_core.js';
+import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
+import { showToast } from './ui.js';
 import { getRawText, normalizeContentAttachments, createAttachmentsGrid } from './renderer_attachments.js';
 
 function createMessageAction(icon, onClick) {
@@ -11,8 +13,13 @@ function createMessageAction(icon, onClick) {
 }
 
 function createCopyAction(getText) {
-  const btn = createMessageAction(ICONS.copy, () => {
-    navigator.clipboard.writeText(getText());
+  const btn = createMessageAction(ICONS.copy, async () => {
+    try {
+      await copyText(getText());
+    } catch {
+      showToast(COPY_FAILURE_MESSAGE);
+      return;
+    }
     btn.innerHTML = ICONS.check;
     setTimeout(() => { btn.innerHTML = ICONS.copy; }, 1500);
   });

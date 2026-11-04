@@ -3,6 +3,7 @@
 import { api } from './api.js';
 import { STORAGE_KEYS, state } from './state.js';
 import { ICONS } from './icons.js';
+import { copyText, COPY_FAILURE_MESSAGE } from './clipboard.js';
 
 import { applyMarkdown } from './markdown.js';
 import { renderSource } from './source_view.js';
@@ -696,10 +697,10 @@ export function initFilePanel() {
 
   els.copy?.addEventListener('click', async () => {
     try {
-      await navigator.clipboard.writeText(currentFileData?.content || '');
+      await copyText(currentFileData?.content || '');
       showToast('Copied file content');
     } catch {
-      showToast('Copy failed');
+      showToast(COPY_FAILURE_MESSAGE);
     }
   });
 
