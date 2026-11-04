@@ -1,4 +1,4 @@
-name: Release desktop alpha
+name: Release desktop
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       version:
         description: Release version without the leading v
         required: true
-        default: 0.1.0-alpha.1
+        default: 0.2.0
   push:
     tags:
       - "v*"

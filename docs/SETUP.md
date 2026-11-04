@@ -6,7 +6,7 @@ Desktop users need Docker Desktop and an OpenAI-compatible model provider. The f
 
 ## Windows x64 Installation
 
-The Windows build is a portable ZIP. Alpha builds are unsigned. It contains the complete
+The Windows build is a portable ZIP. Windows builds are unsigned. It contains the complete
 PyInstaller `onedir` application; keep the extracted folder together.
 
 1. Install Docker Desktop for Windows and allow its normal setup to finish.
@@ -32,7 +32,7 @@ The macOS desktop build targets **Apple Silicon Macs running macOS 14 or newer**
 1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 2. Download the Apple Silicon DMG from [GitHub Releases](https://github.com/yossifibrahem/lumen-ai-chat/releases).
 3. Open the DMG and drag **Virtus AI Chat** into **Applications**.
-4. Follow the release notes for first-launch instructions. Alpha builds may be unsigned or unnotarized.
+4. Follow the release notes for first-launch instructions. Builds may be unsigned or unnotarized.
 5. Virtus opens its setup page. If Docker is stopped, click **Start Docker**. When prompted, click **Install Virtus Tools**. Docker pulls `ubuntu:24.04`, installs Python, Node.js, and the sandbox packages inside it, and creates `virtus-sandbox:latest` locally.
 
 Virtus remains in the menu bar using the bundled Virtus artwork, with **Open Virtus**, **Docker Status**, **Open Logs**, and **Quit Virtus** actions. Application updates are manual: replace the old app with a newer DMG. Chats stay under `~/.virtus/` and workspaces live in Docker named volumes. Both persist across app updates and uninstall.
@@ -122,7 +122,7 @@ deployment target):
 
 ```bash
 python -m pip install -r requirements-dev.txt -r requirements-desktop.txt
-VIRTUS_BUILD_VERSION=0.1.0-alpha.1 packaging/build_macos.sh
+VIRTUS_BUILD_VERSION=0.2.0 packaging/build_macos.sh
 ```
 
 The script resizes the Virtus logo into an `.icns`, generates Finder bundle/build versions from `VIRTUS_BUILD_VERSION`, freezes the one-process Waitress/menu-bar app, ad-hoc signs it when no identity is configured, and creates `dist/Virtus-AI-Chat-<version>-apple-silicon.dmg` with a SHA-256 checksum. Set `MACOS_SIGN_IDENTITY` after importing a Developer ID certificate to produce a distribution-signed app.
@@ -137,7 +137,7 @@ On Windows x64, use an x64 Python 3.12 environment:
 
 ```powershell
 python -m pip install -r requirements-dev.txt -r requirements-desktop.txt
-$env:VIRTUS_BUILD_VERSION = "0.1.0-alpha.1"
+$env:VIRTUS_BUILD_VERSION = "0.2.0"
 .\packaging\build_windows.ps1
 ```
 

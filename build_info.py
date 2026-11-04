@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-SOURCE_VERSION = "0.1.0-dev"
+SOURCE_VERSION = "0.2.0"
 LOCAL_SANDBOX_IMAGE = "virtus-sandbox:latest"
 _SANDBOX_FIXED_INPUTS = (
     ".dockerignore",
