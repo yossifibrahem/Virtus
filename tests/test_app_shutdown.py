@@ -49,10 +49,45 @@ def test_shutdown_is_idempotent(monkeypatch):
     assert sorted(calls) == ["docker", "mcp"]
 
 
-def test_startup_keeps_runtime_for_empty_folder(tmp_virtus, monkeypatch):
+def test_startup_with_empty_or_alternate_database_preserves_docker(monkeypatch, tmp_path):
     import store
-    folder = store.create_folder('Project')
-    known = []
-    monkeypatch.setattr(app.container_service, 'cleanup_stale', lambda ids: known.extend(ids) or [])
-    app._cleanup_stale_containers()
-    assert known == [f"folder_{folder['id']}"]
+    from unittest.mock import Mock
+
+    docker = Mock(side_effect=AssertionError("Startup must not enumerate or delete Docker resources"))
+    monkeypatch.setattr(app.container_service, '_run', docker)
+    monkeypatch.setattr(app.runtime_requirements, 'check_requirements', lambda:
+        app.runtime_requirements.RequirementStatus(True, 'ok', 'Ready', 'Ready', 'continue', 'sandbox'))
+    for index in range(2):
+        monkeypatch.setattr(store, 'DATABASE_FILE', tmp_path / f'database-{index}.sqlite3')
+        if index:
+            store.create_folder('Unrelated folder')
+            store.create('Unrelated chat')
+        # No ownership inference from either an empty or unrelated database.
+        flask_app = app.create_app()
+        assert flask_app.test_client().get('/health').status_code == 200
+    docker.assert_not_called()
+
+
+def test_smoke_app_never_accesses_database_docker_or_lifecycle(monkeypatch):
+    import store
+    from unittest.mock import Mock
+
+    forbidden = Mock(side_effect=AssertionError("Smoke test touched application state"))
+    monkeypatch.setenv('VIRTUS_DESKTOP_SMOKE_TEST', '1')
+    monkeypatch.setattr(store, '_connection', forbidden)
+    monkeypatch.setattr(app.runtime_requirements, 'check_requirements', forbidden)
+    monkeypatch.setattr(app.container_service, 'start_reaper', forbidden)
+    monkeypatch.setattr(app.container_service, 'stop_all_containers', forbidden)
+    monkeypatch.setattr(app.mcp_service, 'close_all_persistent_pools', forbidden)
+    monkeypatch.setattr(app, '_register_shutdown_cleanup', forbidden)
+    monkeypatch.setattr(app, '_shutdown_done', False)
+    flask_app = app.create_app()
+    flask_app.config['DISABLE_REQUEST_SECURITY'] = True
+    with flask_app.test_client() as client:
+        assert client.get('/health').json['version'] == app.build_info.APP_VERSION
+        assert client.get('/static/js/app.js').status_code == 200
+        assert client.get('/api/conversations').status_code == 404
+        assert client.get('/').status_code == 404
+    app._shutdown_containers()
+    assert app._shutdown_done is False
+    forbidden.assert_not_called()

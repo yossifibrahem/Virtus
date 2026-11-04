@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import patch
 
 
 @pytest.fixture(autouse=True)
@@ -58,8 +57,7 @@ def app(tmp_virtus, monkeypatch):
         lambda: ready_status,
     )
 
-    with patch("container_service.cleanup_stale", return_value=[]):
-        flask_app = app_module.create_app()
+    flask_app = app_module.create_app()
 
     flask_app.config["TESTING"] = True
     flask_app.config["DISABLE_REQUEST_SECURITY"] = True

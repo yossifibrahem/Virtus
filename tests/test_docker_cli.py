@@ -77,3 +77,19 @@ def test_cli_output_handles_unicode_paths_and_non_utf8_diagnostics(monkeypatch):
     script = "import sys; sys.stdout.buffer.write('مشروع'.encode()); sys.stderr.buffer.write(b'bad\\xff')"
     result = docker_cli.run(['-c', script])
     assert result.returncode == 0 and result.stdout == 'مشروع' and result.stderr == 'bad\ufffd'
+
+
+@pytest.mark.parametrize('operation', [
+    lambda: docker_cli.run(['volume', 'rm', 'real-workspace']),
+    lambda: docker_cli.popen(['rm', '-f', 'real-container']),
+    docker_cli.executable,
+    docker_cli.start_docker_desktop,
+])
+def test_smoke_mode_blocks_docker_before_starting_processes(monkeypatch, operation):
+    def forbidden(*args, **kwargs):
+        pytest.fail('Smoke mode started a subprocess')
+    monkeypatch.setenv('VIRTUS_DESKTOP_SMOKE_TEST', '1')
+    monkeypatch.setattr(docker_cli.subprocess, 'run', forbidden)
+    monkeypatch.setattr(docker_cli.subprocess, 'Popen', forbidden)
+    with pytest.raises(RuntimeError, match='Docker access is disabled'):
+        operation()

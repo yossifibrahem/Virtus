@@ -98,38 +98,18 @@ def test_tray_remains_visible_until_cleanup_finishes(monkeypatch):
     assert events == ["stop-server", "stop-containers", "unlock", "stop-icon"]
 
 
-def test_smoke_mode_uses_windows_host_without_tray_loop(monkeypatch):
+def test_smoke_mode_bypasses_desktop_state(monkeypatch):
     events = []
-
-    class FakeInstance:
-        def acquire(self):
-            events.append("lock")
-            return True
-
-        def close(self):
-            events.append("unlock")
-
-    class FakeTray:
-        _shutdown_thread = None
-
-        def __init__(self, instance):
-            assert isinstance(instance, FakeInstance)
-
-        def start_server(self):
-            events.append("start")
-
-        def stop_server(self):
-            events.append("stop")
-
-        def run(self):
-            raise AssertionError("tray loop must not run in smoke mode")
-
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Smoke mode must not initialize desktop state")
     monkeypatch.setenv("VIRTUS_DESKTOP_SMOKE_TEST", "1")
-    monkeypatch.setattr(launcher, "configure_logging", lambda: None)
-    monkeypatch.setattr(launcher, "SingleInstance", FakeInstance)
-    monkeypatch.setattr(launcher, "VirtusTray", FakeTray)
-    monkeypatch.setattr(launcher, "_validate_frozen_runtime", lambda: events.append("validate"))
-    monkeypatch.setattr(launcher.virtus_app, "_shutdown_done", False)
-
+    monkeypatch.setattr(launcher, "configure_logging", forbidden)
+    monkeypatch.setattr(launcher, "SingleInstance", forbidden)
+    monkeypatch.setattr(launcher, "VirtusTray", forbidden)
+    def smoke(validate):
+        assert validate is launcher._validate_frozen_runtime
+        events.append("smoke")
+        return 0
+    monkeypatch.setattr(launcher.desktop_runtime, "run_smoke_test", smoke)
     assert launcher.main() == 0
-    assert events == ["lock", "start", "validate", "stop", "unlock"]
+    assert events == ["smoke"]

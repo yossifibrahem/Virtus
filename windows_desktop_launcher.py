@@ -229,6 +229,8 @@ class VirtusTray(DesktopServer):
 
 
 def main() -> int:
+    if build_info.is_desktop_smoke_test():
+        return desktop_runtime.run_smoke_test(_validate_frozen_runtime)
     configure_logging()
     instance = SingleInstance()
     if not instance.acquire():
@@ -245,12 +247,6 @@ def main() -> int:
     try:
         tray = VirtusTray(instance)
         tray.start_server()
-        if os.getenv("VIRTUS_DESKTOP_SMOKE_TEST", "") == "1":
-            _validate_frozen_runtime()
-            tray.stop_server()
-            instance.close()
-            virtus_app._shutdown_done = True
-            return 0
         tray.run()
         if tray._shutdown_thread is not None:
             tray._shutdown_thread.join(timeout=1)

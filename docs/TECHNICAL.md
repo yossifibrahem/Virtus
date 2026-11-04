@@ -168,7 +168,9 @@ containers remain reusable. Successful stops invalidate MCP pools; failed stops
 retain activity/pool state for a later retry. MCP discovery uses a separate
 `mcp-discovery` runtime that is stopped after discovery.
 
-Startup removes stale containers while retaining known empty-folder runtimes.
+Startup never removes containers or workspace volumes based on database contents.
+An empty or alternate database cannot establish that Docker resources are orphaned;
+unreferenced resources are retained until explicitly deleted.
 Application shutdown closes MCP pools and stops running containers concurrently
 within a shared deadline. The backend's default cleanup budget is 10 seconds;
 Windows desktop Quit coordinates a 15-second overall deadline.
@@ -424,8 +426,11 @@ icon until shutdown completes; Windows has a bounded final-exit watchdog.
 
 The Windows build extracts the produced ZIP and runs smoke mode against the
 extracted executable. Both desktop launchers support `VIRTUS_DESKTOP_SMOKE_TEST=1`
-and `VIRTUS_DESKTOP_NO_BROWSER=1`. Desktop logs are written to
-`~/.virtus/logs/virtus.log`.
+and `VIRTUS_DESKTOP_NO_BROWSER=1`. Smoke mode validates bundled resources and a
+health-only server on an OS-assigned loopback port. It bypasses desktop locks,
+logs, LAN settings, conversation databases, Docker checks, background reaping,
+and shutdown hooks. Docker commands are blocked in this mode, including Docker
+Desktop launch. Normal desktop logs are written to `~/.virtus/logs/virtus.log`.
 
 [release.yml](../.github/workflows/release.yml) builds and smoke-tests sandbox
 images for Linux amd64/arm64, runs platform tests, and packages macOS/Windows

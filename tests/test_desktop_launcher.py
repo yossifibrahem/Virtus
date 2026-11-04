@@ -69,42 +69,21 @@ def test_expected_waitress_close_race_is_suppressed():
     menu._run_server()
 
 
-def test_smoke_mode_starts_then_stops_without_entering_menu_loop(monkeypatch):
+def test_smoke_mode_bypasses_desktop_state(monkeypatch):
     events = []
-
-    class FakeInstance:
-        def acquire(self):
-            events.append("lock")
-            return True
-
-        def close(self):
-            events.append("unlock")
-
-    class FakeMenu:
-        def __init__(self, instance):
-            assert isinstance(instance, FakeInstance)
-
-        def start_server(self):
-            events.append("start")
-
-        def stop_server(self):
-            events.append("stop")
-
-        def run(self):
-            raise AssertionError("menu loop must not run during a smoke test")
-
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Smoke mode must not initialize desktop state")
     monkeypatch.setenv("VIRTUS_DESKTOP_SMOKE_TEST", "1")
-    monkeypatch.setattr(desktop_launcher, "configure_logging", lambda: None)
-    monkeypatch.setattr(
-        desktop_launcher,
-        "_validate_frozen_runtime",
-        lambda: events.append("validate"),
-    )
-    monkeypatch.setattr(desktop_launcher, "SingleInstance", FakeInstance)
-    monkeypatch.setattr(desktop_launcher, "VirtusMenuBar", FakeMenu)
-
+    monkeypatch.setattr(desktop_launcher, "configure_logging", forbidden)
+    monkeypatch.setattr(desktop_launcher, "SingleInstance", forbidden)
+    monkeypatch.setattr(desktop_launcher, "VirtusMenuBar", forbidden)
+    def smoke(validate):
+        assert validate is desktop_launcher._validate_frozen_runtime
+        events.append("smoke")
+        return 0
+    monkeypatch.setattr(desktop_launcher.desktop_runtime, "run_smoke_test", smoke)
     assert desktop_launcher.main() == 0
-    assert events == ["lock", "start", "validate", "stop", "unlock"]
+    assert events == ["smoke"]
 
 
 def test_network_toggle_persists_and_preserves_flask_app(monkeypatch, tmp_path):

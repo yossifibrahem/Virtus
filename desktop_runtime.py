@@ -3,16 +3,67 @@ from __future__ import annotations
 
 import json
 import ipaddress
+import errno
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import socket
 import tempfile
+import threading
 import time
 import urllib.request
+from collections.abc import Callable
 
 import build_info
 from fs_utils import atomic_replace
+
+
+def run_smoke_test(validate_resources: Callable[[], None]) -> int:
+    """Check the packaged server without desktop state or Docker access.
+
+    Use an OS-assigned loopback port and a private Waitress socket map, never
+    the running app's listener, instance lock, logs, or LAN preferences.
+    """
+    if not build_info.is_desktop_smoke_test():
+        raise RuntimeError("Desktop smoke-test mode is required.")
+
+    from waitress import create_server
+    import app
+
+    server = None
+    worker = None
+    stopping = threading.Event()
+    try:
+        validate_resources()
+        server = create_server(app.create_app(), host="127.0.0.1", port=0,
+                               threads=1, map={})
+
+        def serve() -> None:
+            try:
+                server.run()
+            except OSError as exc:
+                if not (stopping.is_set() and exc.errno == errno.EBADF):
+                    raise
+
+        worker = threading.Thread(target=serve, name="virtus-package-smoke", daemon=True)
+        worker.start()
+        base_url = f"http://127.0.0.1:{server.effective_port}"
+        if not wait_for_health(base_url, timeout=5):
+            raise RuntimeError("The packaged server did not become ready.")
+        payload = health_payload(base_url)
+        if not payload or payload.get("version") != build_info.APP_VERSION:
+            raise RuntimeError("The packaged server returned the wrong version.")
+        return 0
+    except Exception:
+        logging.exception("Desktop package smoke test failed")
+        return 1
+    finally:
+        stopping.set()
+        if server is not None:
+            server.close()
+            server.task_dispatcher.shutdown(timeout=5)
+        if worker is not None:
+            worker.join(timeout=5)
 
 
 def load_lan_access(path: Path) -> bool:

@@ -50,16 +50,3 @@ def test_usage_stops_at_limit_without_following_symlinks(tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox_files, 'ROOT', root)
     assert sandbox_files.storage_usage(10)['workspace_bytes'] == 20
     assert sandbox_files.storage_usage(10000)['workspace_bytes'] == 20
-
-
-def test_orphan_cleanup_preserves_known_and_discovery_volumes(monkeypatch):
-    known = ['folder_empty']
-    names = [containers.workspace_volume(rid) for rid in [*known, containers.DISCOVERY_CONTAINER_ID, 'orphan']]
-    calls = []
-    def run(args):
-        calls.append(args)
-        output = '\n'.join(names) if args[1:3] == ['volume', 'ls'] else ''
-        return subprocess.CompletedProcess(args, 0, output, '')
-    monkeypatch.setattr(containers, '_run', run)
-    containers.cleanup_stale(known)
-    assert [a for a in calls if a[1:3] == ['volume', 'rm']] == [['docker', 'volume', 'rm', names[-1]]]

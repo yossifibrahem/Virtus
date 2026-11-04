@@ -18,6 +18,10 @@ _SANDBOX_FIXED_INPUTS = (
 )
 
 
+def is_desktop_smoke_test() -> bool:
+    return os.getenv("VIRTUS_DESKTOP_SMOKE_TEST", "") == "1"
+
+
 def is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"))
 

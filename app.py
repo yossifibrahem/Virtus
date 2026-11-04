@@ -39,8 +39,6 @@ SHUTDOWN_CLEANUP_SECONDS = 10
 
 
 def create_app() -> Flask:
-    startup_status = runtime_requirements.check_requirements()
-    _log_startup_requirement_status(startup_status)
     assets_root = build_info.resource_root()
     app = Flask(
         __name__,
@@ -65,16 +63,22 @@ def create_app() -> Flask:
     CORS(app, origins=allowed_origins)
     import request_security
     request_security.install(app)
+    if build_info.is_desktop_smoke_test():
+        # Packaging checks expose only liveness and static assets. No database,
+        # Docker probes, background workers, or process-wide shutdown hooks.
+        app.add_url_rule("/health", view_func=routes_startup.health)
+        return app
+
+    startup_status = runtime_requirements.check_requirements()
+    _log_startup_requirement_status(startup_status)
     app.register_blueprint(routes_startup.blueprint)
     app.register_blueprint(routes_conversations.blueprint)
     app.register_blueprint(routes_chat.blueprint)
     app.register_blueprint(routes_mcp.blueprint)
     app.register_blueprint(routes_files.blueprint)
     container_service.start_reaper()
-    if startup_status.ok:
-        _cleanup_stale_containers()
-    else:
-        log.info("[startup] stale container cleanup skipped until requirements are ready")
+    # A different or empty database does not establish Docker ownership.
+    # Delete workspaces only through explicit user actions, never on startup.
     _register_shutdown_cleanup()
     return app
 
@@ -114,19 +118,6 @@ def _log_startup_requirement_status(status) -> None:
         log.warning("[startup] %s %s", status.title, status.details)
 
 
-def _cleanup_stale_containers() -> None:
-    """Remove virtus-chat-* Docker containers whose conversation no longer exists."""
-    try:
-        import store
-        known_ids = list({store.runtime_id(c["id"], c) for c in store.list_all()}
-                         | {f"folder_{f['id']}" for f in store.list_folders()})
-        removed = container_service.cleanup_stale(known_ids)
-        if removed:
-            log.info("[startup] removed %d stale container(s): %s", len(removed), removed)
-    except Exception as exc:
-        log.warning("[startup] stale container cleanup skipped: %s", exc)
-
-
 def _shutdown_containers(*, deadline: float | None = None) -> None:
     """Kill all running virtus-chat-* containers on app shutdown.
 
@@ -135,6 +126,8 @@ def _shutdown_containers(*, deadline: float | None = None) -> None:
     exiting cleanly.  The guard prevents double execution when both the
     SIGTERM handler and atexit fire in the same shutdown sequence.
     """
+    if build_info.is_desktop_smoke_test():
+        return
     global _shutdown_done
     with _shutdown_lock:
         if _shutdown_done:

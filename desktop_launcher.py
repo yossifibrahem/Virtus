@@ -210,6 +210,8 @@ class VirtusMenuBar(rumps.App):
 
 
 def main() -> int:
+    if build_info.is_desktop_smoke_test():
+        return desktop_runtime.run_smoke_test(_validate_frozen_runtime)
     configure_logging()
     instance = SingleInstance()
     if not instance.acquire():
@@ -225,11 +227,6 @@ def main() -> int:
     menu_app = VirtusMenuBar(instance)
     try:
         menu_app.start_server()
-        if os.getenv("VIRTUS_DESKTOP_SMOKE_TEST", "") == "1":
-            _validate_frozen_runtime()
-            menu_app.stop_server()
-            instance.close()
-            return 0
         menu_app.run()
         return 0
     except SystemExit:

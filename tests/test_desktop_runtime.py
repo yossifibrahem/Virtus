@@ -51,3 +51,37 @@ def test_resource_validation_includes_both_sandbox_workers(monkeypatch, tmp_path
     monkeypatch.setattr(desktop_runtime.build_info, "resource_root", lambda: tmp_path)
     with pytest.raises(FileNotFoundError, match="sandbox_files.py"):
         desktop_runtime.validate_frozen_runtime()
+
+
+@pytest.mark.parametrize('failure', [None, 'resources', 'health', 'version'])
+def test_smoke_runner_uses_private_listener_and_cleans_up(monkeypatch, failure):
+    from types import SimpleNamespace
+    import waitress
+
+    events = []
+    monkeypatch.setenv('VIRTUS_DESKTOP_SMOKE_TEST', '1')
+    def validate():
+        events.append('validate')
+        if failure == 'resources':
+            raise RuntimeError('Missing resource')
+    def create_server(flask_app, **kwargs):
+        assert kwargs == {'host': '127.0.0.1', 'port': 0, 'threads': 1, 'map': {}}
+        assert flask_app.test_client().get('/health').status_code == 200
+        events.append('create')
+        return SimpleNamespace(
+            effective_port=43210, run=lambda: events.append('serve'),
+            close=lambda: events.append('close'),
+            task_dispatcher=SimpleNamespace(shutdown=lambda timeout: events.append(('shutdown', timeout))))
+    monkeypatch.setattr(waitress, 'create_server', create_server)
+    def wait(url, timeout):
+        assert url == 'http://127.0.0.1:43210'
+        assert timeout == 5
+        return failure != 'health'
+    monkeypatch.setattr(desktop_runtime, 'wait_for_health', wait)
+    monkeypatch.setattr(desktop_runtime, 'health_payload', lambda url: {
+        'version': 'wrong' if failure == 'version' else desktop_runtime.build_info.APP_VERSION})
+    assert desktop_runtime.run_smoke_test(validate) == (1 if failure else 0)
+    if failure == 'resources':
+        assert events == ['validate']
+    else:
+        assert events == ['validate', 'create', 'serve', 'close', ('shutdown', 5)]

@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+import build_info
+
 
 MAC_DOCKER_APP = Path("/Applications/Docker.app")
 
@@ -79,6 +81,7 @@ def resolve() -> str | None:
 
 
 def executable() -> str:
+    _require_docker_access()
     resolved = resolve()
     if not resolved:
         raise FileNotFoundError("The Docker command could not be found.")
@@ -86,7 +89,13 @@ def executable() -> str:
 
 
 def argv(args: Iterable[str]) -> list[str]:
+    _require_docker_access()
     return [executable(), *[str(arg) for arg in args]]
+
+
+def _require_docker_access() -> None:
+    if build_info.is_desktop_smoke_test():
+        raise RuntimeError("Docker access is disabled during desktop smoke tests.")
 
 
 def run(
@@ -133,6 +142,7 @@ def docker_desktop_installed() -> bool:
 
 
 def start_docker_desktop() -> subprocess.CompletedProcess:
+    _require_docker_access()
     if sys.platform == "darwin":
         if not docker_desktop_installed():
             raise FileNotFoundError("Docker Desktop is not installed in /Applications.")

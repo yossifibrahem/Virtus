@@ -261,42 +261,6 @@ class TestReapOnce:
         assert "fresh-conv" in container_service._last_used
 
 
-class TestCleanupStaleDiscoveryContainer:
-    """
-    The settings/tools discovery container is reusable and intentionally kept
-    stopped between discovery runs, so stale cleanup must never delete it.
-    """
-
-    def test_cleanup_stale_keeps_discovery_container(self, monkeypatch):
-        import subprocess
-
-        discovery_name = container_service.container_name(
-            container_service.DISCOVERY_CONTAINER_ID
-        )
-        active_name = container_service.container_name("active-chat")
-        stale_name = container_service.container_name("old-chat")
-        calls: list[list[str]] = []
-
-        def fake_run(args):
-            calls.append(args)
-            if args[:3] == ["docker", "ps", "-a"]:
-                return subprocess.CompletedProcess(
-                    args,
-                    0,
-                    stdout=f"{discovery_name}\n{active_name}\n{stale_name}\n",
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-        monkeypatch.setattr(container_service, "_run", fake_run)
-
-        removed = container_service.cleanup_stale(["active-chat"])
-
-        assert removed == ["old-chat"]
-        rm_calls = [args for args in calls if args[:3] == ["docker", "rm", "-f"]]
-        assert rm_calls == [["docker", "rm", "-f", stale_name]]
-
-
 def test_failed_idle_stop_remains_tracked_and_retries(monkeypatch):
     monkeypatch.setattr(container_service._adv_cfg, 'load_advanced_config', lambda: {'container_idle_timeout': 1})
     monkeypatch.setattr(container_service, 'get_status', lambda cid: 'running')

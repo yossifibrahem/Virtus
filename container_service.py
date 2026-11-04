@@ -332,40 +332,6 @@ def stop_container(conv_id: str, *, strict: bool = False) -> None:
     _invalidate_mcp_pool(conv_id)
 
 
-def cleanup_stale(known_ids: list[str]) -> list[str]:
-    result = _run([
-        "docker", "ps", "-a",
-        "--filter", f"name={CONTAINER_PREFIX}",
-        "--format", "{{.Names}}",
-    ])
-    if result.returncode != 0:
-        log.warning("[container] cleanup skipped: %s", result.stderr.strip())
-        return []
-
-    known_names = {container_name(cid) for cid in known_ids}
-    known_names.add(container_name(DISCOVERY_CONTAINER_ID))
-    removed: list[str] = []
-    for name in (line.strip() for line in result.stdout.splitlines()):
-        if not name.startswith(CONTAINER_PREFIX) or name in known_names:
-            continue
-        result = _run(["docker", "rm", "-f", name])
-        if result.returncode == 0:
-            removed.append(name[len(CONTAINER_PREFIX):])
-        else:
-            log.warning("[container] could not remove stale %s: %s", name, result.stderr.strip())
-    volumes = _run(['docker', 'volume', 'ls', '--filter', f'label={VOLUME_LABEL}=1', '--format', '{{.Name}}'])
-    if volumes.returncode:
-        log.warning('Workspace cleanup skipped: %s', volumes.stderr.strip())
-        return removed
-    known_volumes = {workspace_volume(cid) for cid in known_ids + [DISCOVERY_CONTAINER_ID]}
-    for volume in volumes.stdout.splitlines():
-        if volume.startswith(CONTAINER_PREFIX) and volume not in known_volumes:
-            result = _run(['docker', 'volume', 'rm', volume])
-            if result.returncode:
-                log.warning('Could not remove stale workspace %s: %s', volume, result.stderr.strip())
-    return removed
-
-
 def wrap_command_for_exec(
     conv_id: str,
     command: str,
@@ -404,7 +370,7 @@ def stop_all_containers(*, deadline: float | None = None) -> list[str]:
     ignores SIGTERM, making the grace period of ``docker stop`` pure wasted
     time.  Containers are left in the stopped state rather than removed so
     that ``ensure_container()`` can restart them quickly on the next launch;
-    ``cleanup_stale()`` at startup handles any orphaned ones.
+    Orphaned containers and volumes are retained until explicitly deleted.
     """
     if deadline is not None and deadline <= time.monotonic():
         log.warning("[container] shutdown deadline expired before cleanup started")
