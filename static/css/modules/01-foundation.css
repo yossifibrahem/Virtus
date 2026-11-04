@@ -47,33 +47,39 @@ svg { flex-shrink: 0; }
 
 
 /* ─── Shared UI primitives ────────────────────────────────────────────────── */
-#conv-list::-webkit-scrollbar,
-#mp-model-list::-webkit-scrollbar,
-#messages::-webkit-scrollbar,
-#user-input::-webkit-scrollbar,
-.model-list::-webkit-scrollbar,
-.thinking-body::-webkit-scrollbar,
-.tc-item-args::-webkit-scrollbar,
-.tr-args::-webkit-scrollbar,
-.tr-result::-webkit-scrollbar,
-.modal-body::-webkit-scrollbar,
-#file-panel-list::-webkit-scrollbar,
-#file-preview-body::-webkit-scrollbar,
-.msg-content pre::-webkit-scrollbar { width: 4px; height: 4px; }
+/* Cover every scrolling surface, including nested tool output and editors.
+   Use pseudo-elements where available to keep rounded thumbs and hover states;
+   standard properties otherwise override that styling in Chromium. */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--text3);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  min-height: 28px;
+  min-width: 28px;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: var(--text2); }
+*::-webkit-scrollbar-thumb:active { background-color: var(--text); }
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-button { display: none; }
 
-#conv-list::-webkit-scrollbar-thumb,
-#mp-model-list::-webkit-scrollbar-thumb,
-#messages::-webkit-scrollbar-thumb,
-#user-input::-webkit-scrollbar-thumb,
-.model-list::-webkit-scrollbar-thumb,
-.thinking-body::-webkit-scrollbar-thumb,
-.tc-item-args::-webkit-scrollbar-thumb,
-.tr-args::-webkit-scrollbar-thumb,
-.tr-result::-webkit-scrollbar-thumb,
-.modal-body::-webkit-scrollbar-thumb,
-#file-panel-list::-webkit-scrollbar-thumb,
-#file-preview-body::-webkit-scrollbar-thumb,
-.msg-content pre::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 999px; }
+/* Firefox and other engines without WebKit scrollbar pseudo-elements. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--text3) transparent;
+  }
+}
+
+/* Let the system provide scrollbar contrast in forced-color themes. */
+@media (forced-colors: active) {
+  * { scrollbar-color: auto; }
+  *::-webkit-scrollbar-thumb { background-color: ButtonText; }
+  *::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:active { background-color: Highlight; }
+}
 
 :is(#btn-toggle-sidebar, #btn-toggle-files, .modal-close, .conv-menu-btn, #attach-btn, #mic-btn, #send-btn, #stop-btn, .file-panel-actions button, .file-preview-actions button, .msg-action-btn, .tc-allow, .tc-deny, .btn-primary, .btn-secondary, .btn-danger, .modal-tab, .sidebar-action, #btn-new-chat, #model-badge, .mp-chip, .model-chip, .model-row, .model-refresh-btn, .server-icon-btn, .icon-option, .eye-btn, .file-row, .suggestion-chip, .code-copy, .img-preview-remove) {
   transition: color var(--fast), background var(--fast), border-color var(--fast), opacity var(--fast);
